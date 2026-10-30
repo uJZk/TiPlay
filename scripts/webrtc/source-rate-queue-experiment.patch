@@ -1,0 +1,881 @@
+diff --git a/api/BUILD.gn b/api/BUILD.gn
+index d1e965d..cf398eb 100644
+--- a/api/BUILD.gn
++++ b/api/BUILD.gn
+@@ -1120,6 +1120,7 @@ rtc_library("transport_api") {
+   sources = [
+     "call/transport.cc",
+     "call/transport.h",
++    "call/tiplay_source_rate_queue_budget.h",
+   ]
+   deps = []
+ }
+diff --git a/api/call/tiplay_source_rate_queue_budget.h b/api/call/tiplay_source_rate_queue_budget.h
+new file mode 100644
+index 0000000..4be465f
+--- /dev/null
++++ b/api/call/tiplay_source_rate_queue_budget.h
+@@ -0,0 +1,149 @@
++// Copyright (c) TiPlay contributors. Licensed under BSD-3-Clause.
++// Per-task admission accounting for source-rate video. No rate pacing is done.
++#ifndef TIPLAY_SOURCE_RATE_QUEUE_BUDGET_H_
++#define TIPLAY_SOURCE_RATE_QUEUE_BUDGET_H_
++
++#include <cstddef>
++#include <cstdint>
++#include <memory>
++#include <mutex>
++#include <utility>
++
++namespace tiplay {
++
++struct QueueLimit {
++  size_t packets;
++  size_t bytes;
++};
++
++struct QueueCounts {
++  size_t packets = 0;
++  size_t bytes = 0;
++};
++
++// One transport budget may be shared by all live and retired sender epochs.
++struct TransportBudget {
++  explicit TransportBudget(QueueLimit value) : limit(value) {}
++  const QueueLimit limit;
++  std::mutex mutex;
++  QueueCounts pending;
++};
++
++// One independent instance must be created for each sender epoch and stage.
++// Never attach a ticket to an RTP packet that is copied into retransmit history.
++class QueueBudget : public std::enable_shared_from_this<QueueBudget> {
++ public:
++  struct Status {
++    uint64_t epoch;
++    QueueCounts pending;
++    bool overloaded;
++    bool retired;
++  };
++
++  class Ticket {
++   public:
++    Ticket(const Ticket&) = delete;
++    Ticket& operator=(const Ticket&) = delete;
++    ~Ticket() {
++      if (armed_) owner_->Release(counts_);
++    }
++
++   private:
++    friend class QueueBudget;
++    Ticket(std::shared_ptr<QueueBudget> owner, QueueCounts counts)
++        : owner_(std::move(owner)), counts_(counts) {}
++    std::shared_ptr<QueueBudget> owner_;
++    QueueCounts counts_;
++    bool armed_ = false;
++  };
++
++  QueueBudget(uint64_t epoch, QueueLimit limit,
++              std::shared_ptr<TransportBudget> transport)
++      : epoch_(epoch), limit_(limit), transport_(std::move(transport)) {}
++
++  // A null result is a permanent video failure for this epoch unless retired.
++  // Caller must not post a task or allocate a payload copy before admission.
++  std::shared_ptr<Ticket> TryAcquire(size_t packets, size_t bytes) {
++    std::scoped_lock lock(mutex_, transport_->mutex);
++    if (retired_ || overloaded_) return nullptr;
++    if (!Fits(pending_, limit_, packets, bytes) ||
++        !Fits(transport_->pending, transport_->limit, packets, bytes)) {
++      overloaded_ = true;
++      return nullptr;
++    }
++    // Allocate before charging, so allocation failure cannot leak a reservation.
++    auto ticket = std::shared_ptr<Ticket>(
++        new Ticket(shared_from_this(), QueueCounts{packets, bytes}));
++    pending_.packets += packets;
++    pending_.bytes += bytes;
++    transport_->pending.packets += packets;
++    transport_->pending.bytes += bytes;
++    ticket->armed_ = true;
++    return ticket;
++  }
++
++  void Fail() {
++    std::lock_guard lock(mutex_);
++    if (!retired_) overloaded_ = true;
++  }
++
++  void Retire() {
++    std::lock_guard lock(mutex_);
++    retired_ = true;
++  }
++
++  Status GetStatus() const {
++    std::lock_guard lock(mutex_);
++    return {epoch_, pending_, overloaded_, retired_};
++  }
++
++ private:
++  static bool Fits(QueueCounts value, QueueLimit limit,
++                   size_t packets, size_t bytes) {
++    return value.packets <= limit.packets && value.bytes <= limit.bytes &&
++           packets <= limit.packets - value.packets &&
++           bytes <= limit.bytes - value.bytes;
++  }
++
++  void Release(QueueCounts counts) {
++    std::scoped_lock lock(mutex_, transport_->mutex);
++    pending_.packets -= counts.packets;
++    pending_.bytes -= counts.bytes;
++    transport_->pending.packets -= counts.packets;
++    transport_->pending.bytes -= counts.bytes;
++  }
++
++  const uint64_t epoch_;
++  const QueueLimit limit_;
++  const std::shared_ptr<TransportBudget> transport_;
++  mutable std::mutex mutex_;
++  QueueCounts pending_;
++  bool overloaded_ = false;
++  bool retired_ = false;
++};
++
++
++struct SourceRateTransport {
++  explicit SourceRateTransport(QueueLimit value)
++      : limit(value),
++        pacer(std::make_shared<TransportBudget>(value)),
++        network(std::make_shared<TransportBudget>(value)) {}
++  const QueueLimit limit;
++  const std::shared_ptr<TransportBudget> pacer;
++  const std::shared_ptr<TransportBudget> network;
++};
++
++struct SourceRateEpoch {
++  SourceRateEpoch(uint64_t id, const std::shared_ptr<SourceRateTransport>& total)
++      : pacer(std::make_shared<QueueBudget>(id, total->limit, total->pacer)),
++        network(std::make_shared<QueueBudget>(id, total->limit, total->network)) {}
++  void Retire() {
++    pacer->Retire();
++    network->Retire();
++  }
++  const std::shared_ptr<QueueBudget> pacer;
++  const std::shared_ptr<QueueBudget> network;
++};
++
++}  // namespace tiplay
++#endif  // TIPLAY_SOURCE_RATE_QUEUE_BUDGET_H_
+diff --git a/api/call/transport.h b/api/call/transport.h
+index aade6a5..af0a54b 100755
+--- a/api/call/transport.h
++++ b/api/call/transport.h
+@@ -13,8 +13,11 @@
+ 
+ #include <stdint.h>
+ 
++#include <memory>
+ #include <span>
+ 
++namespace tiplay { struct SourceRateEpoch; }
++
+ namespace webrtc {
+ 
+ // TODO(holmer): Look into unifying this with the PacketOptions in
+@@ -27,6 +30,7 @@ struct PacketOptions {
+   // Negative ids are invalid and should be interpreted
+   // as packet_id not being set.
+   int64_t packet_id = -1;
++  std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch;
+   // Whether this is an audio or video packet, excluding retransmissions.
+   // Defaults to `false` which is the more common case.
+   bool is_media = false;
+diff --git a/api/rtp_sender_interface.h b/api/rtp_sender_interface.h
+index 32cbfeb..74a5ed1 100644
+--- a/api/rtp_sender_interface.h
++++ b/api/rtp_sender_interface.h
+@@ -68,6 +68,8 @@ class RTC_EXPORT RtpSenderInterface : public RefCountInterface,
+   // TODO(deadbeef): Change to std::optional.
+   // TODO(deadbeef): Remove? With GetParameters this should be redundant.
+   virtual uint32_t ssrc() const = 0;
++  virtual uint64_t GetTiPlaySourceRateEpoch() const { return 0; }
++  virtual uint64_t GetTiPlaySourceRateFailure() const { return 0; }
+ 
+   // Audio or video sender?
+   virtual MediaType media_type() const = 0;
+diff --git a/call/rtp_config.h b/call/rtp_config.h
+index d77289f..b4d2d5b 100755
+--- a/call/rtp_config.h
++++ b/call/rtp_config.h
+@@ -14,6 +14,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <memory>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -21,6 +22,8 @@
+ #include "api/rtp_headers.h"
+ #include "api/rtp_parameters.h"
+ 
++namespace tiplay { struct SourceRateEpoch; }
++
+ namespace webrtc {
+ // Currently only VP8/VP9 specific.
+ struct RtpPayloadState {
+@@ -89,6 +92,7 @@ struct RtpStreamConfig {
+ 
+ static const size_t kDefaultMaxPacketSize = 1500 - 40;  // TCP over IPv4.
+ struct RtpConfig {
++  std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch;
+   RtpConfig();
+   RtpConfig(const RtpConfig&);
+   ~RtpConfig();
+diff --git a/call/rtp_video_sender.cc b/call/rtp_video_sender.cc
+index 08953a1..31ff2f8 100644
+--- a/call/rtp_video_sender.cc
++++ b/call/rtp_video_sender.cc
+@@ -237,6 +237,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
+   RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
+ 
+   RtpRtcpInterface::Configuration configuration;
++  configuration.tiplay_epoch = rtp_config.tiplay_epoch;
+   configuration.audio = false;
+   configuration.receiver_only = false;
+   configuration.outgoing_transport = send_transport;
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index 54657a7..8ddf34e 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -606,6 +606,7 @@ rtc_library("rtc_audio_video") {
+     "../api:payload_type",
+     "../api:priority",
+     "../api:rtc_error",
++    "../api:transport_api",
+     "../api:rtp_headers",
+     "../api:rtp_parameters",
+     "../api:rtp_sender_interface",
+diff --git a/media/base/media_channel.h b/media/base/media_channel.h
+index f2c3beb..3e67c75 100644
+--- a/media/base/media_channel.h
++++ b/media/base/media_channel.h
+@@ -66,6 +66,8 @@
+ #include "rtc_base/socket.h"
+ #include "rtc_base/strings/string_builder.h"
+ 
++namespace tiplay { struct SourceRateEpoch; }
++
+ namespace webrtc {
+ class VideoFrame;
+ struct VideoFormat;
+@@ -1003,6 +1005,8 @@ class VideoMediaSendChannelInterface : public MediaSendChannelInterface {
+       absl::AnyInvocable<void(EncoderSwitchRequestAction)>;
+ 
+   virtual bool SetSenderParameters(const VideoSenderParameters& params) = 0;
++  virtual std::shared_ptr<tiplay::SourceRateEpoch>
++  BeginTiPlaySourceRateEpoch(uint32_t /*ssrc*/) { return nullptr; }
+ 
+   // Configure stream for sending and register a source.
+   // The `ssrc` must correspond to a registered send stream.
+diff --git a/media/base/media_channel_impl.cc b/media/base/media_channel_impl.cc
+index cb74a27..6dbc140 100644
+--- a/media/base/media_channel_impl.cc
++++ b/media/base/media_channel_impl.cc
+@@ -9,6 +9,9 @@
+  */
+ 
+ #include "media/base/media_channel_impl.h"
++#include <algorithm>
++
++#include "api/call/tiplay_source_rate_queue_budget.h"
+ 
+ #include <cstdint>
+ #include <map>
+@@ -208,9 +211,19 @@ bool MediaChannelUtil::TransportForMediaChannels::SendRtcp(
+ bool MediaChannelUtil::TransportForMediaChannels::SendRtp(
+     std::span<const uint8_t> packet,
+     const PacketOptions& options) {
++  std::shared_ptr<tiplay::QueueBudget::Ticket> admission;
++  if (options.tiplay_epoch) {
++    admission = options.tiplay_epoch->network->TryAcquire(
++        1, std::max(packet.size(), static_cast<size_t>(kMaxRtpPacketLen)));
++    if (!admission) return false;
++  }
+   auto send = [this, packet = CopyOnWriteBuffer(packet, kMaxRtpPacketLen),
+-               options]() mutable {
+-    DoSendPacket(&packet, false, TranslatePacketOptions(options));
++               options, admission = std::move(admission)]() mutable {
++    (void)admission;
++    if (!DoSendPacket(&packet, false, TranslatePacketOptions(options)) &&
++        options.tiplay_epoch) {
++      options.tiplay_epoch->network->Fail();
++    }
+   };
+ 
+   // TODO(bugs.webrtc.org/11993): ModuleRtpRtcpImpl2 and related classes (e.g.
+diff --git a/media/engine/webrtc_video_engine.cc b/media/engine/webrtc_video_engine.cc
+index fd1b4a4..7d2d413 100644
+--- a/media/engine/webrtc_video_engine.cc
++++ b/media/engine/webrtc_video_engine.cc
+@@ -11,6 +11,7 @@
+ #include "media/engine/webrtc_video_engine.h"
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <cstdint>
+ #include <cstdio>
+ #include <functional>
+@@ -31,6 +32,7 @@
+ #include "absl/functional/bind_front.h"
+ #include "absl/strings/match.h"
+ #include "absl/strings/string_view.h"
++#include "api/call/tiplay_source_rate_queue_budget.h"
+ #include "api/crypto/crypto_options.h"
+ #include "api/crypto/frame_decryptor_interface.h"
+ #include "api/environment/environment.h"
+@@ -1561,6 +1563,29 @@ bool WebRtcVideoSendChannel::SetVideoSend(
+   return kv->second->SetVideoSend(options, source);
+ }
+ 
++std::shared_ptr<tiplay::SourceRateEpoch>
++WebRtcVideoSendChannel::BeginTiPlaySourceRateEpoch(uint32_t ssrc) {
++  RTC_DCHECK_RUN_ON(worker_thread_);
++  auto stream = send_streams_.find(ssrc);
++  if (stream == send_streams_.end()) return nullptr;
++  if (!tiplay_transport_) {
++    tiplay_transport_ = std::make_shared<tiplay::SourceRateTransport>(
++        tiplay::QueueLimit{65536, 32 * 1024 * 1024});
++  }
++  static std::atomic<uint64_t> next_epoch{1};
++  auto epoch = std::make_shared<tiplay::SourceRateEpoch>(
++      next_epoch.fetch_add(1, std::memory_order_relaxed), tiplay_transport_);
++  stream->second->SetTiPlaySourceRateEpoch(epoch);
++  return epoch;
++}
++
++void WebRtcVideoSendChannel::WebRtcVideoSendStream::SetTiPlaySourceRateEpoch(
++    std::shared_ptr<tiplay::SourceRateEpoch> epoch) {
++  RTC_DCHECK_RUN_ON(&thread_checker_);
++  parameters_.config.rtp.tiplay_epoch = std::move(epoch);
++  if (stream_) RecreateWebRtcStream();
++}
++
+ bool WebRtcVideoSendChannel::ValidateSendSsrcAvailability(
+     const StreamParams& sp) const {
+   for (uint32_t ssrc : sp.ssrcs) {
+diff --git a/media/engine/webrtc_video_engine.h b/media/engine/webrtc_video_engine.h
+index 33ee3ee..07518ca 100644
+--- a/media/engine/webrtc_video_engine.h
++++ b/media/engine/webrtc_video_engine.h
+@@ -70,6 +70,8 @@
+ #include "rtc_base/thread_annotations.h"
+ #include "video/config/video_encoder_config.h"
+ 
++namespace tiplay { struct SourceRateTransport; }
++
+ namespace webrtc {
+ class VideoDecoderFactory;
+ class VideoEncoderFactory;
+@@ -216,6 +218,8 @@ class WebRtcVideoSendChannel : public MediaChannelUtil,
+       const override;
+   std::optional<Codec> GetSendCodec() const override;
+   bool SetSend(bool send) override;
++  std::shared_ptr<tiplay::SourceRateEpoch>
++  BeginTiPlaySourceRateEpoch(uint32_t ssrc) override;
+   bool SetVideoSend(uint32_t ssrc,
+                     const VideoOptions* options,
+                     VideoSourceInterface<VideoFrame>* source) override;
+@@ -337,6 +341,7 @@ class WebRtcVideoSendChannel : public MediaChannelUtil,
+     void SetFrameEncryptor(
+         scoped_refptr<FrameEncryptorInterface> frame_encryptor);
+ 
++    void SetTiPlaySourceRateEpoch(std::shared_ptr<tiplay::SourceRateEpoch> epoch);
+     bool SetVideoSend(const VideoOptions* options,
+                       VideoSourceInterface<VideoFrame>* source);
+ 
+@@ -460,6 +465,8 @@ class WebRtcVideoSendChannel : public MediaChannelUtil,
+ 
+   const MediaConfig::Video video_config_ RTC_GUARDED_BY(worker_thread_);
+ 
++  std::shared_ptr<tiplay::SourceRateTransport> tiplay_transport_
++      RTC_GUARDED_BY(worker_thread_);
+   // Using primary-ssrc (first ssrc) as key.
+   std::map<uint32_t, WebRtcVideoSendStream*> send_streams_
+       RTC_GUARDED_BY(worker_thread_);
+diff --git a/modules/pacing/BUILD.gn b/modules/pacing/BUILD.gn
+index 8642e15..76e1f34 100644
+--- a/modules/pacing/BUILD.gn
++++ b/modules/pacing/BUILD.gn
+@@ -30,6 +30,7 @@ rtc_library("pacing") {
+ 
+   deps = [
+     "../../api:field_trials_view",
++    "../../api:transport_api",
+     "../../api:rtp_headers",
+     "../../api:rtp_packet_sender",
+     "../../api:sequence_checker",
+diff --git a/modules/pacing/pacing_controller.cc b/modules/pacing/pacing_controller.cc
+index d0d3cd9..1803793 100644
+--- a/modules/pacing/pacing_controller.cc
++++ b/modules/pacing/pacing_controller.cc
+@@ -10,6 +10,8 @@
+ 
+ #include "modules/pacing/pacing_controller.h"
+ 
++#include "api/call/tiplay_source_rate_queue_budget.h"
++
+ #include <algorithm>
+ #include <array>
+ #include <cstddef>
+@@ -428,7 +430,17 @@ void PacingController::ProcessPackets() {
+             << source_rate_diagnostic_id_ << ",\"ssrc\":" << ssrc << "}";
+       }
+       last_send_time_ = now;
+-      for (auto& fec : packet_sender_->FetchFec()) EnqueuePacket(std::move(fec));
++      for (auto& fec : packet_sender_->FetchFec()) {
++        auto epoch = fec->tiplay_epoch();
++        if (!epoch) {
++          RTC_LOG(LS_ERROR) << "TiPlay source-rate FEC packet has no sender epoch";
++          continue;
++        }
++        auto ticket = epoch->pacer->TryAcquire(1, fec->capacity());
++        if (!ticket) continue;
++        fec->set_tiplay_queue_ticket(std::move(ticket));
++        EnqueuePacket(std::move(fec));
++      }
+     }
+     return;
+   }
+diff --git a/modules/pacing/task_queue_paced_sender.cc b/modules/pacing/task_queue_paced_sender.cc
+index 322643c..509de56 100644
+--- a/modules/pacing/task_queue_paced_sender.cc
++++ b/modules/pacing/task_queue_paced_sender.cc
+@@ -31,6 +31,7 @@
+ #include "modules/pacing/pacing_controller.h"
+ #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+ #include "rtc_base/checks.h"
++#include "rtc_base/logging.h"
+ #include "rtc_base/numerics/exp_filter.h"
+ #include "rtc_base/trace_event.h"
+ 
+@@ -47,6 +48,8 @@ TaskQueuePacedSender::TaskQueuePacedSender(
+     : clock_(clock),
+       max_hold_back_window_(max_hold_back_window),
+       max_hold_back_window_in_packets_(max_hold_back_window_in_packets),
++      source_rate_video_(
++          field_trials.IsEnabled("TiPlay-SourceRateVideo")),
+       pacing_controller_(clock, packet_sender, field_trials),
+       next_process_time_(Timestamp::MinusInfinity()),
+       is_started_(false),
+@@ -116,8 +119,47 @@ void TaskQueuePacedSender::SetConfig(const PacerConfig& pacer_config) {
+ 
+ void TaskQueuePacedSender::EnqueuePackets(
+     std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
++  if (packets.empty()) return;
++  std::shared_ptr<tiplay::QueueBudget::Ticket> admission;
++  if (source_rate_video_) {
++    auto source_rate_epoch = packets.front()->tiplay_epoch();
++    if (!source_rate_epoch) {
++      RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP packet has no sender epoch";
++      return;
++    }
++    for (const auto& packet : packets) {
++      if (packet->tiplay_epoch() != source_rate_epoch) {
++        RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP batch has mixed epochs";
++        source_rate_epoch->pacer->Fail();
++        return;
++      }
++    }
++    size_t bytes = 0;
++    for (const auto& packet : packets) {
++      // Every RTP packet includes a header, so any excessive packet rejects
++      // the entire batch before the task is posted.
++      const size_t size = packet->capacity();
++      constexpr size_t kMaxBytes = 32 * 1024 * 1024;
++      if (size > kMaxBytes - bytes) {
++        bytes = kMaxBytes + 1;
++        break;
++      }
++      bytes += size;
++    }
++    admission = source_rate_epoch->pacer->TryAcquire(packets.size(), bytes);
++    if (!admission) {
++      RTC_LOG(LS_ERROR) << "TiPlay source-rate video pacer admission failed";
++      return;
++    }
++    // A shared batch ticket remains live while any member is in the pacer,
++    // and packet copies used for retransmission history deliberately drop it.
++    for (auto& packet : packets) {
++      packet->set_tiplay_queue_ticket(admission);
++    }
++  }
+   task_queue_->PostTask(
+-      SafeTask(safety_.flag(), [this, packets = std::move(packets)]() mutable {
++      SafeTask(safety_.flag(),
++               [this, packets = std::move(packets)]() mutable {
+         RTC_DCHECK_RUN_ON(task_queue_);
+         TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
+                      "TaskQueuePacedSender::EnqueuePackets");
+diff --git a/modules/pacing/task_queue_paced_sender.h b/modules/pacing/task_queue_paced_sender.h
+index d236c27..52663bd 100644
+--- a/modules/pacing/task_queue_paced_sender.h
++++ b/modules/pacing/task_queue_paced_sender.h
+@@ -29,6 +29,7 @@
+ #include "api/units/timestamp.h"
+ #include "modules/pacing/pacing_controller.h"
+ #include "modules/pacing/rtp_packet_pacer.h"
++#include "api/call/tiplay_source_rate_queue_budget.h"
+ #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+ #include "rtc_base/numerics/exp_filter.h"
+ #include "rtc_base/thread_annotations.h"
+@@ -152,6 +153,7 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
+   const TimeDelta max_hold_back_window_;
+   const int max_hold_back_window_in_packets_;
+ 
++  const bool source_rate_video_;
+   PacingController pacing_controller_ RTC_GUARDED_BY(task_queue_);
+ 
+   // We want only one (valid) delayed process task in flight at a time.
+diff --git a/modules/rtp_rtcp/source/rtp_packet_to_send.h b/modules/rtp_rtcp/source/rtp_packet_to_send.h
+index ccbb6fa..2ac5026 100644
+--- a/modules/rtp_rtcp/source/rtp_packet_to_send.h
++++ b/modules/rtp_rtcp/source/rtp_packet_to_send.h
+@@ -13,6 +13,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <memory>
+ #include <optional>
+ #include <utility>
+ 
+@@ -25,10 +26,28 @@
+ #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+ #include "modules/rtp_rtcp/source/rtp_packet.h"
+ 
++namespace tiplay { struct SourceRateEpoch; }
++
+ namespace webrtc {
+ // Class to hold rtp packet with metadata for sender side.
+ // The metadata is not send over the wire, but packet sender may use it to
+ // create rtp header extensions or other data that is sent over the wire.
++class TiPlayNonCopyingTicket {
++ public:
++  TiPlayNonCopyingTicket() = default;
++  TiPlayNonCopyingTicket(const TiPlayNonCopyingTicket&) {}
++  TiPlayNonCopyingTicket& operator=(const TiPlayNonCopyingTicket& other) {
++    if (this != &other) value_.reset();
++    return *this;
++  }
++  TiPlayNonCopyingTicket(TiPlayNonCopyingTicket&&) = default;
++  TiPlayNonCopyingTicket& operator=(TiPlayNonCopyingTicket&&) = default;
++  void set(std::shared_ptr<void> value) { value_ = std::move(value); }
++
++ private:
++  std::shared_ptr<void> value_;
++};
++
+ class RtpPacketToSend : public RtpPacket {
+  public:
+   // RtpPacketToSend::Type is deprecated. Use RtpPacketMediaType directly.
+@@ -44,6 +63,15 @@ class RtpPacketToSend : public RtpPacket {
+ 
+   ~RtpPacketToSend();
+ 
++  // Epoch is copyable; a queue reservation must never enter packet history.
++  void set_tiplay_epoch(std::shared_ptr<tiplay::SourceRateEpoch> epoch) {
++    tiplay_epoch_ = std::move(epoch);
++  }
++  std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch() const { return tiplay_epoch_; }
++  void set_tiplay_queue_ticket(std::shared_ptr<void> ticket) {
++    tiplay_queue_ticket_.set(std::move(ticket));
++  }
++
+   // Time in local time base as close as it can to frame capture time.
+   class Timestamp capture_time() const { return capture_time_; }
+   void set_capture_time(class Timestamp time) { capture_time_ = time; }
+@@ -153,6 +181,8 @@ class RtpPacketToSend : public RtpPacket {
+   void set_send_as_ect1() { send_as_ect1_ = true; }
+ 
+  private:
++  std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch_;
++  TiPlayNonCopyingTicket tiplay_queue_ticket_;
+   class Timestamp capture_time_ = Timestamp::Zero();
+   std::optional<RtpPacketMediaType> packet_type_;
+   std::optional<OriginalType> original_packet_type_;
+diff --git a/modules/rtp_rtcp/source/rtp_rtcp_interface.h b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+index a86a801..31f9553 100755
+--- a/modules/rtp_rtcp/source/rtp_rtcp_interface.h
++++ b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+@@ -52,6 +52,7 @@ class VideoBitrateAllocationObserver;
+ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
+  public:
+   struct Configuration {
++    std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch;
+     // True for a audio version of the RTP/RTCP module object false will create
+     // a video version.
+     bool audio = false;
+diff --git a/modules/rtp_rtcp/source/rtp_sender.cc b/modules/rtp_rtcp/source/rtp_sender.cc
+index cdd4799..a2b7289 100755
+--- a/modules/rtp_rtcp/source/rtp_sender.cc
++++ b/modules/rtp_rtcp/source/rtp_sender.cc
+@@ -160,6 +160,7 @@ RTPSender::RTPSender(const Environment& env,
+     : clock_(&env.clock()),
+       random_(clock_->TimeInMicroseconds()),
+       audio_configured_(config.audio),
++      tiplay_epoch_(config.tiplay_epoch),
+       ssrc_(config.local_media_ssrc),
+       rtx_ssrc_(config.rtx_send_ssrc),
+       flexfec_ssrc_(config.fec_generator ? config.fec_generator->FecSsrc()
+@@ -524,6 +525,7 @@ std::unique_ptr<RtpPacketToSend> RTPSender::AllocatePacket(
+   }
+   auto packet = std::make_unique<RtpPacketToSend>(&rtp_header_extension_map_,
+                                                   max_packet_size_);
++  packet->set_tiplay_epoch(tiplay_epoch_);
+   packet->SetSsrc(ssrc_);
+   packet->SetCsrcs(csrcs);
+ 
+@@ -688,6 +690,7 @@ std::unique_ptr<RtpPacketToSend> RTPSender::BuildRtxPacket(
+     rtx_packet = std::make_unique<RtpPacketToSend>(&rtp_header_extension_map_,
+                                                    max_packet_size_);
+ 
++    rtx_packet->set_tiplay_epoch(packet.tiplay_epoch());
+     rtx_packet->SetPayloadType(kv->second);
+ 
+     // Replace SSRC.
+diff --git a/modules/rtp_rtcp/source/rtp_sender.h b/modules/rtp_rtcp/source/rtp_sender.h
+index cc2ab5e..cf338e9 100755
+--- a/modules/rtp_rtcp/source/rtp_sender.h
++++ b/modules/rtp_rtcp/source/rtp_sender.h
+@@ -174,6 +174,7 @@ class RTPSender {
+   Random random_ RTC_GUARDED_BY(send_mutex_);
+ 
+   const bool audio_configured_;
++  const std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch_;
+ 
+   const uint32_t ssrc_;
+   const std::optional<uint32_t> rtx_ssrc_;
+diff --git a/modules/rtp_rtcp/source/rtp_sender_egress.cc b/modules/rtp_rtcp/source/rtp_sender_egress.cc
+index d4d39c2..0a98df8 100644
+--- a/modules/rtp_rtcp/source/rtp_sender_egress.cc
++++ b/modules/rtp_rtcp/source/rtp_sender_egress.cc
+@@ -105,6 +105,7 @@ RtpSenderEgress::RtpSenderEgress(const Environment& env,
+                                  const RtpRtcpInterface::Configuration& config,
+                                  RtpPacketHistory* packet_history)
+     : env_(env),
++      tiplay_epoch_(config.tiplay_epoch),
+       enable_send_packet_batching_(config.enable_send_packet_batching),
+       worker_queue_(TaskQueueBase::Current()),
+       ssrc_(config.local_media_ssrc),
+@@ -267,6 +268,7 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
+   RTC_CHECK(packet);
+ 
+   PacketOptions options;
++  options.tiplay_epoch = packet->tiplay_epoch();
+   options.included_in_allocation = force_part_of_allocation_;
+   options.is_media = packet->packet_type() == RtpPacketMediaType::kAudio ||
+                      packet->packet_type() == RtpPacketMediaType::kVideo;
+@@ -404,7 +406,9 @@ std::vector<std::unique_ptr<RtpPacketToSend>>
+ RtpSenderEgress::FetchFecPackets() {
+   RTC_DCHECK_RUN_ON(worker_queue_);
+   if (fec_generator_) {
+-    return fec_generator_->GetFecPackets();
++    auto packets = fec_generator_->GetFecPackets();
++    for (auto& packet : packets) packet->set_tiplay_epoch(tiplay_epoch_);
++    return packets;
+   }
+   return {};
+ }
+diff --git a/modules/rtp_rtcp/source/rtp_sender_egress.h b/modules/rtp_rtcp/source/rtp_sender_egress.h
+index 35779a4..88987aa 100755
+--- a/modules/rtp_rtcp/source/rtp_sender_egress.h
++++ b/modules/rtp_rtcp/source/rtp_sender_egress.h
+@@ -125,6 +125,7 @@ class RtpSenderEgress {
+   void PeriodicUpdate();
+ 
+   const Environment env_;
++  const std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch_;
+   const bool enable_send_packet_batching_;
+   TaskQueueBase* const worker_queue_;
+   const uint32_t ssrc_;
+diff --git a/pc/BUILD.gn b/pc/BUILD.gn
+index c4847e0..0f08751 100644
+--- a/pc/BUILD.gn
++++ b/pc/BUILD.gn
+@@ -2057,6 +2057,8 @@ rtc_library("rtp_sender") {
+     ":scoped_operations_batcher",
+     ":simulcast_description",
+     "../api:audio_options_api",
++    "../api:field_trials_view",
++    "../api:transport_api",
+     "../api:dtls_transport_interface",
+     "../api:dtmf_sender_interface",
+     "../api:frame_transformer_interface",
+diff --git a/pc/rtp_sender.cc b/pc/rtp_sender.cc
+index b360be5..1ae87e6 100644
+--- a/pc/rtp_sender.cc
++++ b/pc/rtp_sender.cc
+@@ -25,6 +25,8 @@
+ #include "absl/functional/any_invocable.h"
+ #include "absl/strings/string_view.h"
+ #include "api/audio_options.h"
++#include "api/call/tiplay_source_rate_queue_budget.h"
++#include "api/field_trials_view.h"
+ #include "api/crypto/frame_encryptor_interface.h"
+ #include "api/dtmf_sender_interface.h"
+ #include "api/environment/environment.h"
+@@ -1375,9 +1377,23 @@ VideoRtpSender::VideoRtpSender(
+           std::move(send_codecs)) {}
+ 
+ VideoRtpSender::~VideoRtpSender() {
++  if (tiplay_epoch_) tiplay_epoch_->Retire();
+   Stop();
+ }
+ 
++uint64_t VideoRtpSender::GetTiPlaySourceRateEpoch() const {
++  RTC_DCHECK_RUN_ON(signaling_thread_);
++  return tiplay_epoch_ ? tiplay_epoch_->pacer->GetStatus().epoch : 0;
++}
++
++uint64_t VideoRtpSender::GetTiPlaySourceRateFailure() const {
++  RTC_DCHECK_RUN_ON(signaling_thread_);
++  if (!tiplay_epoch_) return 0;
++  const auto pacer = tiplay_epoch_->pacer->GetStatus();
++  const auto network = tiplay_epoch_->network->GetStatus();
++  return (pacer.overloaded || network.overloaded) ? pacer.epoch : 0;
++}
++
+ void VideoRtpSender::OnChanged() {
+   RTC_DCHECK_RUN_ON(signaling_thread_);
+   TRACE_EVENT0("webrtc", "VideoRtpSender::OnChanged");
+@@ -1393,6 +1409,10 @@ void VideoRtpSender::OnChanged() {
+ }
+ 
+ void VideoRtpSender::AttachTrack() {
++  if (tiplay_epoch_) {
++    tiplay_epoch_->Retire();
++    tiplay_epoch_.reset();
++  }
+   RTC_DCHECK(track_);
+   cached_track_content_hint_ = video_track()->content_hint();
+ }
+@@ -1461,17 +1481,28 @@ void VideoRtpSender::SetSend() {
+   }
+   auto* video_track = static_cast<VideoTrackInterface*>(track_.get());
+   InvalidateCache();
++  const bool needs_tiplay_epoch =
++      env_.field_trials().IsEnabled("TiPlay-SourceRateVideo") && !tiplay_epoch_;
++  std::shared_ptr<tiplay::SourceRateEpoch> new_epoch;
+   bool success = worker_thread_->BlockingCall([&, ssrc = ssrc_] {
+     RTC_DCHECK_RUN_ON(worker_thread_);
+-    return media_channel_ ? video_media_channel()->SetVideoSend(ssrc, &options,
+-                                                                video_track)
+-                          : false;
++    if (!media_channel_) return false;
++    if (needs_tiplay_epoch) {
++      new_epoch = video_media_channel()->BeginTiPlaySourceRateEpoch(ssrc);
++      if (!new_epoch) return false;
++    }
++    return video_media_channel()->SetVideoSend(ssrc, &options, video_track);
+   });
++  if (new_epoch) tiplay_epoch_ = std::move(new_epoch);
+   RTC_DCHECK(success);
+ }
+ 
+ void VideoRtpSender::ClearSend() {
+   RTC_DCHECK_RUN_ON(signaling_thread_);
++  if (tiplay_epoch_) {
++    tiplay_epoch_->Retire();
++    tiplay_epoch_.reset();
++  }
+   RTC_DCHECK(ssrc_ != 0);
+   RTC_DCHECK(!stopped_);
+   // Allow SetVideoSend to fail since `enable` is false and `source` is null.
+diff --git a/pc/rtp_sender.h b/pc/rtp_sender.h
+index a8f3bbd..4fcec18 100644
+--- a/pc/rtp_sender.h
++++ b/pc/rtp_sender.h
+@@ -519,6 +519,8 @@ class VideoRtpSender : public RtpSenderBase {
+ 
+   scoped_refptr<DtmfSenderInterface> GetDtmfSender() const override;
+   RTCError GenerateKeyFrame(const std::vector<std::string>& rids) override;
++  uint64_t GetTiPlaySourceRateEpoch() const override;
++  uint64_t GetTiPlaySourceRateFailure() const override;
+ 
+  protected:
+   VideoRtpSender(const Environment& env,
+@@ -552,6 +554,7 @@ class VideoRtpSender : public RtpSenderBase {
+         static_cast<VideoTrackInterface*>(track_.get()));
+   }
+ 
++  std::shared_ptr<tiplay::SourceRateEpoch> tiplay_epoch_;
+   VideoTrackInterface::ContentHint cached_track_content_hint_ =
+       VideoTrackInterface::ContentHint::kNone;
+ };
+diff --git a/pc/rtp_sender_proxy.h b/pc/rtp_sender_proxy.h
+index 4aa6c57..6af02b9 100755
+--- a/pc/rtp_sender_proxy.h
++++ b/pc/rtp_sender_proxy.h
+@@ -41,6 +41,8 @@ PROXY_METHOD1(bool, SetTrack, MediaStreamTrackInterface*)
+ PROXY_CONSTMETHOD0(scoped_refptr<MediaStreamTrackInterface>, track)
+ PROXY_CONSTMETHOD0(scoped_refptr<DtlsTransportInterface>, dtls_transport)
+ PROXY_CONSTMETHOD0(uint32_t, ssrc)
++PROXY_CONSTMETHOD0(uint64_t, GetTiPlaySourceRateEpoch)
++PROXY_CONSTMETHOD0(uint64_t, GetTiPlaySourceRateFailure)
+ BYPASS_PROXY_CONSTMETHOD0(webrtc::MediaType, media_type)
+ BYPASS_PROXY_CONSTMETHOD0(std::string, id)
+ PROXY_CONSTMETHOD0(std::vector<std::string>, stream_ids)
+diff --git a/sdk/android/api/org/webrtc/RtpSender.java b/sdk/android/api/org/webrtc/RtpSender.java
+index de0781e..f11a818 100644
+--- a/sdk/android/api/org/webrtc/RtpSender.java
++++ b/sdk/android/api/org/webrtc/RtpSender.java
+@@ -88,6 +88,16 @@ public class RtpSender {
+     return nativeGetParameters(nativeRtpSender);
+   }
+ 
++  public long getTiPlaySourceRateEpoch() {
++    checkRtpSenderExists();
++    return nativeGetTiPlaySourceRateEpoch(nativeRtpSender);
++  }
++
++  public long getTiPlaySourceRateFailure() {
++    checkRtpSenderExists();
++    return nativeGetTiPlaySourceRateFailure(nativeRtpSender);
++  }
++
+   public String id() {
+     checkRtpSenderExists();
+     return nativeGetId(nativeRtpSender);
+@@ -147,6 +157,10 @@ public class RtpSender {
+ 
+   private static native String nativeGetId(long rtpSender);
+ 
++  private static native long nativeGetTiPlaySourceRateEpoch(long rtpSender);
++
++  private static native long nativeGetTiPlaySourceRateFailure(long rtpSender);
++
+   private static native void nativeSetFrameEncryptor(long rtpSender, long nativeFrameEncryptor);
+ 
+   private static native String nativeGetMediaType(long rtpSender);
+diff --git a/sdk/android/src/jni/pc/rtp_sender.cc b/sdk/android/src/jni/pc/rtp_sender.cc
+index 2c31eec..7747aa9 100644
+--- a/sdk/android/src/jni/pc/rtp_sender.cc
++++ b/sdk/android/src/jni/pc/rtp_sender.cc
+@@ -104,6 +104,18 @@ ScopedJavaLocalRef<jobject> JNI_RtpSender_GetParameters(
+   return NativeToJavaRtpParameters(jni, parameters);
+ }
+ 
++static jlong JNI_RtpSender_GetTiPlaySourceRateEpoch(JNIEnv*,
++                                                     jlong sender) {
++  return static_cast<jlong>(reinterpret_cast<RtpSenderInterface*>(sender)
++                                ->GetTiPlaySourceRateEpoch());
++}
++
++static jlong JNI_RtpSender_GetTiPlaySourceRateFailure(JNIEnv*,
++                                                       jlong sender) {
++  return static_cast<jlong>(reinterpret_cast<RtpSenderInterface*>(sender)
++                                ->GetTiPlaySourceRateFailure());
++}
++
+ ScopedJavaLocalRef<jstring> JNI_RtpSender_GetId(JNIEnv* jni,
+                                                 jlong j_rtp_sender_pointer) {
+   return NativeToJavaString(
