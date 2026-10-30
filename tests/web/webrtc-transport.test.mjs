@@ -370,19 +370,52 @@ test('repeated video replacements retire every old video receiver and keep audio
   assert.equal(f.peer.closed, true);
 });
 
-test('video renegotiation timeout is bounded and a late answer cannot settle a later attempt', async () => {
+test('video renegotiation timeout retains the exact pending offer for a safe later retry', async () => {
   const f = await fixture({ ...videoOptions, videoTimeoutMs: 15 });
   try {
     await assert.rejects(f.media.restartVideo(), error => error.reason === 'rtc-video-renegotiation-timeout');
     assert.equal(f.media.isConnected(), true);
     const old = f.channels.control.sent.find(value => value.k === 'video-offer');
-    let settled = false;
-    const second = f.media.restartVideo().then(() => { settled = true; });
+    const transceivers = f.peer.transceivers.length;
+    const second = f.media.restartVideo();
     await settle(); const current = f.channels.control.sent.filter(value => value.k === 'video-offer').at(-1);
-    assert.notEqual(current.q, old.q); assert.equal(current.generation, old.generation);
-    f.channels.control.receive(videoAnswer(old)); await settle(); assert.equal(settled, false);
-    f.channels.control.receive(videoAnswer(current)); await second;
+    assert.deepEqual(current, old);
+    assert.equal(f.peer.transceivers.length, transceivers, 'a pending offer must not add another receiver');
+    f.channels.control.receive(videoAnswer(old)); await second;
     assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('lost video answer is retried automatically without changing its transaction or media channels', async () => {
+  const f = await fixture({ ...videoOptions, videoTimeoutMs: 80 });
+  try {
+    const pending = f.media.restartVideo(); await settle();
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    const transceivers = f.peer.transceivers.length;
+    await new Promise(resolve => setTimeout(resolve, 45));
+    const offers = f.channels.control.sent.filter(value => value.k === 'video-offer');
+    assert.ok(offers.length >= 2);
+    assert.ok(offers.every(value => JSON.stringify(value) === JSON.stringify(offer)));
+    f.channels.control.receive(videoAnswer(offer)); await pending;
+    assert.equal(f.peer.transceivers.length, transceivers);
+    assert.equal(f.channels.control.readyState, 'open'); assert.equal(f.channels.audio.readyState, 'open');
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 2, reason: 'video-ready-timeout' }));
+    assert.deepEqual(f.channels.control.sent.at(-2), offer);
+    assert.deepEqual(f.channels.control.sent.at(-1), { k: 'video-ready', generation: 2 });
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 1, reason: 'video-ready-timeout' }));
+    assert.deepEqual(f.channels.control.sent.at(-1), { k: 'video-ready', generation: 2 });
+  } finally { f.media.close(); }
+});
+
+test('a matching answer arriving after the request deadline resumes the retained transaction automatically', async () => {
+  const f = await fixture({ ...videoOptions, videoTimeoutMs: 15 });
+  try {
+    await assert.rejects(f.media.restartVideo(), error => error.reason === 'rtc-video-renegotiation-timeout');
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    const transceivers = f.peer.transceivers.length;
+    f.channels.control.receive(videoAnswer(offer)); await settle(); await settle();
+    assert.deepEqual(f.channels.control.sent.at(-1), { k: 'video-ready', generation: 2 });
+    assert.equal(f.peer.transceivers.length, transceivers);
   } finally { f.media.close(); }
 });
 
@@ -706,6 +739,32 @@ test('RTP stats from a retired receiver cannot repopulate a replacement generati
     t.mock.timers.tick(2000); await settle();
     assert.equal(f.media.stats().rtpVideo.framesDecoded, 7); assert.equal(f.media.stats().rtpVideo.generation, 2);
     assert.equal(f.media.isConnected(), true);
+  } finally { f.media.close(); }
+});
+
+test('receive processing and drop counters follow the selected RTP stream', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let count = 0;
+  class StatsPeer extends RenegotiatingPeer {
+    addTransceiver(...args) {
+      const transceiver = super.addTransceiver(...args);
+      transceiver.receiver = { getStats: async () => {
+        count++;
+        return new Map([['video', { id: 'one', timestamp: count * 2000, type: 'inbound-rtp', kind: 'video',
+          framesDecoded: count * 10, framesDropped: count * 3, totalProcessingDelay: count * .1 }]]);
+      } };
+      return transceiver;
+    }
+  }
+  const f = await fixture({ ...videoOptions, PeerConnection: StatsPeer });
+  try {
+    await settle();
+    assert.equal(f.media.stats().rtpVideo.receiveProcessingMs, null);
+    t.mock.timers.tick(2000); await settle();
+    const values = f.media.stats().rtpVideo;
+    assert.equal(values.framesDropped, 6);
+    assert.ok(Math.abs(values.receiveProcessingMs - 10) < 1e-8);
+    assert.equal(Object.hasOwn(values, 'id'), false);
   } finally { f.media.close(); }
 });
 

@@ -40,19 +40,23 @@ object RtspMessage {
         var offset = 0
         while (offset < buffer.size) {
             val headerEndIndex = indexOf(buffer, headerEnd, offset) ?: break
-            val headerText = String(buffer, offset, headerEndIndex - offset, Charsets.US_ASCII)
+            // Preserve each byte while locating line and colon delimiters. Request
+            // lines and header names remain ASCII; AirPlay sends display-name
+            // header values as UTF-8, including non-ASCII punctuation.
+            val headerText = String(buffer, offset, headerEndIndex - offset, Charsets.ISO_8859_1)
             val lines = headerText.split("\r\n")
             if (lines.isEmpty()) {
                 offset = headerEndIndex + headerEnd.size
                 continue
             }
-            val requestLine = lines.first().split(" ", limit = 3)
+            val requestLine = lines.first().toByteArray(Charsets.ISO_8859_1).toString(Charsets.US_ASCII).split(" ", limit = 3)
             val headers = HashMap<String, String>()
             for (line in lines.drop(1)) {
                 val separator = line.indexOf(':')
                 if (separator == -1) continue
-                headers[line.substring(0, separator).trim().lowercase()] =
-                    line.substring(separator + 1).trim()
+                val name = line.substring(0, separator).toByteArray(Charsets.ISO_8859_1).toString(Charsets.US_ASCII)
+                val value = line.substring(separator + 1).toByteArray(Charsets.ISO_8859_1).toString(Charsets.UTF_8)
+                headers[name.trim().lowercase()] = value.trim()
             }
             val bodyStart = headerEndIndex + headerEnd.size
             val contentLength = headers["content-length"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0

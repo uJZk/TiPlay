@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CarBluetoothStatusTest {
+    @Test fun selectedDeviceStatusNeverConfusesAnotherConnectedAudioDevice() {
+        assertEquals(CarBluetoothStatus.State.NOT_SELECTED, CarBluetoothStatus.evaluateSelected(null, 2, listOf("AA:BB")))
+        assertEquals(CarBluetoothStatus.State.UNKNOWN, CarBluetoothStatus.evaluateSelected("AA:BB", 1, listOf("CC:DD")))
+        assertEquals(CarBluetoothStatus.State.DISCONNECTED, CarBluetoothStatus.evaluateSelected("AA:BB", 2, listOf("CC:DD")))
+        assertEquals(CarBluetoothStatus.State.CONNECTED, CarBluetoothStatus.evaluateSelected("aa:bb", 1, listOf("AA:BB")))
+        assertFalse(CarBluetoothStatus.routeMatches("AA:BB", listOf(null, "", "CC:DD")))
+        assertTrue(CarBluetoothStatus.routeMatches("aa:bb", listOf("AA:BB")))
+    }
     @Test fun onlyCompletedEmptyAudioProfileQueriesEstablishDisconnection() {
         assertEquals(CarBluetoothStatus.State.UNKNOWN, CarBluetoothStatus.evaluate(0, emptyList(), null))
         assertEquals(CarBluetoothStatus.State.UNKNOWN, CarBluetoothStatus.evaluate(1, emptyList(), null))

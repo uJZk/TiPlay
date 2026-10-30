@@ -158,6 +158,17 @@ class BrowserMainHostTest {
         assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
     }
 
+    @Test fun returningFromSettingsRechecksPendingCarBluetoothPermission() {
+        val controller = attachController()
+        `when`(controller.phoneBrowserMode()).thenReturn(true)
+        mockConstruction(CarBluetoothSelection::class.java).use { selections ->
+            invoke("onResume")
+            invoke("onResume")
+            assertEquals(1, selections.constructed().size)
+            verify(selections.constructed().single(), org.mockito.Mockito.times(2)).permissionsChanged()
+        }
+    }
+
     @Test fun wirelessWaitingConnectingAndListeningHaveDistinctTitles() {
         attachController()
         setField("wirelessEnabled", true)

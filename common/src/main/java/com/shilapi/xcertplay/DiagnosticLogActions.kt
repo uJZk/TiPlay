@@ -16,7 +16,8 @@ internal object DiagnosticLogActions {
     @Volatile var busy = false
         private set
 
-    @Synchronized fun perform(activity: Activity, action: DiagnosticLogAction, changed: () -> Unit = {}) {
+    @Synchronized fun perform(activity: Activity, action: DiagnosticLogAction, changed: () -> Unit = {},
+                              sharePrepared: ((Result<DiagnosticExportStore.SavedReport?>) -> Unit)? = null) {
         if (busy) return
         busy = true
         changed()
@@ -26,6 +27,7 @@ internal object DiagnosticLogActions {
             activity.runOnUiThread {
                 if (!activity.isFinishing && !activity.isDestroyed) {
                     changed()
+                    if (action.shares) sharePrepared?.invoke(result)
                     result.fold({ saved ->
                         when {
                             saved == null -> Toast.makeText(activity, R.string.settings_capture_cleared, Toast.LENGTH_SHORT).show()

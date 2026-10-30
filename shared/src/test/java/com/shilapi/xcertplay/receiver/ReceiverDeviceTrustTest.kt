@@ -15,6 +15,122 @@ class ReceiverDeviceTrustTest {
     }
     private val key = ByteArray(32) { it.toByte() }
 
+    @Test fun allowOnceCoversOnlyLiveConnectionsInTheSameVerifiedSession() {
+        val store = Memory()
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        trust.browserSeen("browser")
+        val first = "0123456789abcdef-first"
+        val second = "0123456789abcdef-second"
+        val session = "11223344556677889900aabbccddeeff"
+        val pending = trust.requestSession(first, key, "iPhone", "video", verifiedSessionId = session) as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, true, remember = false))
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession(second, key, "iPhone", "mirror", verifiedSessionId = session))
+        assertTrue(store.keys.isEmpty())
+        trust.endSession(first)
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession(second, key, "iPhone", "audio", verifiedSessionId = session))
+        trust.endSession(second)
+        assertTrue(trust.requestSession("0123456789abcdef-third", key, "iPhone", "video", verifiedSessionId = session) is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun allowOnceDoesNotAuthorizeAnotherKeyOrSession() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        trust.browserSeen("browser")
+        val first = "0123456789abcdef-first"
+        val session = "11223344556677889900aabbccddeeff"
+        val pending = trust.requestSession(first, key, "iPhone", "video", verifiedSessionId = session) as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", pending.id, true, remember = false))
+        assertTrue(trust.requestSession("0123456789abcdef-other", ByteArray(32) { 99 }, "iPhone", "video", verifiedSessionId = session) is ReceiverDeviceTrust.Decision.Pending)
+        trust.forgetAll()
+        val again = trust.requestSession(first, key, "iPhone", "video", verifiedSessionId = session) as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", again.id, true, remember = false))
+        assertTrue(trust.requestSession("0123456789abcdef-next", key, "iPhone", "video", verifiedSessionId = "11223344556677889900aabbccddeefa") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun concurrentSameSessionAllowOnceDoesNotOpenASecondPrompt() {
+        val trust = ReceiverDeviceTrust(Memory())
+        trust.browserSeen("browser")
+        val session = "11223344556677889900aabbccddeeff"
+        val first = "0123456789abcdef-first"
+        val second = "0123456789abcdef-second"
+        val pending = trust.requestSession(first, key, "iPhone", "video", verifiedSessionId = session) as ReceiverDeviceTrust.Decision.Pending
+        val done = CountDownLatch(1)
+        val accepted = AtomicBoolean(false)
+        val waiter = Thread {
+            accepted.set(trust.authorizeSession(second, key, "iPhone", "mirror", verifiedSessionId = session))
+            done.countDown()
+        }
+        waiter.start()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+        while (waiter.state != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) Thread.yield()
+        assertEquals(Thread.State.TIMED_WAITING, waiter.state)
+        assertTrue(trust.respond("browser", pending.id, true, remember = false))
+        trust.endSession(first)
+        assertTrue(done.await(1, TimeUnit.SECONDS))
+        assertTrue(accepted.get())
+        assertNull(trust.prompt("browser"))
+        trust.endSession(second)
+        assertTrue(trust.requestSession("0123456789abcdef-third", key, "iPhone", "video", verifiedSessionId = session) is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun rememberedClientIdDoesNotAutomaticallyTrustANewPublicKey() {
+        val store = Memory()
+        val client = ByteArray(32) { (it + 42).toByte() }
+        store.remember(ReceiverDeviceTrust.fingerprint(client)!!)
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession("0123456789abcdef-first", client, "iPhone", "video"))
+        assertSame(ReceiverDeviceTrust.Decision.Denied,
+            trust.requestSession("0123456789abcdef-second", key, "iPhone", "video"))
+        assertFalse(store.contains(ReceiverDeviceTrust.fingerprint(key)!!))
+        trust.browserSeen("browser")
+        val request = trust.requestSession("0123456789abcdef-second", key, "iPhone", "video") as ReceiverDeviceTrust.Decision.Pending
+        assertFalse(store.contains(ReceiverDeviceTrust.fingerprint(key)!!))
+        assertTrue(trust.respond("browser", request.id, true, remember = true))
+        assertSame(ReceiverDeviceTrust.Decision.Allowed,
+            trust.requestSession("0123456789abcdef-third", key, "iPhone", "mirror"))
+        assertTrue(store.contains(ReceiverDeviceTrust.fingerprint(key)!!))
+    }
+
+    @Test fun oneTimeClientIdApprovalDoesNotAuthorizeANewKeyOnTheSameConnection() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        val client = ByteArray(32) { (it + 42).toByte() }
+        val token = "0123456789abcdef-first"
+        trust.browserSeen("browser")
+        val first = trust.requestSession(token, client, "iPhone", "video") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", first.id, true, remember = false))
+        assertSame(ReceiverDeviceTrust.Decision.Allowed, trust.requestSession(token, client, "iPhone", "video"))
+        assertTrue(trust.requestSession(token, key, "iPhone", "video") is ReceiverDeviceTrust.Decision.Pending)
+    }
+
+    @Test fun concurrentSameKeyRequestsShareRememberedDecision() {
+        val trust = ReceiverDeviceTrust(Memory())
+        trust.browserSeen("browser")
+        val first = trust.requestSession("0123456789abcdef-first", key, "iPhone", "video") as ReceiverDeviceTrust.Decision.Pending
+        val result = AtomicBoolean(false)
+        val done = CountDownLatch(1)
+        Thread { result.set(trust.authorizeSession("0123456789abcdef-second", key, "iPhone", "video")); done.countDown() }.start()
+        assertTrue(trust.respond("browser", first.id, true))
+        assertTrue(done.await(1, TimeUnit.SECONDS))
+        assertTrue(result.get())
+        assertNull(trust.prompt("browser"))
+    }
+
+    @Test fun rememberedIdentityAuthorizesAllMediaTypesAcrossConnections() {
+        for (identity in listOf(key, ByteArray(32) { (it + 84).toByte() })) {
+            val trust = ReceiverDeviceTrust(Memory()) { 0 }
+            trust.browserSeen("browser")
+            val pending = trust.requestSession("0123456789abcdef-first", identity, "iPhone", "video") as ReceiverDeviceTrust.Decision.Pending
+            assertTrue(trust.respond("browser", pending.id, true))
+            trust.endSession("0123456789abcdef-first")
+            for (type in listOf("video", "mirror", "audio")) {
+                assertSame(ReceiverDeviceTrust.Decision.Allowed,
+                    trust.requestSession("0123456789abcdef-$type", identity.copyOf(), "iPhone", type))
+            }
+        }
+    }
+
     @Test fun noUnverifiedOrAbsentBrowserCanRequestTrust() {
         val store = Memory()
         val trust = ReceiverDeviceTrust(store) { 0 }

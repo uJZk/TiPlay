@@ -63,8 +63,35 @@ export function performanceStats(stats = {}) {
   return { ...stats, droppedFrames: counters.length ? counters.reduce((sum, count) => sum + count, 0) : null };
 }
 
-/** Codec, actual draw rate, latest synchronized submission delta and explicit dropped frames. */
-export function formatPerformanceMonitor(codec, stats = {}) {
+/** Mean browser receive/decode processing time over consecutive samples of one RTP stream. */
+export function createReceiveProcessingTracker() {
+  let previous = null;
+  return {
+    reset() { previous = null; },
+    sample(source, generation) {
+      const valid = source && typeof source.id === 'string' && source.id.length > 0 &&
+        Number.isFinite(source.timestamp) && Number.isSafeInteger(source.framesDecoded) && source.framesDecoded >= 0 &&
+        Number.isFinite(source.totalProcessingDelay) && source.totalProcessingDelay >= 0;
+      if (!valid) { previous = null; return null; }
+      const next = { id: source.id, generation, timestamp: source.timestamp,
+        frames: source.framesDecoded, delay: source.totalProcessingDelay };
+      const old = previous; previous = next;
+      if (!old || old.id !== next.id || old.generation !== next.generation || next.timestamp <= old.timestamp || next.timestamp - old.timestamp > 5000 ||
+          next.frames <= old.frames || next.delay < old.delay) return null;
+      return 1000 * (next.delay - old.delay) / (next.frames - old.frames);
+    },
+  };
+}
+
+/** The receive duration excludes sender, network, Canvas and panel latency. */
+export function formatPerformanceMonitor(codec, stats = {}, rtp = null, language = 'en') {
   const number = value => Number.isFinite(value) ? String(Math.round(value)) : '—';
-  return `${codec} · ${number(stats.currentFps)} fps · ${number(stats.currentDelta)} ms · ${number(performanceStats(stats).droppedFrames)} drops`;
+  const zh = language === 'zh';
+  const receive = rtp?.state === 'selected' && Number.isFinite(rtp.sampleAgeMs) && rtp.sampleAgeMs <= 5000 ? rtp : null;
+  const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const pre = counter(stats.preConfigDroppedFrames), local = counter(stats.transferDroppedFrames), main = counter(stats.mainTransferDroppedFrames), render = counter(stats.renderDroppedFrames);
+  // These queues are distinct stages; keep the counters separate rather than assuming disjoint loss.
+  const app = [pre, main, local, render].some(value => value !== null)
+    ? zh ? `预 ${number(pre)} 入 ${number(main)} 出 ${number(local)} 绘制 ${number(render)}` : `pre ${number(pre)} in ${number(main)} out ${number(local)} render ${number(render)}` : '—';
+  return `${codec} · ${number(stats.currentFps)} fps · ${zh ? '接收处理' : 'recv'} ${number(receive?.receiveProcessingMs)} ms · RTC ${number(counter(receive?.framesDropped))} / ${zh ? '应用' : 'app'} ${app} ${zh ? '丢帧' : 'drops'}`;
 }

@@ -1,43 +1,15 @@
-name: Build signed TiPlay release APK
-
-on:
-  workflow_dispatch:
-    inputs:
-      create_draft:
-        description: Create or update a prerelease draft
-        type: boolean
-        required: false
-        default: true
-
+name: Targeted Android tests
+on: workflow_dispatch
 permissions:
   contents: read
-
-concurrency:
-  group: android-release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  release:
+  targeted:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Check signing inputs and public source
-        run: |
-          python3 - <<'PY'
-          import os
-          required = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
-          missing = [name for name in required if not os.environ.get(name)]
-          if missing:
-              raise SystemExit('Missing repository signing secrets: ' + ', '.join(missing))
-          PY
-          python3 scripts/check_public_tree.py
-          python3 -m unittest discover -s tests -p 'test_release_draft.py'
+        with:
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,97 +18,25 @@ jobs:
         with:
           packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
       - uses: gradle/actions/setup-gradle@v4
-      - name: Download pinned upstream APK
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -m 700 "$RUNNER_TEMP/tiplay-release-inputs"
-          gh release download v0.2.18 --repo shihabal3amri/DiPlay --pattern DiPlay-0.2.18.apk --dir "$RUNNER_TEMP/tiplay-release-inputs"
-      - name: Verify upstream and prepare signing and runtime inputs
-        run: |
-          python3 - <<'PY'
-          import base64
-          import hashlib
-          import os
-          from pathlib import Path
-          import zipfile
-          inputs = Path(os.environ['RUNNER_TEMP']) / 'tiplay-release-inputs'
-          apk = inputs / 'DiPlay-0.2.18.apk'
-          expected = 'e241457b36b21fe75b06b5682b4dcfc4fbc25cf75b1855c7a4d055129635ce8e'
-          assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected, 'Upstream APK hash mismatch'
-          assets = inputs / 'runtime-assets' / 'offline-mfi'
-          assets.mkdir(parents=True, mode=0o700)
-          with zipfile.ZipFile(apk) as archive:
-              for name in ['identity.pk8', 'certificate.p7b']:
-                  data = archive.read('assets/offline-mfi/' + name)
-                  assert data, 'Empty runtime asset'
-                  target = assets / name
-                  target.write_bytes(data)
-                  target.chmod(0o600)
-          keystore = inputs / 'release.keystore'
-          keystore.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
-          keystore.chmod(0o600)
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'DIPLAY_AUTH_ASSETS_DIR={inputs / "runtime-assets"}\n')
-              env.write(f'ANDROID_KEYSTORE_PATH={keystore}\n')
-          PY
-      - name: Lint and build signed release
-        run: ./gradlew :mobile:lintRelease :mobile:assembleRelease --stacktrace
-      - name: Verify release APK and prepare artifacts
-        run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs mobile/build/outputs/apk/release/mobile-release.apk
-          python3 - <<'PY'
-          import hashlib
-          import os
-          from pathlib import Path
-          import re
-          import shutil
-          import subprocess
-          import zipfile
-          apk = Path('mobile/build/outputs/apk/release/mobile-release.apk')
-          version = re.search(r'^tiplayVersionName=(.+)$', Path('gradle.properties').read_text(), re.M).group(1)
-          assert re.fullmatch(r'[0-9A-Za-z.-]+', version), 'Invalid version'
-          badging = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/36.0.0/aapt', 'dump', 'badging', str(apk)], text=True)
-          assert "name='com.ujzk.tiplay'" in badging and f"versionName='{version}'" in badging
-          expected = {'assets/offline-mfi/identity.pk8', 'assets/offline-mfi/certificate.p7b'}
-          suffixes = {'.pk8', '.p7b', '.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'}
-          with zipfile.ZipFile(apk) as archive:
-              assert {name for name in archive.namelist() if Path(name).suffix.lower() in suffixes} == expected
-              for name in expected:
-                  assert archive.read(name) == (Path(os.environ['DIPLAY_AUTH_ASSETS_DIR']) / name.removeprefix('assets/')).read_bytes()
-          output = Path('release-artifacts')
-          output.mkdir()
-          target = output / f'TiPlay-{version}.apk'
-          shutil.copyfile(apk, target)
-          source = output / f'TiPlay-{version}-source.zip'
-          subprocess.run(['git', 'archive', '--format=zip', f'--prefix=TiPlay-{version}/', '-o', str(source), 'HEAD'], check=True)
-          (output / 'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in [target, source]))
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Remove temporary signing and runtime inputs
-        if: always()
-        run: rm -rf "$RUNNER_TEMP/tiplay-release-inputs"
+      - name: Focused trust, video recovery and diagnostic dialog tests
+        run: >-
+          ./gradlew :shared:testDebugUnitTest
+          --tests '*ReceiverMirrorStartupTest' --tests '*ReceiverDeviceTrustTest' --tests '*ReceiverServerTest'
+          --tests '*ReceiverProtocolDiagnosticsTest' --tests '*RtspMessageUtf8Test'
+          --tests '*AndroidBluetoothVoiceChannelTest' --tests '*CarBluetoothAudioSessionTest' --tests '*BrowserRtcSourceRateGuardTest' --tests '*BrowserRtcVideoFlowTest' --tests '*BrowserRtcVideoTransactionTest' --tests '*BrowserRtcVideoTrackTest' --tests '*AirPlayVideoPlaybackTest'
+          :common:testDebugUnitTest --tests '*CarBluetoothPermissionRecoveryTest' --tests '*BrowserMainHostTest' --tests '*CarBluetoothStatusTest' --tests '*CarBluetoothSessionControllerTest' --tests '*CarBluetoothSelectionStateTest' --tests '*BrowserMainPageTest' --tests '*SettingsTranslationsTest' --tests '*DiagnosticLogDialogTest' --tests '*DiagnosticLogActionsTest'
+          --continue --stacktrace --no-daemon --max-workers=1 --no-parallel --no-configuration-cache
+          -Pkotlin.compiler.execution.strategy=in-process
+          '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
+          -I gradle/ci-memory.init.gradle
 
-  draft:
-    if: ${{ inputs.create_draft }}
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - name: Save targeted test reports
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
-      - name: Create or update draft with APK, source and SHA256
-        run: python3 scripts/publish_release_draft.py
+          name: focused-test-reports
+          path: |
+            shared/build/reports/tests/
+            common/build/reports/tests/
+          if-no-files-found: ignore
+

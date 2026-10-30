@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_car_bluetooth_choose">بلوتوث السيارة</string>
+    <string name="settings_car_bluetooth_none">لم يتم الاختيار</string>
+    <string name="settings_car_bluetooth_clear">مسح الاختيار</string>
+    <string name="settings_car_bluetooth_find">البحث عن السيارة وإقرانها</string>
+    <string name="settings_car_bluetooth_not_selected">اختر بلوتوث السيارة لاستخدام صوت السيارة.</string>
+    <string name="settings_car_bluetooth_disconnected">بلوتوث السيارة المحدد غير متصل؛ لا يمكن تحديد ما إذا كان قريباً.</string>
+    <string name="settings_car_bluetooth_manual">بلوتوث السيارة غير متصل. لا يدعم إصدار Android هذا الاتصال التلقائي؛ اتصل به من إعدادات البلوتوث.</string>
+    <string name="settings_car_bluetooth_connect_failed">فشل الاتصال التلقائي ببلوتوث السيارة؛ تحقق من إعدادات البلوتوث.</string>
+    <string name="settings_car_bluetooth_permission">اسمح بإذن الأجهزة القريبة لاختيار بلوتوث السيارة.</string>
+    <string name="settings_car_bluetooth_unsupported_pairing">لا يدعم جهاز Android هذا إقران الجهاز المرافق.</string>
+    <string name="settings_car_bluetooth_pair_failed">فشل ربط بلوتوث السيارة أو إقرانه؛ حاول مرة أخرى.</string>
+    <string name="settings_car_bluetooth_not_iphone">لا يمكن اختيار iPhone المحدد كبلوتوث السيارة أيضاً.</string>
+    <string name="settings_car_bluetooth_enable">شغّل البلوتوث لاختيار السيارة.</string>
+    <string name="settings_car_bluetooth_route_unknown">بلوتوث السيارة متصل، لكن Android لا يستطيع تأكيد مسار ميكروفون السيارة المحددة.</string>
+    <string name="settings_car_bluetooth_open_settings">فتح إعدادات البلوتوث</string>
+</resources>

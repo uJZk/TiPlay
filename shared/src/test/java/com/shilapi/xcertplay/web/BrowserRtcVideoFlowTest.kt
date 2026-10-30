@@ -33,6 +33,8 @@ class BrowserRtcVideoFlowTest {
     }
 
     @Test fun originalOutputAndNativeAllocationHaveSeparateCounters() = Fixture().use { f ->
+        assertNull(f.bridge.flowDiagnostics()["allocatedBitrateBps"])
+        assertNull(f.bridge.flowDiagnostics()["allocatedFramerate"])
         val first = frame(0, true)
         val next = frame(16_667)
         assertTrue(f.bridge.offer(first)); assertTrue(f.bridge.offer(next))
