@@ -1,142 +1,131 @@
-name: Build signed TiPlay release APK
+name: Native source-rate WebRTC
 
 on:
   workflow_dispatch:
     inputs:
-      create_draft:
-        description: Create or update a prerelease draft
-        type: boolean
-        required: false
-        default: true
+      architectures:
+        description: Native AAR architectures (all is required for a release)
+        type: choice
+        options:
+          - all
+          - arm64-v8a
+          - x86_64
+        default: all
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: native-source-rate-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
     env:
-      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      DEPOT_TOOLS_UPDATE: '0'
+      DEPOT_TOOLS_METRICS: '0'
+      GCLIENT_PY3: '1'
     steps:
-      - uses: actions/checkout@v4
-      - name: Check signing inputs and public source
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check build-driver pin and reuse contracts
+        run: python3 scripts/webrtc/test_build.py
+      - name: Prepare isolated runner disk and tools
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import os
-          required = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
-          missing = [name for name in required if not os.environ.get(name)]
-          if missing:
-              raise SystemExit('Missing repository signing secrets: ' + ', '.join(missing))
-          PY
-          python3 scripts/check_public_tree.py
-          python3 -m unittest discover -s tests -p 'test_release_draft.py'
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '25'
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Download pinned upstream APK
+          set -euo pipefail
+          # Only the disposable hosted runner's unused preinstalled tool caches.
+          for directory in /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL; do
+            if [ -d "$directory" ]; then sudo rm -rf -- "$directory"; fi
+          done
+          available=$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 {print $4}')
+          if [ "$available" -lt 52428800 ]; then
+            echo 'At least 50 GiB free runner disk is required.' >&2
+            exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ninja-build pkg-config python3 curl unzip bzip2 xz-utils \
+            libglib2.0-dev libnss3-dev libasound2-dev libpulse-dev libudev-dev \
+            libx11-dev libxcomposite-dev libxdamage-dev libxext-dev libxfixes-dev \
+            libxrandr-dev libxtst-dev libdrm-dev libgbm-dev libgtk-3-dev
+      - name: Fetch immutable depot_tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tiplay-depot-tools"
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" init -q
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" fetch --depth=1 \
+            https://chromium.googlesource.com/chromium/tools/depot_tools.git \
+            7083aadfb53f3de2e20b72058c7f510da8f8218a
+          git -C "$RUNNER_TEMP/tiplay-depot-tools" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/tiplay-depot-tools" rev-parse HEAD)" = \
+            7083aadfb53f3de2e20b72058c7f510da8f8218a
+      - name: Prepare pinned WebRTC and apply reviewed patches
+        run: |
+          python3 scripts/webrtc/build.py prepare \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+          git -C "$RUNNER_TEMP/tiplay-webrtc/src" diff --check
+      - name: Check decoder factory with warnings treated as errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$RUNNER_TEMP/tiplay-webrtc/src" show \
+            HEAD:sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java \
+            > "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
+          python3 scripts/webrtc/test_compat_javac.py \
+            --pristine "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
+      - name: Check pinned Siso concurrency flag syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          siso="$RUNNER_TEMP/tiplay-webrtc/src/third_party/siso/cipd/siso"
+          # A help request proves parsing without starting a build. The invalid
+          # compact Ninja form must remain rejected by this exact Siso binary.
+          "$siso" ninja -local_jobs=2 -h > "$RUNNER_TEMP/siso-valid-help" 2>&1 || true
+          grep -q -- '-local_jobs' "$RUNNER_TEMP/siso-valid-help"
+          if grep -q 'flag provided but not defined' "$RUNNER_TEMP/siso-valid-help"; then
+            cat "$RUNNER_TEMP/siso-valid-help" >&2
+            exit 1
+          fi
+          if "$siso" ninja -j2 -h > "$RUNNER_TEMP/siso-invalid-help" 2>&1; then
+            echo 'Unexpected acceptance of unsupported -j2' >&2
+            exit 1
+          fi
+          grep -q 'flag provided but not defined: -j2' "$RUNNER_TEMP/siso-invalid-help"
+      - name: Run focused native source-rate tests
+        run: |
+          python3 scripts/webrtc/build.py test \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+      - name: Build custom AAR
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          SELECTED_ARCHITECTURES: ${{ inputs.architectures }}
         run: |
-          mkdir -m 700 "$RUNNER_TEMP/tiplay-release-inputs"
-          gh release download v0.2.18 --repo shihabal3amri/DiPlay --pattern DiPlay-0.2.18.apk --dir "$RUNNER_TEMP/tiplay-release-inputs"
-      - name: Verify upstream and prepare signing and runtime inputs
-        run: |
-          python3 - <<'PY'
-          import base64
-          import hashlib
-          import os
-          from pathlib import Path
-          import zipfile
-          inputs = Path(os.environ['RUNNER_TEMP']) / 'tiplay-release-inputs'
-          apk = inputs / 'DiPlay-0.2.18.apk'
-          expected = 'e241457b36b21fe75b06b5682b4dcfc4fbc25cf75b1855c7a4d055129635ce8e'
-          assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected, 'Upstream APK hash mismatch'
-          assets = inputs / 'runtime-assets' / 'offline-mfi'
-          assets.mkdir(parents=True, mode=0o700)
-          with zipfile.ZipFile(apk) as archive:
-              for name in ['identity.pk8', 'certificate.p7b']:
-                  data = archive.read('assets/offline-mfi/' + name)
-                  assert data, 'Empty runtime asset'
-                  target = assets / name
-                  target.write_bytes(data)
-                  target.chmod(0o600)
-          keystore = inputs / 'release.keystore'
-          keystore.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
-          keystore.chmod(0o600)
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'DIPLAY_AUTH_ASSETS_DIR={inputs / "runtime-assets"}\n')
-              env.write(f'ANDROID_KEYSTORE_PATH={keystore}\n')
-          PY
-      - name: Lint and build signed release
-        run: ./gradlew :mobile:lintRelease :mobile:assembleRelease --stacktrace
-      - name: Verify release APK and prepare artifacts
-        run: |
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs mobile/build/outputs/apk/release/mobile-release.apk
-          python3 - <<'PY'
-          import hashlib
-          import os
-          from pathlib import Path
-          import re
-          import shutil
-          import subprocess
-          import zipfile
-          apk = Path('mobile/build/outputs/apk/release/mobile-release.apk')
-          version = re.search(r'^tiplayVersionName=(.+)$', Path('gradle.properties').read_text(), re.M).group(1)
-          assert re.fullmatch(r'[0-9A-Za-z.-]+', version), 'Invalid version'
-          badging = subprocess.check_output([os.environ['ANDROID_HOME'] + '/build-tools/36.0.0/aapt', 'dump', 'badging', str(apk)], text=True)
-          assert "name='com.ujzk.tiplay'" in badging and f"versionName='{version}'" in badging
-          expected = {'assets/offline-mfi/identity.pk8', 'assets/offline-mfi/certificate.p7b'}
-          suffixes = {'.pk8', '.p7b', '.pem', '.key', '.p12', '.pfx', '.jks', '.keystore'}
-          with zipfile.ZipFile(apk) as archive:
-              assert {name for name in archive.namelist() if Path(name).suffix.lower() in suffixes} == expected
-              for name in expected:
-                  assert archive.read(name) == (Path(os.environ['DIPLAY_AUTH_ASSETS_DIR']) / name.removeprefix('assets/')).read_bytes()
-          output = Path('release-artifacts')
-          output.mkdir()
-          target = output / f'TiPlay-{version}.apk'
-          shutil.copyfile(apk, target)
-          source = output / f'TiPlay-{version}-source.zip'
-          subprocess.run(['git', 'archive', '--format=zip', f'--prefix=TiPlay-{version}/', '-o', str(source), 'HEAD'], check=True)
-          (output / 'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n' for path in [target, source]))
-          PY
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          case "$SELECTED_ARCHITECTURES" in
+            all) architectures=(armeabi-v7a arm64-v8a x86 x86_64) ;;
+            arm64-v8a|x86_64) architectures=("$SELECTED_ARCHITECTURES") ;;
+            *) echo 'Unsupported architecture selection' >&2; exit 1 ;;
+          esac
+          python3 scripts/webrtc/build.py build \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools" \
+            --arch "${architectures[@]}" \
+            --output "$RUNNER_TEMP/tiplay-webrtc-artifacts/tiplay-source-rate.aar"
+          cd "$RUNNER_TEMP/tiplay-webrtc-artifacts"
+          sha256sum tiplay-source-rate.aar > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Upload AAR, licenses and provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
+          name: tiplay-source-rate-${{ inputs.architectures }}
+          path: ${{ runner.temp }}/tiplay-webrtc-artifacts/
           if-no-files-found: error
-          retention-days: 14
-      - name: Remove temporary signing and runtime inputs
-        if: always()
-        run: rm -rf "$RUNNER_TEMP/tiplay-release-inputs"
-
-  draft:
-    if: ${{ inputs.create_draft }}
-    needs: release
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: TiPlay-signed-release
-          path: release-artifacts/
-      - name: Create or update draft with APK, source and SHA256
-        run: python3 scripts/publish_release_draft.py
+          retention-days: 7
