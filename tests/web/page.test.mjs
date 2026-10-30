@@ -403,7 +403,7 @@ test('default connection and retry messages keep technical state in the optional
   page.scheduleRetry(3000);
   assert.equal(page.text(), 'retryConnection:3');
   assert.equal(page.overlays.at(-1), 'retryConnection:3');
-  assert.match(page.details(), /Connection interrupted; retrying \(timeout\)/);
+  assert.match(page.details(), /Connection interrupted; retrying（connection timed out）/);
   assert.doesNotMatch(page.details(), /secret|pairing-code/);
   page.advance(1000);
   assert.equal(page.text(), 'retryConnection:2');

@@ -1,6 +1,31 @@
 plugins {
     id 'com.android.library'
 }
+
+// Do not silently build against a different native transport binary.
+def sourceRateWebRtcAar = rootProject.file('shared/libs/webrtc-source-rate/webrtc-source-rate.aar')
+def sourceRateWebRtcSha = rootProject.file('shared/libs/webrtc-source-rate/SHA256SUMS')
+def verifySourceRateWebRtc = tasks.register('verifySourceRateWebRtc') {
+    inputs.file(sourceRateWebRtcAar)
+    inputs.file(sourceRateWebRtcSha)
+    doLast {
+        def checksum = sourceRateWebRtcSha.text.trim()
+        if (!(checksum ==~ /[0-9a-f]{64}  webrtc-source-rate\.aar/)) {
+            throw new GradleException('Invalid source-rate WebRTC checksum manifest')
+        }
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        sourceRateWebRtcAar.withInputStream { stream ->
+            byte[] buffer = new byte[65536]
+            for (int n = stream.read(buffer); n != -1; n = stream.read(buffer)) digest.update(buffer, 0, n)
+        }
+        def actual = digest.digest().encodeHex().toString()
+        if (actual != checksum.substring(0, 64)) {
+            throw new GradleException('Unexpected source-rate WebRTC AAR SHA-256')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn(verifySourceRateWebRtc) }
+
 android {
     namespace = 'com.shilapi.xcertplay.shared'
     compileSdk = 37
@@ -47,8 +72,8 @@ dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation 'com.ujzk.vendor:geocoordinates:0.14.2@aar'
     implementation 'net.java.dev.jna:jna:5.18.1@aar'
-    // Pinned WebRTC M150; reliable SCTP DataChannels, all four packaged Android ABIs.
-    implementation 'io.github.webrtc-sdk:android:150.7871.01'
+    // Source-rate WebRTC M150; the local AAR supplies the sole org.webrtc/JNI copy.
+    implementation 'com.ujzk.vendor:webrtc-source-rate:150.7871.01@aar'
     implementation 'androidx.annotation:annotation:1.9.1'
     implementation libs.androidx.app
     implementation libs.bouncycastle

@@ -15,28 +15,36 @@ export async function phoneSupportsRtcVideo(fetchPhone, signal) {
 }
 
 /** Only codecs whose original access units the phone can forward without transcoding. */
-export function rtcVideoCodecs(Receiver = globalThis.RTCRtpReceiver) {
-  try { return (Receiver?.getCapabilities?.('video')?.codecs || []).filter(codec => /^video\/(H264|H265|HEVC)$/i.test(codec.mimeType)); }
-  catch (_) { return []; }
+export function inspectRtcVideoCodecs(Receiver = globalThis.RTCRtpReceiver) {
+  if (typeof Receiver?.getCapabilities !== 'function') return { status: 'api-unavailable', codecs: [] };
+  try {
+    const codecs = Receiver.getCapabilities('video')?.codecs;
+    if (!Array.isArray(codecs) || codecs.length === 0) return { status: 'empty', codecs: [] };
+    return { status: 'available', codecs: codecs.filter(codec => /^video\/(H264|H265|HEVC)$/i.test(codec?.mimeType)) };
+  } catch (_) { return { status: 'query-failed', codecs: [] }; }
 }
+export function rtcVideoCodecs(Receiver = globalThis.RTCRtpReceiver) { return inspectRtcVideoCodecs(Receiver).codecs; }
 
 /** SDP codec availability, not proof of the hardware decoder or display timing. */
-export async function probeRtcMirrorCapabilities(width, height) {
-  const codecs = rtcVideoCodecs();
-  return { h264: codecs.some(codec => /\/H264$/i.test(codec.mimeType)),
+export async function probeRtcMirrorCapabilities(width, height, onProbe = () => {}) {
+  const { status, codecs } = inspectRtcVideoCodecs();
+  const result = { h264: codecs.some(codec => /\/H264$/i.test(codec.mimeType)),
     hevc: codecs.some(codec => /\/(H265|HEVC)$/i.test(codec.mimeType)),
     maxWidth: Math.max(2, Math.min(1920, Math.floor(width / 2) * 2)),
     maxHeight: Math.max(2, Math.min(1080, Math.floor(height / 2) * 2)) };
+  try { onProbe({ status, h264: result.h264, hevc: result.hevc }); } catch (_) {} // Diagnostics cannot block capability reporting.
+  return result;
 }
 
 /** RTP source metadata and browser-decoded frames; compressed video is never decoded here. */
 export function createRtcVideoPipeline({ post, present, now = () => performance.now(), firstFrameWaitMs = 6000 } = {}) {
   let id = null, config = null, firstEpoch = null, failed = false, timer = null, firstFrameAt = null, decoded = 0, generation = 1, awaitingGeneration = false, lastFailure = null;
-  let pendingFrame = null;
+  let pendingFrame = null, preConfigDroppedFrames = 0;
   const stats = () => ({ ...records.stats(), streamGeneration: id, epoch: config?.epoch ?? null,
     mode: config?.mode ?? null, codec: config?.codec ?? null, width: config?.width ?? null, height: config?.height ?? null,
     videoTransport: RTC_VIDEO_TRANSPORT, videoGeneration: generation, decoderImplementation: 'unknown', codecSupported: !failed,
-    presentationTimingState: 'unavailable', errorReason: lastFailure, decoded, decoderStatsSampledAtMs: performance.timeOrigin + performance.now() });
+    presentationTimingState: 'unavailable', errorReason: lastFailure, decoded, preConfigDroppedFrames,
+    decoderStatsSampledAtMs: performance.timeOrigin + performance.now() });
   function discardPendingFrame() { pendingFrame?.close(); pendingFrame = null; }
   function fail(reason = 'rtc-video-unavailable') {
     if (id === null || failed && (reason !== 'video-renegotiation-required' || lastFailure === reason)) return;
@@ -49,7 +57,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
     if (!config) {
       // RTP can outrun its reliable CONFIG. Retain only the latest initial picture
       // from this track generation; an idled previous source must never donate one.
-      if (firstEpoch === null) { discardPendingFrame(); pendingFrame = frame; }
+      if (firstEpoch === null) { if (pendingFrame) preConfigDroppedFrames++; discardPendingFrame(); pendingFrame = frame; }
       else frame.close();
       return;
     }
@@ -101,7 +109,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
     onAlive: () => post({ type: 'alive', id, videoGeneration: generation }),
     onEnd: (_id, reason) => fail(reason),
   });
-  function stop() { records.stop(); clearInterval(timer); timer = null; discardPendingFrame(); id = config = firstEpoch = null; firstFrameAt = null; failed = false; decoded = 0; generation = 1; awaitingGeneration = false; lastFailure = null; }
+  function stop() { records.stop(); clearInterval(timer); timer = null; discardPendingFrame(); id = config = firstEpoch = null; firstFrameAt = null; failed = false; decoded = 0; preConfigDroppedFrames = 0; generation = 1; awaitingGeneration = false; lastFailure = null; }
   return {
     read(nextId, body) {
       stop(); id = nextId;
@@ -115,7 +123,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
     resetGeneration(next) {
       if (!Number.isSafeInteger(next) || next !== generation + 1) throw Error('Invalid RTP video generation.');
       discardPendingFrame();
-      generation = next; config = firstEpoch = null; failed = false; firstFrameAt = now(); awaitingGeneration = true; lastFailure = null;
+      generation = next; config = firstEpoch = null; failed = false; preConfigDroppedFrames = 0; firstFrameAt = now(); awaitingGeneration = true; lastFailure = null;
     },
     usesTrack: () => Boolean(config && !failed), fail, stop, stats,
   };

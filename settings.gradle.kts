@@ -23,7 +23,10 @@ dependencyResolutionManagement {
             url = uri("shared/libs")
             patternLayout { artifact("[module]/[artifact].[ext]") }
             metadataSources { artifact() }
-            content { includeModule("com.ujzk.vendor", "geocoordinates") }
+            content {
+                includeModule("com.ujzk.vendor", "geocoordinates")
+                includeModule("com.ujzk.vendor", "webrtc-source-rate")
+            }
         }
     }
 }

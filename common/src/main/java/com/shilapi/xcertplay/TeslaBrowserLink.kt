@@ -402,7 +402,9 @@ internal object TeslaBrowserLink {
             taps[sink] = web
             audioHub.carPlayEnabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
             val audio = BrowserAudioMediaSink(web, audioHub,
-                voiceFactory = app?.let { context -> BluetoothVoiceFactory { state -> AndroidBluetoothVoiceChannel(context, state) } })
+                voiceFactory = app?.let { context -> BluetoothVoiceFactory { state ->
+                    AndroidBluetoothVoiceChannel(context, state, selectedCarAddress = { CarBluetoothPreference.address(context) })
+                } })
             val previous = audioTaps.put(sink, audio)
             BrowserOnlyMediaSink(sink, audio) to previous
         }

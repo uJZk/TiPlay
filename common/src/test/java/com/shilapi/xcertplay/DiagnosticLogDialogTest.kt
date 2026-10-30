@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.app.Activity
+import android.net.Uri
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
@@ -47,29 +48,91 @@ class DiagnosticLogDialogTest {
         } finally { logs.close(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy() }
     }
 
-    @Test fun debugDialogOffersThreeStopActionsAndMinimizeWhichKeepsRecording() {
+    @Test fun debugDialogClosesWithoutDiscardingTheCapture() {
         val controller = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = controller.get()
         val actions = mutableListOf<DiagnosticLogAction>()
-        val logs = DiagnosticLogDialog(activity, perform = { actions.add(it) })
+        val logs = DiagnosticLogDialog(activity, perform = { actions.add(it) },
+            prepareShare = { action, _ -> actions.add(action) })
         try {
             AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
             logs.show()
             var dialog = ShadowAlertDialog.getLatestAlertDialog()
             assertEquals(1, countText(dialog.window!!.decorView, activity.getString(R.string.settings_debug_mode_description)))
-            assertEquals(listOf("结束并导出", "结束并分享", "撤销", "最小化"),
+            assertEquals(listOf("结束并导出", "结束并分享", "关闭"),
                 buttons(dialog.window!!.decorView).filter { it.visibility == View.VISIBLE }.map { it.text.toString() })
-            buttons(dialog.window!!.decorView).single { it.text == "最小化" }.performClick()
+            buttons(dialog.window!!.decorView).single { it.text == "关闭" }.performClick()
             assertFalse(dialog.isShowing)
             assertTrue(RawTraffic.enabled)
             assertTrue(actions.isEmpty())
             assertFalse(DiagnosticLogDialog.claimRestartPrompt())
             for ((text, action) in listOf("结束并导出" to DiagnosticLogAction.STOP_EXPORT,
-                "结束并分享" to DiagnosticLogAction.STOP_SHARE, "撤销" to DiagnosticLogAction.STOP)) {
+                "结束并分享" to DiagnosticLogAction.STOP_SHARE)) {
                 logs.show(); dialog = ShadowAlertDialog.getLatestAlertDialog()
                 buttons(dialog.window!!.decorView).single { it.text == text }.performClick()
                 assertEquals(action, actions.last())
             }
+        } finally {
+            logs.close(); AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
+            RawTraffic.clear(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy()
+        }
+    }
+
+    @Test fun sharingKeepsDialogAndReusesTheSameReport() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup()
+        val activity = controller.get()
+        var preparations = 0
+        var completed: ((Result<DiagnosticExportStore.SavedReport?>) -> Unit)? = null
+        val shared = mutableListOf<DiagnosticExportStore.SavedReport>()
+        val logs = DiagnosticLogDialog(activity,
+            prepareShare = { action, callback ->
+                assertEquals(DiagnosticLogAction.STOP_SHARE, action)
+                preparations++
+                completed = callback
+            }, shareAgain = { shared.add(it) })
+        try {
+            AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+            logs.show()
+            val dialog = ShadowAlertDialog.getLatestAlertDialog()
+            val share = buttons(dialog.window!!.decorView).single { it.text == "结束并分享" }
+            share.performClick()
+            share.performClick()
+            assertEquals(1, preparations)
+            assertTrue(dialog.isShowing)
+            val saved = DiagnosticExportStore.SavedReport(Uri.parse("content://example/report"), mimeType = "application/zip")
+            completed!!(Result.success(saved))
+            assertEquals("再次分享", share.text.toString())
+            share.performClick()
+            share.performClick()
+            assertEquals(listOf(saved, saved), shared)
+            assertEquals(1, preparations)
+            assertTrue(dialog.isShowing)
+        } finally {
+            logs.close(); AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
+            RawTraffic.clear(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy()
+        }
+    }
+
+    @Test fun failedPreparationAllowsRetryWithoutDiscardingCapture() {
+        val controller = Robolectric.buildActivity(Activity::class.java).setup()
+        val activity = controller.get()
+        var attempts = 0
+        val logs = DiagnosticLogDialog(activity, prepareShare = { _, callback ->
+            attempts++
+            callback(Result.failure(java.io.IOException("storage unavailable")))
+        })
+        try {
+            AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.DEBUG)
+            logs.show()
+            val dialog = ShadowAlertDialog.getLatestAlertDialog()
+            val share = buttons(dialog.window!!.decorView).single { it.text == "结束并分享" }
+            share.performClick()
+            share.performClick()
+            assertEquals(2, attempts)
+            assertTrue(dialog.isShowing)
+            assertTrue(RawTraffic.enabled)
+            buttons(dialog.window!!.decorView).single { it.text == "关闭" }.performClick()
+            assertTrue(RawTraffic.enabled)
         } finally {
             logs.close(); AirPlayPersistence.saveDiagnosticLogLevel(activity, DiagnosticLogLevel.STANDARD)
             RawTraffic.clear(); DiagnosticLogs.resetForTest(); controller.pause().stop().destroy()

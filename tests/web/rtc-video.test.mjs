@@ -1,10 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, phoneSupportsRtcVideo, RTC_VIDEO_TRANSPORT } from '../../site/play/rtc-video.js';
+import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, inspectRtcVideoCodecs, probeRtcMirrorCapabilities, phoneSupportsRtcVideo, RTC_VIDEO_TRANSPORT } from '../../site/play/rtc-video.js';
 import { createFramePresenter } from '../../site/play/video.js';
 import { RECORD, encodeRecord } from '../../site/play/link.js';
 
+test('WebRTC codec capability query distinguishes absent, empty and failed APIs', () => {
+  assert.deepEqual(inspectRtcVideoCodecs({}), { status: 'api-unavailable', codecs: [] });
+  assert.deepEqual(inspectRtcVideoCodecs({ getCapabilities: () => ({ codecs: [] }) }), { status: 'empty', codecs: [] });
+  assert.deepEqual(inspectRtcVideoCodecs({ getCapabilities: () => { throw new Error('private'); } }), { status: 'query-failed', codecs: [] });
+  assert.deepEqual(inspectRtcVideoCodecs({ getCapabilities: () => ({ codecs: [{ mimeType: 'video/H264' }, { mimeType: 'video/VP8' }] }) }),
+    { status: 'available', codecs: [{ mimeType: 'video/H264' }] });
+});
+
+test('the capability explanation describes the exact codec list sent to Android', async () => {
+  const previous = globalThis.RTCRtpReceiver;
+  globalThis.RTCRtpReceiver = { getCapabilities: () => ({ codecs: [{ mimeType: 'video/H264' }] }) };
+  try {
+    let observed;
+    const caps = await probeRtcMirrorCapabilities(1200, 800, value => { observed = value; });
+    assert.deepEqual(observed, { status: 'available', h264: true, hevc: false });
+    assert.deepEqual(caps, { h264: true, hevc: false, maxWidth: 1200, maxHeight: 800 });
+    assert.deepEqual(await probeRtcMirrorCapabilities(1200, 800, () => { throw Error('diagnostic error'); }), caps);
+  } finally { globalThis.RTCRtpReceiver = previous; }
+});
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const frame = () => ({ closed: 0, close() { this.closed++; } });
 const config = (epoch, videoTransport = RTC_VIDEO_TRANSPORT, videoGeneration = 1, fields = {}) => encodeRecord({ kind: RECORD.CONFIG, epoch,
@@ -152,9 +171,13 @@ test('pending native pictures retain only the latest frame until the first match
   for (const value of frames) pipeline.trackFrame(value, 1);
   assert.deepEqual(frames.map(value => value.closed), [1, 1, 1, 0]);
   assert.equal(pipeline.stats().decoded, 0);
+  assert.equal(pipeline.stats().preConfigDroppedFrames, 3);
   controller.enqueue(config(1)); await settle();
   controller.enqueue(config(1)); await settle();
   assert.deepEqual(drawn, [frames[3]]); assert.deepEqual(frames.map(value => value.closed), [1, 1, 1, 1]);
+  assert.equal(pipeline.stats().preConfigDroppedFrames, 3);
+  pipeline.resetGeneration(2);
+  assert.equal(pipeline.stats().preConfigDroppedFrames, 0);
 });
 
 test('retiring, idling or rejecting the source closes its pending native picture exactly once', async t => {

@@ -36,7 +36,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
   const stopText = lang === 'zh' ? '结束投放' : 'Stop casting';
   stage.append(layer);
   let state = null, player = null, loading = null, key = null, appliedRevision = -1, appliedSeekRevision = -1, appliedTrackRevision = -1, metadata = false, timer = null;
-  let directive = null, disposed = false, waiting = false, sourceReady = false;
+  let directive = null, disposed = false, waiting = false, sourceReady = false, terminalFailure = false;
   let outputWasAllowed = true;
   let diagnostics = null, photo = null, preparation = false, playerKind = null, carPlayRunning = false;
   let playerModule = null, artworkURL = null;
@@ -64,7 +64,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     layer.replaceChildren();
     preparation = false; layer.removeAttribute('aria-busy'); layer.removeAttribute('data-preparing');
     photo?.dispose(); photo = null; playerKind = null; artwork.update(null, null); artworkURL = null;
-    key = null; metadata = sourceReady = false; waiting = false; outputWasAllowed = true;
+    key = null; metadata = sourceReady = terminalFailure = false; waiting = false; outputWasAllowed = true;
     appliedRevision = appliedSeekRevision = appliedTrackRevision = -1;
     layer.hidden = true;
   }
@@ -92,7 +92,15 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     message.textContent = failureText(error); layer.append(message);
   }
   function report() {
-    if (!player || !state || state.kind === 'audio' || state.kind === 'photo') return;
+    if (!state || state.kind === 'audio' || state.kind === 'photo') return;
+    // A failed source has no commands left to apply. Repeat its terminal state
+    // against the latest directive until Android retires this playback owner.
+    if (terminalFailure) {
+      send({ k: 'ap-state', id: state.id, revision: state.revision, duration: 0, position: 0,
+        playing: false, ready: false, buffering: false, seekable: false, failed: true });
+      return;
+    }
+    if (!player) return;
     if (player.error() && !metadata) appliedRevision = state.revision;
     if (appliedRevision !== state.revision) return;
     const media = player.media;
@@ -268,7 +276,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
           if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') { observation.event('proxy-fallback'); void open(state, true); return; }
           if (event === 'playing') finishPreparation();
-          else if (event === 'error') showFailure(media.error);
+          else if (event === 'error') { terminalFailure = true; showFailure(media.error); }
           else syncPreparation();
           report();
         });
@@ -281,14 +289,14 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
         media.currentTime = resume.time; media.playbackRate = resume.rate;
       }
       report();
-      timer = setInterval(report, 400);
+      timer ??= setInterval(report, 400);
     } catch (error) {
       if (owns()) {
         observation.event('open-error', error);
+        terminalFailure = true;
         showFailure(error);
-        appliedRevision = state.revision;
-        send({ k: 'ap-state', id: state.id, revision: state.revision, duration: 0, position: 0,
-          playing: false, ready: false, buffering: false, seekable: false, failed: true });
+        report();
+        timer ??= setInterval(report, 400);
       }
     }
   }
@@ -315,6 +323,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
       const nextKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
       if (key !== nextKey) open(next);
+      else if (terminalFailure) report();
       else applyDirective();
     },
     setCarPlayRunning(value) {

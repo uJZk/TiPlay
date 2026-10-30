@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFpsWindow, formatPerformanceMonitor, performanceStats } from '../../site/play/fps-window.js';
+import { createFpsWindow, createReceiveProcessingTracker, formatPerformanceMonitor, performanceStats } from '../../site/play/fps-window.js';
 import { sampleClock, presentationTime } from '../../site/play/clock-sync.js';
 
 test('average draw count exposes burst spacing instead of establishing display refresh rate', () => {
@@ -45,7 +45,7 @@ test('warm-up, expiration and reset never retain stale data', () => {
   window.frame(6000, 1, -1);
   assert.equal(window.stats(6000).fps90, null);
   assert.equal(window.stats(6000).presentationOffset90, -1);
-  assert.equal(formatPerformanceMonitor('H.264'), 'H.264 · — fps · — ms · — drops');
+  assert.equal(formatPerformanceMonitor('H.264'), 'H.264 · — fps · recv — ms · RTC — / app — drops');
 });
 
 test('browser clock bridge preserves scheduled future presentation and rejects unrelated clocks', () => {
@@ -60,11 +60,16 @@ test('browser clock bridge preserves scheduled future presentation and rejects u
   assert.equal(presentationTime(90, null, 1030), null);
 });
 
-test('performance monitor has codec, current FPS, current Delta and explicit dropped-frame total', () => {
+test('performance monitor separates receive processing and browser, transfer and renderer drops', () => {
   const stats = { currentFps: 60, currentDelta: 5.2, presentationOffset90: 99, presentationOffsetHigh5: 34.1,
     decodeDroppedFrames: 1, scheduledDroppedFrames: 2, transferDroppedFrames: 3, renderDroppedFrames: 4 };
-  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 60 fps · 5 ms · 10 drops');
+  const rtp = { state: 'selected', sampleAgeMs: 20, receiveProcessingMs: 8.1, framesDropped: 83 };
+  assert.equal(formatPerformanceMonitor('HEVC', stats, rtp), 'HEVC · 60 fps · recv 8 ms · RTC 83 / app pre — in — out 3 render 4 drops');
   assert.equal(formatPerformanceMonitor('HEVC', stats).split(' · ').length, 4);
+  assert.equal(formatPerformanceMonitor('HEVC', { ...stats, mainTransferDroppedFrames: 2 }, { ...rtp, sampleAgeMs: 5001 }),
+    'HEVC · 60 fps · recv — ms · RTC — / app pre — in 2 out 3 render 4 drops');
+  assert.equal(formatPerformanceMonitor('HEVC', stats, rtp, 'zh'),
+    'HEVC · 60 fps · 接收处理 8 ms · RTC 83 / 应用 预 — 入 — 出 3 绘制 4 丢帧');
   assert.equal(performanceStats(stats).droppedFrames, 10);
   assert.equal(performanceStats({ decoded: 100, expiredFrames: 20 }).droppedFrames, null, 'unrelated counts never imply drops');
 });
@@ -76,7 +81,7 @@ test('early presentation stays negative and the slowest tail contains the larges
   const stats = window.stats(at);
   assert.equal(stats.presentationOffset90, -40);
   assert.equal(stats.presentationOffsetHigh5, -10);
-  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 20 fps · -10 ms · — drops');
+  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 20 fps · recv — ms · RTC — / app — drops');
 });
 
 test('current FPS counts actual draws in a rolling second and reaches zero while offsets retain their five-second window', () => {
@@ -95,7 +100,7 @@ test('current FPS counts actual draws in a rolling second and reaches zero while
   now = 1500;
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, -40);
-  assert.equal(formatPerformanceMonitor('HEVC', window.stats()), 'HEVC · 0 fps · — ms · — drops');
+  assert.equal(formatPerformanceMonitor('HEVC', window.stats()), 'HEVC · 0 fps · recv — ms · RTC — / app — drops');
   window.reset();
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, null);
@@ -114,4 +119,20 @@ test('current Delta belongs to the latest successful draw and never reuses a pre
   assert.equal(window.stats(1060).currentDelta, null);
   window.reset();
   assert.equal(window.stats(1060).currentDelta, null);
+});
+
+test('receive processing uses fresh consecutive samples of the same RTP stream and generation', () => {
+  const tracker = createReceiveProcessingTracker();
+  const stats = (id, timestamp, framesDecoded, totalProcessingDelay) => ({ id, timestamp, framesDecoded, totalProcessingDelay });
+  assert.equal(tracker.sample(stats('one', 1000, 10, .1), 1), null);
+  assert.ok(Math.abs(tracker.sample(stats('one', 2000, 30, .3), 1) - 10) < 1e-8);
+  assert.equal(tracker.sample(stats('two', 3000, 40, .4), 1), null);
+  assert.equal(tracker.sample(stats('two', 4000, 50, .5), 2), null);
+  assert.equal(tracker.sample(stats('two', 10000, 60, .6), 2), null, 'stale baseline');
+  assert.equal(tracker.sample(stats('two', 11000, 60, .6), 2), null, 'no new frames');
+  assert.equal(tracker.sample(stats('two', 12000, 70, .1), 2), null, 'counter reset');
+  assert.equal(tracker.sample({ timestamp: 13000, framesDecoded: 80, totalProcessingDelay: .2 }, 2), null, 'no identity');
+  assert.equal(tracker.sample(stats('two', 14000, 90, .3), 2), null, 'invalid sample clears baseline');
+  tracker.reset();
+  assert.equal(tracker.sample(stats('two', 15000, 100, .4), 2), null);
 });

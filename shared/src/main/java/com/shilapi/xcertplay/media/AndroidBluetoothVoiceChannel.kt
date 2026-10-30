@@ -29,10 +29,30 @@ import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.MicrophoneCounters
 import java.util.concurrent.atomic.AtomicBoolean
 
+internal fun sameBluetoothSelection(first: String?, second: String?): Boolean =
+    if (first == null || second == null) first == null && second == null
+    else first.trim().equals(second.trim(), ignoreCase = true)
+
+internal fun <T> selectBluetoothAudioDevice(devices: List<T>, target: String?, address: (T) -> String?): T? =
+    if (target == null) devices.singleOrNull()
+    else devices.filter { candidate -> address(candidate)?.takeIf { it.isNotBlank() }
+        ?.let { sameBluetoothSelection(target, it) } == true }.singleOrNull()
+
+private fun audioAddress(device: AudioDeviceInfo): String? =
+    if (Build.VERSION.SDK_INT >= 28) device.address.takeIf { it.isNotBlank() } else null
+
+private val retryableFailures = setOf("car-bluetooth-unavailable", "car-bluetooth-disconnected",
+    "bluetooth-input-unavailable", "bluetooth-output-unavailable", "bluetooth-connect-timeout", "bluetooth-route-rejected",
+    "bluetooth-route-failed", "bluetooth-duplex-failed", "bluetooth-output-failed", "communication-route-busy")
+
 /** Android is the HFP audio gateway. Device selection never substitutes the handset microphone. */
 @Suppress("DEPRECATION")
 @SuppressLint("MissingPermission") // Both runtime permissions are checked before opening the route/devices.
-class AndroidBluetoothVoiceChannel(context: Context, private val state: (BluetoothVoiceState) -> Unit) : BluetoothVoiceChannel {
+class AndroidBluetoothVoiceChannel(
+    context: Context,
+    private val state: (BluetoothVoiceState) -> Unit,
+    private val selectedCarAddress: (() -> String?)? = null,
+) : BluetoothVoiceChannel {
     private val context = context.applicationContext
     private val manager = context.getSystemService(AudioManager::class.java)
     private val main = Handler(Looper.getMainLooper())
@@ -54,6 +74,11 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
     private var legacySco = false
     private var receiverRegistered = false
     private var profilePending = false
+    private var profileAttempt = 0L
+    private var activeCarAddress: String? = null
+    private var failedCarAddress: String? = null
+    private var unavailableAttempts = 0
+    private var retryAt = Long.MAX_VALUE
     private var devices: Devices? = null
     private var workerRetiring = false
     private var generation = 0
@@ -71,7 +96,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
 
     override fun start(config: MicrophoneConfig) { main.post {
         if (closed) return@post
-        wanted = config; failure = null
+        wanted = config; failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
         retireDevices()
         mixer.clear()
         state(BluetoothVoiceState("connecting"))
@@ -89,37 +114,62 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
         (Build.VERSION.SDK_INT < 31 || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
 
     private fun acquire() {
-        if (!permitted()) { fail("microphone-or-bluetooth-permission"); return }
-        if (manager.mode == AudioManager.MODE_IN_CALL || manager.mode == AudioManager.MODE_IN_COMMUNICATION ||
-            (Build.VERSION.SDK_INT >= 31 && manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
-            fail("communication-route-busy"); return
-        }
         try {
+            val address = selectedCarAddress?.invoke()?.trim()?.uppercase(java.util.Locale.ROOT)
+            activeCarAddress = address
+            if (!permitted()) { fail("microphone-or-bluetooth-permission"); return }
+            if (manager.mode == AudioManager.MODE_IN_CALL || manager.mode == AudioManager.MODE_IN_COMMUNICATION ||
+                (Build.VERSION.SDK_INT >= 31 && manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
+                fail("communication-route-busy"); return
+            }
+            // An explicit provider means the user controls the target. Clearing it
+            // must not switch an ongoing call to an unrelated connected headset.
+            if (selectedCarAddress != null && address == null) {
+                fail("car-bluetooth-not-selected"); return
+            }
+            if (address != null && !android.bluetooth.BluetoothAdapter.checkBluetoothAddress(address)) {
+                fail("car-bluetooth-unavailable"); return
+            }
             if (Build.VERSION.SDK_INT >= 31) {
                 val candidates = manager.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-                if (candidates.size != 1) { fail(if (candidates.isEmpty()) "car-bluetooth-unavailable" else "multiple-bluetooth-headsets"); return }
-                selected = candidates.single(); previousDevice = manager.communicationDevice
+                val target = selectBluetoothAudioDevice(candidates, address) { audioAddress(it) }
+                if (target == null) { fail(if (address != null || candidates.isEmpty()) "car-bluetooth-unavailable" else "multiple-bluetooth-headsets"); return }
+                selected = target; previousDevice = manager.communicationDevice
                 openRoute()
             } else {
                 if (!manager.isBluetoothScoAvailableOffCall) { fail("car-bluetooth-unavailable"); return }
                 profilePending = true
+                val attempt = ++profileAttempt
                 connectingAt = SystemClock.elapsedRealtime()
                 val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
                 val accepted = adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                     override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) { main.post {
                         try {
-                            if (!profilePending || wanted == null || closed) return@post
+                            if (attempt != profileAttempt || !profilePending || wanted == null || closed) return@post
                             profilePending = false
-                            if ((proxy as BluetoothHeadset).connectedDevices.size != 1) { fail("car-bluetooth-unavailable"); return@post }
+                            val connected = (proxy as BluetoothHeadset).connectedDevices
+                            // startBluetoothSco cannot select an HFP device. The target must
+                            // be the sole connected headset and audio addresses must be visible.
+                            if (connected.size != 1 || (address != null && (Build.VERSION.SDK_INT < 28 ||
+                                    !connected.single().address.equals(address, ignoreCase = true)))) {
+                                fail("car-bluetooth-unavailable"); return@post
+                            }
+                            if (!sameBluetoothSelection(address, selectedCarAddress?.invoke())) {
+                                restartForSelectionChange(); return@post
+                            }
                             openRoute()
-                        } catch (_: Exception) { fail("bluetooth-route-failed") }
-                        finally { adapter.closeProfileProxy(profile, proxy) }
+                        } catch (_: SecurityException) { fail("bluetooth-permission-denied") }
+                        catch (_: Exception) { fail("bluetooth-route-failed") }
+                        finally { runCatching { adapter.closeProfileProxy(profile, proxy) } }
                     } }
-                    override fun onServiceDisconnected(profile: Int) { main.post { if (acquired) fail("car-bluetooth-disconnected") } }
+                    override fun onServiceDisconnected(profile: Int) { main.post {
+                        if (attempt == profileAttempt && acquired) fail("car-bluetooth-disconnected")
+                    } }
                 }, BluetoothProfile.HEADSET) == true
                 if (!accepted) fail("car-bluetooth-unavailable") else schedule()
             }
-        } catch (_: Exception) { fail("bluetooth-route-failed") }
+        } catch (_: SecurityException) { fail("bluetooth-permission-denied") }
+        catch (_: Exception) { fail("bluetooth-route-failed") }
     }
 
     private fun openRoute() {
@@ -162,24 +212,50 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                 return
             }
             if (wanted == null || closed) return
-            if (failure != null && !acquired && !profilePending && !workerRetiring) return
+            if (failure != null && !acquired && !profilePending && !workerRetiring) {
+                val changed = selectedCarAddress != null && !sameBluetoothSelection(failedCarAddress, selectedCarAddress.invoke())
+                val permissionRestored = failure == "microphone-or-bluetooth-permission" && permitted()
+                val retryDue = failure in retryableFailures && SystemClock.elapsedRealtime() >= retryAt
+                if (((changed || retryDue) && permitted()) || permissionRestored) {
+                    if (changed) unavailableAttempts = 0
+                    failure = null
+                    state(BluetoothVoiceState("connecting"))
+                    acquire()
+                } else if (selectedCarAddress != null) scheduleFailure()
+                return
+            }
             if (!permitted()) { fail("microphone-or-bluetooth-permission"); return }
+            if (!sameBluetoothSelection(activeCarAddress, selectedCarAddress?.invoke())) {
+                restartForSelectionChange(); return
+            }
             if (acquired && manager.mode != AudioManager.MODE_IN_COMMUNICATION) { fail("communication-route-busy"); return }
             if (SystemClock.elapsedRealtime() - connectingAt >= 8000 && devices == null) { fail("bluetooth-connect-timeout"); return }
             if (acquired && scoReady()) {
                 if (devices == null && !workerRetiring) createDevices(requireNotNull(wanted))
             } else if (devices != null) { fail("car-bluetooth-disconnected"); return }
             schedule()
-        } catch (_: Exception) { fail("bluetooth-route-failed") }
+        } catch (_: SecurityException) { fail("bluetooth-permission-denied") }
+        catch (_: Exception) { fail("bluetooth-route-failed") }
     }
     private fun schedule() { main.removeCallbacks(poll); main.postDelayed(poll, 100) }
+    private fun scheduleFailure() { main.removeCallbacks(poll); main.postDelayed(poll, 1000) }
+
+    private fun restartForSelectionChange() {
+        // Releasing the previous route and its worker precedes acquiring the
+        // newly selected device. Pending callbacks are invalidated by release().
+        failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
+        state(BluetoothVoiceState("connecting"))
+        release()
+    }
 
     private fun createDevices(config: MicrophoneConfig) {
         val inputCandidates = manager.getDevices(AudioManager.GET_DEVICES_INPUTS).filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-        val input = inputCandidates.singleOrNull { selected?.address?.isNotEmpty() == true && it.address == selected?.address }
-            ?: inputCandidates.singleOrNull() ?: run { fail("bluetooth-input-unavailable"); return }
+        val input = (if (activeCarAddress != null) selectBluetoothAudioDevice(inputCandidates, activeCarAddress, ::audioAddress)
+            else selectBluetoothAudioDevice(inputCandidates, selected?.let(::audioAddress), ::audioAddress) ?: inputCandidates.singleOrNull())
+            ?: run { fail("bluetooth-input-unavailable"); return }
         val output = if (Build.VERSION.SDK_INT >= 31) selected else manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            .filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }.singleOrNull()
+            .filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            .let { selectBluetoothAudioDevice(it, activeCarAddress, ::audioAddress) }
         if (output == null) { fail("bluetooth-output-unavailable"); return }
         val next = Devices(config, input, output, ++generation, counters.getOrPut(config) { MicrophoneCounters() })
         devices = next; next.start()
@@ -187,7 +263,12 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
 
     private fun fail(reason: String) {
         Log.w("TiPlayBluetoothVoice", "Voice route failed reason=$reason")
-        failure = reason; profilePending = false
+        failure = reason; failedCarAddress = activeCarAddress; profilePending = false
+        retryAt = if (reason in retryableFailures && selectedCarAddress != null && activeCarAddress != null) {
+            val delay = (2_000L shl unavailableAttempts.coerceAtMost(4)).coerceAtMost(30_000L)
+            unavailableAttempts++
+            SystemClock.elapsedRealtime() + delay
+        } else Long.MAX_VALUE
         state(BluetoothVoiceState("failed", reason, released = !acquired && !workerRetiring))
         release()
     }
@@ -201,7 +282,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
         runCatching { retiring.track?.pause(); retiring.track?.flush() }
     }
     private fun release() {
-        profilePending = false
+        profilePending = false; profileAttempt++
         main.removeCallbacks(poll)
         retireDevices(); mixer.clear()
         if (!acquired) {
@@ -224,10 +305,13 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
     }
     private fun finishRelease() {
         main.removeCallbacks(poll)
-        acquired = false; releasingAt = 0; selected = null
+        acquired = false; releasingAt = 0; selected = null; activeCarAddress = null
         if (receiverRegistered) { runCatching { context.unregisterReceiver(receiver) }; receiverRegistered = false }
         if (wanted != null && failure == null && !closed) acquire()
-        else state(BluetoothVoiceState(if (failure != null && wanted != null) "failed" else "idle", failure, released = true))
+        else {
+            state(BluetoothVoiceState(if (failure != null && wanted != null) "failed" else "idle", failure, released = true))
+            if (wanted != null && failure != null && selectedCarAddress != null && !closed) scheduleFailure()
+        }
     }
 
     private inner class Devices(val config: MicrophoneConfig, val input: AudioDeviceInfo, val output: AudioDeviceInfo, val token: Int,
@@ -236,7 +320,7 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
         @Volatile var record: AudioRecord? = null
         @Volatile var track: AudioTrack? = null
         private fun matches(device: AudioDeviceInfo?, expected: AudioDeviceInfo) = device?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO &&
-            (device.id == expected.id || expected.address.isNotEmpty() && device.address == expected.address)
+            (device.id == expected.id || audioAddress(expected)?.let { sameBluetoothSelection(it, audioAddress(device)) } == true)
         fun start() { Thread({
             runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var sender: BrowserMicrophone? = null
@@ -286,7 +370,8 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                                 writtenFrames += count
                             }
                         }
-                    } catch (_: Exception) { if (running.get()) main.post { if (token == generation) fail("bluetooth-output-failed") } }
+                    } catch (error: Exception) { if (running.get()) main.post { if (token == generation)
+                        fail(if (error is SecurityException) "bluetooth-permission-denied" else "bluetooth-output-failed") } }
                 }, "tiplay-bluetooth-speaker").apply { isDaemon = true; start() }
                 val captureResampler = NativePcmResampler(rate, sender.sampleRate).also { resampler = it }
                 val samples = ShortArray(rate / 50)
@@ -318,14 +403,18 @@ class AndroidBluetoothVoiceChannel(context: Context, private val state: (Bluetoo
                     }
                     if (!ready.get()) {
                         ready.set(true)
-                        main.post { if (token == generation && wanted === config && running.get()) state(BluetoothVoiceState("active")) }
+                        main.post { if (token == generation && wanted === config && running.get()) {
+                            unavailableAttempts = 0; retryAt = Long.MAX_VALUE
+                            state(BluetoothVoiceState("active"))
+                        } }
                     }
                     val converted = captureResampler.convert(if (count == samples.size) samples else samples.copyOf(count))
                     val pcm = ByteArray(converted.size * 2)
                     converted.forEachIndexed { i, sample -> pcm[2 * i] = sample.toByte(); pcm[2 * i + 1] = (sample.toInt() shr 8).toByte() }
                     sender.accept(pcm)
                 }
-            } catch (_: Exception) { if (running.get()) main.post { if (token == generation) fail("bluetooth-duplex-failed") } }
+            } catch (error: Exception) { if (running.get()) main.post { if (token == generation)
+                fail(if (error is SecurityException) "bluetooth-permission-denied" else "bluetooth-duplex-failed") } }
             finally {
                 running.set(false)
                 runCatching { record?.stop() }; runCatching { track?.stop() }
