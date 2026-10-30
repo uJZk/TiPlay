@@ -409,6 +409,15 @@ test('the canonical Standard selector fixture preserves actual pairing, ICE, dea
   assert.ok(Buffer.byteLength(JSON.stringify(actual.v)) <= 2048);
 });
 
+test('ordinary diagnostics retain failure candidate counts after the live connection has retired', () => {
+  const page = { link: { failure: { reason: 'ice', localCandidates: 2, remoteCandidates: 0 } },
+    video: { streamGeneration: 1, epoch: 1, decodeErrors: 1 } };
+  const [event] = browserDiagnosticEvents(page, false);
+  assert.equal(event.v['link.failure.localCandidates'], 2);
+  assert.equal(event.v['link.failure.remoteCandidates'], 0);
+  assert.ok(!('link.connection.localCandidates' in event.v));
+});
+
 test('a dense live policy summary retains owner, all drop components, actual target, capacity and both clock views', () => {
   const fixture = JSON.parse(readFileSync(new URL('../../shared/src/test/resources/Browser-live-policy-diagnostics-v1.json', import.meta.url), 'utf8'));
   const [actual] = browserDiagnosticEvents(fixture.input.page, fixture.input.themeDark);

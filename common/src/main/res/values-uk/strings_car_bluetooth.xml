@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_car_bluetooth_choose">Bluetooth автомобіля</string>
+    <string name="settings_car_bluetooth_none">Не вибрано</string>
+    <string name="settings_car_bluetooth_clear">Очистити вибір</string>
+    <string name="settings_car_bluetooth_find">Знайти та спарувати автомобіль</string>
+    <string name="settings_car_bluetooth_not_selected">Виберіть Bluetooth автомобіля для звуку.</string>
+    <string name="settings_car_bluetooth_disconnected">Вибраний Bluetooth автомобіля не підключено; невідомо, чи він поруч.</string>
+    <string name="settings_car_bluetooth_manual">Bluetooth автомобіля не підключено. Ця версія Android не підтримує автоматичне підключення; підключіть його в налаштуваннях Bluetooth.</string>
+    <string name="settings_car_bluetooth_connect_failed">Не вдалося автоматично підключити Bluetooth автомобіля; перевірте налаштування Bluetooth.</string>
+    <string name="settings_car_bluetooth_permission">Дозвольте доступ до пристроїв поблизу, щоб вибрати Bluetooth автомобіля.</string>
+    <string name="settings_car_bluetooth_unsupported_pairing">Цей пристрій Android не підтримує спарування супутнього пристрою.</string>
+    <string name="settings_car_bluetooth_pair_failed">Не вдалося повʼязати або спарувати Bluetooth автомобіля; спробуйте ще раз.</string>
+    <string name="settings_car_bluetooth_not_iphone">Вибраний iPhone не може бути Bluetooth автомобіля.</string>
+    <string name="settings_car_bluetooth_enable">Увімкніть Bluetooth, щоб вибрати автомобіль.</string>
+    <string name="settings_car_bluetooth_route_unknown">Bluetooth автомобіля підключено, але Android не може підтвердити маршрут вибраного мікрофона автомобіля.</string>
+    <string name="settings_car_bluetooth_open_settings">Відкрити налаштування Bluetooth</string>
+</resources>

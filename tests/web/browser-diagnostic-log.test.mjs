@@ -20,7 +20,7 @@ test('diagnostics accept only safe reason codes and note transitions and recover
   assert.equal(log.lines()[0], 'Video error cleared');
   log.observeSummary({ 'video.errorReason': 'codec-profile-not-negotiated', 'audio.nativeAudio.state': 'failed', 'video.decodeErrors': 1 });
   log.observeSummary({ 'video.errorReason': 'codec-profile-not-negotiated', 'audio.nativeAudio.state': 'failed', 'video.decodeErrors': 1 });
-  assert.equal(log.lines().filter(line => line === 'Video decode errors increased').length, 1);
+  assert.equal(log.lines().filter(line => line === 'Video decode errors increased：total 1').length, 1);
   assert.ok(log.lines().includes('Audio connection failed'));
   assert.doesNotMatch(log.lines().join(' '), /secret|https|password/);
   log.observe({ videoError: '12345678-abcd-1234-abcd-123456789abc' });
@@ -87,4 +87,70 @@ test('folded diagnostics update without programmatically moving a non-top scroll
   assert.equal(writes, 0);
   assert.equal(top, 12);
   assert.equal(content, 'Connecting to Android');
+});
+
+test('capabilities explain codec choice without exposing capability strings', () => {
+  const log = createBrowserDiagnosticLog({ language: 'zh' });
+  log.observe({ capability: { status: 'available', h264: true, hevc: false, detail: 'private-device' } });
+  log.observe({ capability: { status: 'available', h264: true, hevc: false } });
+  assert.deepEqual(log.lines(), ['浏览器 WebRTC 视频：H.264 支持，H.265 未报告']);
+  log.observe({ capability: { status: 'query-failed', detail: 'secret exception' } });
+  log.observe({ capability: { status: 'empty' } });
+  log.observe({ capability: { status: 'api-unavailable' } });
+  assert.deepEqual(log.lines().slice(0, 3), ['浏览器不提供 WebRTC 编码查询接口', '浏览器返回的 WebRTC 编码列表为空', '浏览器 WebRTC 编码查询失败']);
+  assert.doesNotMatch(log.lines().join(' '), /private|secret/);
+});
+
+test('video format and numeric failures give useful bounded detail without raw input', () => {
+  const log = createBrowserDiagnosticLog({ language: 'zh' });
+  log.observe({ phase: 'retry', failure: 'timeout', videoConfig: { codec: 'avc1.64002a', width: 1920, height: 1080, url: 'https://secret.invalid' } });
+  log.observe({ videoError: 'rtc-video-first-frame-timeout' });
+  log.observeSummary({ 'video.decodeErrors': 2, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
+  log.observeSummary({ 'video.decodeErrors': 4, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
+  assert.ok(log.lines().includes('连接中断，正在重试（连接超时）'));
+  assert.ok(log.lines().includes('视频格式：H.264，1920 × 1080'));
+  assert.ok(log.lines().includes('视频错误：rtc-video-first-frame-timeout（等待首帧超时）'));
+  assert.ok(log.lines().includes('视频解码错误增加：累计 4（+2）'));
+  assert.ok(log.lines().includes('网络传输：UDP'));
+  assert.equal(log.lines().filter(line => line === '网络传输：UDP').length, 1);
+  log.observeSummary({ 'link.failure.reason': 'ice', 'link.failure.localCandidates': 2, 'link.failure.remoteCandidates': 0 });
+  assert.ok(log.lines().includes('连接失败：网络连接失败；浏览器候选 2，安卓端候选 0'));
+  log.observe({ videoConfig: { codec: 'https://secret.invalid', width: 1, height: 1 } });
+  assert.doesNotMatch(log.lines().join(' '), /https|secret/);
+});
+
+test('failure details come from the retired failure snapshot and can recur after reconnect', () => {
+  const log = createBrowserDiagnosticLog({ language: 'zh' });
+  const failure = { 'link.failure.reason': 'ice', 'link.failure.localCandidates': 2, 'link.failure.remoteCandidates': 0 };
+  log.observeSummary(failure);
+  log.observeSummary(failure);
+  const message = '连接失败：网络连接失败；浏览器候选 2，安卓端候选 0';
+  assert.equal(log.lines().filter(line => line === message).length, 1);
+  // Successful flattened snapshots omit null fields; no explicit null is required.
+  log.observeSummary({ 'link.connection.stage': 'connected' });
+  log.observeSummary(failure);
+  assert.equal(log.lines().filter(line => line === message).length, 2);
+  log.observe({ phase: 'connecting' });
+  log.observeSummary(failure);
+  assert.equal(log.lines().filter(line => line === message).length, 3);
+});
+
+test('new video and connection owners report their own initial nonzero counters', () => {
+  const log = createBrowserDiagnosticLog();
+  log.observeSummary({ 'video.streamGeneration': 1, 'video.epoch': 1, 'video.decodeErrors': 8,
+    'transport.generation': 1, 'transport.reassemblyErrors': 8, 'control.failures': 8 });
+  log.observeSummary({ 'video.streamGeneration': 1, 'video.epoch': 2, 'video.decodeErrors': 1,
+    'transport.generation': 1, 'transport.reassemblyErrors': 8, 'control.failures': 8 });
+  assert.ok(log.lines().includes('Video decode errors increased：total 1'));
+  log.observeSummary({ 'video.streamGeneration': 2, 'video.epoch': 1, 'video.decodeErrors': 1,
+    'transport.generation': 2, 'transport.reassemblyErrors': 1, 'control.failures': 1 });
+  assert.equal(log.lines().filter(line => line === 'Video decode errors increased：total 1').length, 2);
+  assert.ok(log.lines().includes('Media reassembly errors increased：total 1'));
+  assert.ok(log.lines().includes('Control request failures increased：total 1'));
+  log.observe({ phase: 'connecting' });
+  log.observeSummary({ 'video.decodeErrors': 1, 'transport.reassemblyErrors': 1, 'control.failures': 1 });
+  assert.equal(log.lines().filter(line => line === 'Control request failures increased：total 1').length, 2);
+  log.observeSummary({ 'link.reconnects': 1, 'video.streamGeneration': 1, 'video.epoch': 1, 'video.decodeErrors': 1 });
+  log.observeSummary({ 'link.reconnects': 2, 'video.streamGeneration': 1, 'video.epoch': 1, 'video.decodeErrors': 1 });
+  assert.equal(log.lines().filter(line => line === 'Video decode errors increased：total 1').length, 4);
 });

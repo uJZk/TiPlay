@@ -195,8 +195,9 @@ estimates position, not physical speaker time. Lossless/spatial audio is not adv
 Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
 and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
 
-On iPhone call/Siri microphone demand, Android uses the unique verified car HFP/SCO
-route for microphone capture. Only telephony downlink switches to Bluetooth;
+On iPhone call/Siri microphone demand, Android uses the selected car HFP/SCO
+route for microphone capture. The selected address must match the available route;
+an absent or differently formatted system address is not proof of a match. Only telephony downlink switches to Bluetooth;
 navigation, default guidance and Siri downlink continue through the browser alongside
 music and ordinary AirPlay audio. Route transitions retire only telephony decoders,
 preserving guidance/music queues, epochs and the audio DataChannel subscription.
@@ -204,6 +205,21 @@ Both AudioRecord input and telephony AudioTrack output must actually confirm Blu
 Busy routes and ambiguous headsets are refused; there is no handset/browser microphone
 fallback. Permission/focus/route loss stops devices and reports failure. Android's
 Bluetooth stack owns mSBC/CVSD; TiPlay supplies PCM.
+
+The car selection uses Android's companion-device association and system bonding;
+association, bonding and an active audio profile are separate states. A paired
+device is not evidence that it is nearby. Public profile connect and disconnect
+requests require Android API 37, Bluetooth permission and an association; older
+systems retain a manual connection path. Connection requests are asynchronous.
+When CarPlay ends, TiPlay requests disconnect once even if its connection request
+failed or was unsupported. When the system accepted its connection request, a late
+connected event can trigger one further disconnect during a non-extendable
+five-second window. A connection or disconnect broadcast for one profile cannot
+prove another profile will not connect later. A new CarPlay session using the device,
+user action in TiPlay or expiry cancels that window. The platform does not identify which request caused a broadcast, so a
+manual connection from outside TiPlay during that window may be mistaken for the
+late result; results arriving after the window cannot be compensated. This window
+is an application trade-off, not an Android timing guarantee.
 
 Resuming the same microphone demand preserves RTP/nonce counters. Actual route release
 must precede fresh browser telephony output; release timeouts hold only telephony with
@@ -238,9 +254,10 @@ than cropping or stretching the received picture with CSS. Saved upstream safe-a
 preferences do not override the browser canvas.
 
 The performance monitor cannot alter viewport/touch mapping. It shows codec,
-last-second successful Canvas submissions, latest frame Delta and explicit drops.
-Delta remains unknown without comparable source/output timing; a native track
-timestamp alone is not an independently mapped sender presentation reference. Multiple
+last-second successful Canvas submissions, WebRTC receive processing time, and
+separate receiver, cross-thread and Canvas drop counts. Receive processing time
+comes from consecutive samples of the same inbound RTP stream and does not include
+sender, network or panel latency. Multiple
 submissions before one display refresh can overstate visible FPS. Debug diagnostics
 also report frame-interval P95/max and time since the last successful submission;
 a high average FPS alone cannot establish smooth pacing. These values do not measure

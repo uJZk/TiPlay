@@ -18,7 +18,7 @@ import { probeMirrorAudioFormats } from './airplay-capabilities.js';
 import { createReconnectOverlay } from './reconnect.js';
 import { pumpChunkStream, createFrameDelivery } from './transport.js';
 import { createRtcMediaTransport } from './webrtc-transport.js';
-import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, phoneSupportsRtcVideo,
+import { createRtcTrackReader, createRtcVideoPipeline, rtcVideoCodecs, inspectRtcVideoCodecs, phoneSupportsRtcVideo,
   probeRtcMirrorCapabilities as probeMirrorCapabilities } from './rtc-video.js';
 import { authenticateRtcOffer } from './rtc-pairing.js';
 import { rtcFailureSummary } from './rtc-diagnostics.js';
@@ -279,7 +279,11 @@ const pathReady = setUpVideo().catch(error => {
   videoPath = { path: 'none', reason: String(error?.message ?? error) };
 });
 const codecsReady = pathReady.then(() => {
-  const codecs = videoPath.rtcTrack ? rtcVideoCodecs() : [];
+  const probe = inspectRtcVideoCodecs(), codecs = videoPath.rtcTrack ? probe.codecs : [];
+  diagnosticLog.observe({ capability: { status: probe.status,
+    h264: probe.codecs.some(codec => /\/H264$/i.test(codec.mimeType)),
+    hevc: probe.codecs.some(codec => /\/(H265|HEVC)$/i.test(codec.mimeType)) } });
+  diagnosticLog.render($('connection-details'));
   probedCodecs = [codecs.some(codec => /\/H264$/i.test(codec.mimeType)) ? 'avc1' : null,
     codecs.some(codec => /\/(H265|HEVC)$/i.test(codec.mimeType)) ? 'hvc1' : null].filter(Boolean).join(',');
   return probedCodecs;
@@ -364,7 +368,8 @@ async function setUpVideo() {
       else if (data.type === 'video-generation-ready') {
         if (generationReady?.id === data.id && generationReady.generation === data.generation) { clearTimeout(generationReady.timer); generationReady.resolve(); generationReady = null; }
       }
-      else if (data.type === 'stats') onVideoMessage({ type: 'stats', id: data.id, stats: { ...data.stats, ...presenter?.stats() } });
+      else if (data.type === 'stats') onVideoMessage({ type: 'stats', id: data.id, stats: { ...data.stats, ...presenter?.stats(),
+        ...(mainProcessor ? { mainTransferDroppedFrames: trackDelivery.stats().transferDroppedFrames } : {}) } });
       else {
         if (data.id === streamId && ['config', 'idle', 'video-error'].includes(data.type)) presenter?.close();
         if (data.id === streamId && data.type === 'video-error') { trackReader.stop(); trackDelivery.stop(); }
@@ -522,7 +527,7 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
-  videoError = null; videoRestart = null;
+  videoError = null; videoRestart = null; lastError = null;
   currentVideoGeneration = 1;
   faultDiagnostics.reset();
   rtcMedia?.close();
@@ -826,13 +831,16 @@ function render() {
   }
   diagnosticLog.observe({ phase: active ? phase : 'idle', stage: active ? rtcProgress?.stage : null,
     source: castOwnsPicture ? 'video' : source, playback: castOwnsPicture && playback?.kind === 'video' ? playback : null,
+    videoConfig: castOwnsPicture ? null : config,
     live: videoReady, failure: lastError ? rtcFailureSummary(lastError).reason : null,
     videoError: videoError && !pendingCast ? videoError : null });
   diagnosticLog.render($('connection-details'));
 }
 
 function renderStats() {
-  $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats);
+  const rtp = rtcMedia?.stats().rtpVideo;
+  $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats,
+    config && rtp?.generation === currentVideoGeneration ? rtp : null, lang);
 }
 
 function retryStatusText(error, seconds) {
@@ -1014,7 +1022,12 @@ function scheduleViewport() {
     lastViewport = `${viewport.w}x${viewport.h}`;
     outbox.push({ k: 'vp', ...viewport }, 'latest');
     const reporting = outbox, size = lastViewport;
-    void Promise.all([probeMirrorCapabilities(viewport.w, viewport.h), probeMirrorAudioFormats()]).then(([caps, audioFormats]) => {
+    void Promise.all([probeMirrorCapabilities(viewport.w, viewport.h, capability => {
+      if (outbox === reporting && lastViewport === size && !stage.hidden) {
+        diagnosticLog.observe({ capability });
+        diagnosticLog.render($('connection-details'));
+      }
+    }), probeMirrorAudioFormats()]).then(([caps, audioFormats]) => {
       if (outbox === reporting && lastViewport === size && !stage.hidden) reporting.push({ k: 'vp', ...viewport, caps: { ...caps, audioFormats } }, 'latest');
     });
   }); // Coalesce layout notifications without waiting for a quiet period during a resize.

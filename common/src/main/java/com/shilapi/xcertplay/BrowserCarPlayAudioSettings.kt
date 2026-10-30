@@ -14,6 +14,7 @@ internal object BrowserCarPlayAudioSettings {
 
     fun saveDisabled(context: Context, disabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(DISABLED, disabled).apply()
+        CarBluetoothConnection.selectionChanged(context)
     }
 
     fun addControls(context: Context, parent: LinearLayout,

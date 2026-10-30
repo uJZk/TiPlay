@@ -1,0 +1,53 @@
+diff --git a/tools_webrtc/libs/generate_licenses.py b/tools_webrtc/libs/generate_licenses.py
+index d945b43cca..f09ed3702b 100755
+--- a/tools_webrtc/libs/generate_licenses.py
++++ b/tools_webrtc/libs/generate_licenses.py
+@@ -86,6 +86,11 @@ LIB_TO_LICENSES_DICT = {
+     # Compile time dependencies, no license needed:
+     'ow2_asm': [],
+     'jdk': [],
++
++    'catapult': [],
++    'google_benchmark': [],
++    'googletest': [],
++    'vinn': [],
+ }
+ 
+ # Third_party library _regex_ to licences mapping. Keys are regular expression
+diff --git a/modules/audio_device/include/mock_audio_device.h b/modules/audio_device/include/mock_audio_device.h
+index d950a49ffb..6a19354cbb 100644
+--- a/modules/audio_device/include/mock_audio_device.h
++++ b/modules/audio_device/include/mock_audio_device.h
+@@ -144,6 +144,7 @@ class MockAudioDeviceModule : public AudioDeviceModule {
+   MOCK_METHOD(int32_t, EnableBuiltInNS, (bool enable), (override));
+   MOCK_METHOD(int32_t, GetPlayoutUnderrunCount, (), (const, override));
+   MOCK_METHOD(std::optional<Stats>, GetStats, (), (const, override));
++  MOCK_METHOD(int32_t, SetObserver, (AudioDeviceObserver* observer), (override));
+ #if defined(WEBRTC_IOS)
+   MOCK_METHOD(int,
+               GetPlayoutAudioParameters,
+diff --git a/sdk/android/BUILD.gn b/sdk/android/BUILD.gn
+index 2d511e2eac..637ffa5168 100644
+--- a/sdk/android/BUILD.gn
++++ b/sdk/android/BUILD.gn
+@@ -156,6 +156,7 @@ if (is_android) {
+     sources = [
+       "api/org/webrtc/Predicate.java",
+       "api/org/webrtc/RefCounted.java",
++      "api/org/webrtc/WebrtcBuildVersion.java",
+       "src/java/org/webrtc/ApplicationContextProvider.java",
+       "src/java/org/webrtc/CalledByNative.java",
+       "src/java/org/webrtc/CalledByNativeUnchecked.java",
+diff --git a/sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java b/sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java
+--- a/sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java
++++ b/sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java
+@@ -63,7 +63,7 @@ public class WrappedVideoDecoderFactory implements VideoDecoderFactory {
+ 
+     @Override
+     public VideoCodecInfo[] getSupportedCodecs() {
+-        LinkedHashSet<VideoCodecInfo> supportedCodecInfos = new LinkedHashSet();
++        LinkedHashSet<VideoCodecInfo> supportedCodecInfos = new LinkedHashSet<>();
+         supportedCodecInfos.addAll(Arrays.asList(this.softwareVideoDecoderFactory.getSupportedCodecs()));
+         supportedCodecInfos.addAll(Arrays.asList(this.hardwareVideoDecoderFactory.getSupportedCodecs()));
+         if (this.platformSoftwareVideoDecoderFactory != null) {
+

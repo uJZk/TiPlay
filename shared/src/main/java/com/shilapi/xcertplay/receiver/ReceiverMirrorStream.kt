@@ -18,26 +18,40 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 /** Ordinary AirPlay AES-CTR screen packets. Cipher state continues across partial frame blocks. */
 class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer: InetAddress,
                            private val sink: WebMediaSink, private val clock: NtpClock,
                            log: (String) -> Unit = {},
                            private val hevcEnabled: Boolean = false,
+                           private val startupTimeoutMillis: Long = STARTUP_MILLIS,
+                           private val listenAddress: InetAddress = InetAddress.getByName("::"),
                            private val ended: () -> Unit) : Closeable {
     private val closed = AtomicBoolean(false)
     private val server = ServerSocket()
     @Volatile private var socket: Socket? = null
     private val diagnostics = ReceiverMirrorDiagnostics(log)
+    private val startupExpired = AtomicBoolean(false)
+    private val startupDeadline = ReceiverMirrorStartupDeadline(startupTimeoutMillis) {
+        startupExpired.set(true)
+        try { log("mirror stage=STARTUP_TIMEOUT") } finally {
+            runCatching { server.close() }
+            runCatching { socket?.close() }
+        }
+    }
     private val cipher = aesCtr(
         AirPlayCrypto.sha512("AirPlayStreamKey${java.lang.Long.toUnsignedString(connectionId)}".toByteArray(), key).copyOf(16),
         AirPlayCrypto.sha512("AirPlayStreamIV${java.lang.Long.toUnsignedString(connectionId)}".toByteArray(), key).copyOf(16),
     )
 
     fun start(): Int {
-        server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
+        server.bind(InetSocketAddress(listenAddress, 0))
         sink.setVideoClockHandler(110, clock::mediaTimeNanos)
         diagnostics.listening()
+        startupDeadline.start()
         Thread(::run, "tiplay-airplay-mirror").apply { isDaemon = true; start() }
         return server.localPort
     }
@@ -66,7 +80,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                     val accepted = server.accept()
                     if (accepted.inetAddress != peer) { accepted.close(); continue }
                     socket = accepted
-                    if (closed.get()) { accepted.close(); return }
+                    if (closed.get() || startupExpired.get()) { accepted.close(); return }
                     diagnostics.accepted()
                     TcpLiveness.configure(accepted) {}
                     accepted.tcpNoDelay = true
@@ -106,6 +120,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                             val senderNanos = ScreenCodec.senderNanos(header)
                             val publishStart = System.nanoTime()
                             sink.onVideoFrame(110, frame, senderNanos, arrivalNanos, decodeOnly = suspended)
+                            if (!suspended) startupDeadline.complete()
                             val publishNanos = System.nanoTime() - publishStart
                             val annexB = frame.size >= 5 && frame[0] == 0.toByte() && frame[1] == 0.toByte() &&
                                 (frame[2] == 1.toByte() || (frame[2] == 0.toByte() && frame[3] == 1.toByte()))
@@ -159,13 +174,47 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
     }
 
     override fun close() {
+        startupDeadline.complete()
         if (!closed.compareAndSet(false, true)) return
         runCatching { server.close() }
         runCatching { socket?.close() }
         sink.close()
     }
 
-    companion object { private const val RECONNECT_MILLIS = 5_000L }
+    companion object {
+        private const val RECONNECT_MILLIS = 5_000L
+        private const val STARTUP_MILLIS = 15_000L
+    }
+}
+
+/** One deadline per mirror stream; it is retired permanently after the first live frame. */
+internal class ReceiverMirrorStartupDeadline(private val timeoutMillis: Long, private val onTimeout: () -> Unit) {
+    private var complete = false
+    private var task: ScheduledFuture<*>? = null
+
+    @Synchronized fun start() {
+        check(task == null && !complete)
+        task = scheduler.schedule({
+            synchronized(this) {
+                if (!complete) {
+                    complete = true
+                    onTimeout()
+                }
+            }
+        }, timeoutMillis, TimeUnit.MILLISECONDS)
+    }
+
+    @Synchronized fun complete() {
+        complete = true
+        task?.cancel(false)
+        task = null
+    }
+
+    companion object {
+        private val scheduler = ScheduledThreadPoolExecutor(1) { runnable ->
+            Thread(runnable, "tiplay-mirror-startup-timeout").apply { isDaemon = true }
+        }.apply { removeOnCancelPolicy = true }
+    }
 }
 
 /** Reports a partial header separately from a clean boundary EOF, which alone may reconnect. */

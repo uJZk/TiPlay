@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v108';
+export const PAGE_VERSION = 'v109';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const SUMMARY_KEYS = [
   'page.version', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
@@ -12,6 +12,7 @@ const SUMMARY_KEYS = [
   'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.scheduledCapacityFrames',
   'video.currentDelta', 'video.currentFps', 'video.frameIntervalP95Ms',
   'link.path', 'link.reconnects', 'link.errorReason', 'link.failure.reason', 'link.failure.stage',
+  'link.failure.localCandidates', 'link.failure.remoteCandidates',
   'link.connection.stage', 'link.connection.localCandidates', 'link.connection.localUdpCandidates',
   'link.connection.remoteCandidates', 'link.connection.remoteUdpCandidates',
   'transport.transport', 'transport.state', 'transport.stage', 'transport.reason', 'transport.generation',
@@ -181,7 +182,13 @@ export function browserDiagnosticEvents(page, themeDark, debug = false, debugSes
   } else videoTracker?.reset();
   const fullSummary = flatStats({ page: { version: PAGE_VERSION }, ...page, audio, ...omissions }, Infinity);
   // Reserve ordinary telemetry for the epoch and the five disjoint drop components before optional details.
-  const summary = Object.fromEntries([...new Set(['videoDiagnosticOmittedFields', 'audioDiagnosticOmittedFields', ...SUMMARY_KEYS, ...Object.keys(fullSummary)])]
+  // A failure owns its candidate snapshot; live connection counts may already describe a replacement.
+  // Put the latter behind other evidence while a complete failure snapshot is available.
+  const failureCountsKnown = Number.isSafeInteger(fullSummary['link.failure.localCandidates'])
+    && Number.isSafeInteger(fullSummary['link.failure.remoteCandidates']);
+  const priorities = SUMMARY_KEYS.filter(key => !failureCountsKnown
+    || !['link.connection.localCandidates', 'link.connection.remoteCandidates'].includes(key));
+  const summary = Object.fromEntries([...new Set(['videoDiagnosticOmittedFields', 'audioDiagnosticOmittedFields', ...priorities, ...Object.keys(fullSummary)])]
     .filter(key => key in fullSummary).map(key => [key, fullSummary[key]]));
   return [{ k: 'st', v: { ...flatStats(summary, ordinaryBudget), themeDark } }, ...details];
 }

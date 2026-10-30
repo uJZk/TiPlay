@@ -11,7 +11,7 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | [libmedia](https://github.com/zhaohappy/libmedia) | AVPlayer URL playback engine: IO, demuxing, decoding, buffering, synchronization and Canvas rendering. [Pinned inputs, local resources and licenses](../site/play/vendor/libmedia/README.md) accompany the vendored player. |
 | [libsoxr](https://github.com/chirlu/soxr) | Native Android SCO resampling; [native source inputs](../scripts/soxr/vendor/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
-| [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Fixed `150.7871.01` Maven AAR for local reliable DataChannels; publisher binary notices and [exact provenance](Third-party-notices.md#android-webrtc-datachannels) accompany the APK. |
+| [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Pinned M150 source and TiPlay source-rate AAR for local transports; component notices and [exact provenance](Third-party-notices.md#android-webrtc-datachannels) accompany the APK. |
 
 Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
 
