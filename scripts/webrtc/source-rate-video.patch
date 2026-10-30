@@ -302,7 +302,7 @@ index 52cdd4c..c43b5c7 100644
 +      tiplay_transport_(
 +          config.env.field_trials().IsEnabled("TiPlay-SourceRateVideo")
 +              ? std::make_shared<tiplay::SourceRateTransport>(
-+                    tiplay::QueueLimit{65536, 32 * 1024 * 1024})
++                    tiplay::QueueLimit{0, 0} /* TEST ONLY: forced overload */)
 +              : nullptr),
        task_queue_(TaskQueueBase::Current()),
        bitrate_configurator_(config.bitrate_config),
