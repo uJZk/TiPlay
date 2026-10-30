@@ -65,17 +65,24 @@ def check_patch_stack(source, patch):
     compat = patch.with_name("publisher-compat.patch")
     patches = (compat, patch)
     names = set()
+    additions = set()
     for item in patches:
+        previous = ""
         for line in item.read_text().splitlines():
             if line.startswith("+++ b/"):
                 name = Path(line[6:])
                 if name.is_absolute() or ".." in name.parts:
                     raise RuntimeError("Invalid source path in patch")
                 names.add(name)
+                if previous == "--- /dev/null":
+                    additions.add(name)
+            previous = line
     with tempfile.TemporaryDirectory(prefix="tiplay-webrtc-patch-check-") as directory:
         model = Path(directory)
         for name in names:
             target = model / name
+            if not (source / name).exists() and name in additions:
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source / name, target)
         run(["git", "init", "-q"], model)

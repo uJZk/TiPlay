@@ -29,6 +29,24 @@ class BuildDriverTest(unittest.TestCase):
             build.check_patch_stack(source, patch)
             self.assertEqual((source / "fixture").read_text(), "base\n")
 
+    def test_patch_stack_accepts_new_files_but_not_missing_modified_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            (source / "fixture").write_text("base\n")
+            (root / "publisher-compat.patch").write_text(
+                "--- a/fixture\n+++ b/fixture\n@@ -1 +1 @@\n-base\n+compat\n")
+            patch = root / "source-rate-video.patch"
+            patch.write_text("--- /dev/null\n+++ b/new/header.h\n"
+                             "@@ -0,0 +1 @@\n+header\n")
+            build.check_patch_stack(source, patch)
+            self.assertFalse((source / "new/header.h").exists())
+            patch.write_text("--- a/missing\n+++ b/missing\n"
+                             "@@ -1 +1 @@\n-old\n+new\n")
+            with self.assertRaises(FileNotFoundError):
+                build.check_patch_stack(source, patch)
+
     def test_gclient_is_executable_configuration_with_actual_line_breaks(self):
         config = build.gclient_config()
         ast.parse(config)
