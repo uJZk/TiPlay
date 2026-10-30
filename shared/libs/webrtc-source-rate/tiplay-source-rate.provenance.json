@@ -1,0 +1,24 @@
+{
+  "repository": "https://github.com/webrtc-sdk/webrtc.git",
+  "revision": "73cb8180f7258ee292878d6edd05177f41883962",
+  "depot_tools_revision": "7083aadfb53f3de2e20b72058c7f510da8f8218a",
+  "patch_sha256": "f8fd25546df048db631a1cbc9062e3073a5cc5581b072d75375d15018d2db300",
+  "publisher_build_configuration_reference": "06e3410d8f67d08202e26f55225705596b60778e",
+  "publisher_reference_is_original_producer_provenance": false,
+  "publisher_compat_sha256": "5dbb1a1b66e9f837dfbe83cd53be2900f784db6e512b2fb3cd6acd5e12e0b7c8",
+  "publisher_compat_is_original_publisher_artifact": false,
+  "focused_tests": {
+    "revision": "73cb8180f7258ee292878d6edd05177f41883962",
+    "passed": true,
+    "filter": "PacingControllerTest.SourceRate*:RtpTransportControllerSendTest.SourceRate*:VideoStreamEncoderTest.SourceRate*",
+    "patch_sha256": "f8fd25546df048db631a1cbc9062e3073a5cc5581b072d75375d15018d2db300",
+    "binary_sha256": "9a65a4484032011d21f875d8eaa8df4fd7d7fad3918217ab59ea801086d01010"
+  },
+  "aar_sha256": "38efe35641a0a87df5e99634eeaa5d1900be5da10711c7e72d9966632bbec0bf",
+  "architectures": [
+    "armeabi-v7a",
+    "arm64-v8a",
+    "x86",
+    "x86_64"
+  ]
+}

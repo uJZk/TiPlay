@@ -27,6 +27,7 @@ internal object DiagnosticDialogUi {
         actions.forEach { action ->
             bar.addView(Button(activity, null, android.R.attr.buttonBarButtonStyle).apply {
                 setText(action.title)
+                tag = action.title
                 isAllCaps = false
                 isSingleLine = false
                 maxLines = Int.MAX_VALUE

@@ -3,6 +3,7 @@
 import { candidateCounts, candidateDiagnosticFields, rtcFailureReason } from './rtc-diagnostics.js';
 import { RTC_VIDEO_TRANSPORT, rtcVideoCodecs } from './rtc-video.js';
 import { applyRtcVideoReceiveLevels, probeRtcVideoReceiveLevels } from './rtc-video-receive.js';
+import { createReceiveProcessingTracker } from './fps-window.js';
 
 export const RTC_TRANSPORT = 'webrtc-datachannel-v1';
 export const RTC_MAGIC = 0x31524454;
@@ -73,8 +74,11 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   const channels = {};
   let remoteVideoTrack = null;
   let videoTransceiver = null, videoGeneration = 1, videoNegotiation = null, videoAnswer = null, videoRequestSequence = 0;
+  let pendingVideoTransaction = null, completedVideoTransaction = null;
+  let terminalVideoError = null;
   let rtpVideoStats = { state: 'collecting', generation: 1 }, rtpVideoSampledAt = null;
   let rtpVideoSampling = null;
+  const receiveProcessing = createReceiveProcessingTracker();
   try {
     for (const label of ['control', 'video', 'audio']) channels[label] = peer.createDataChannel(label, { ordered: true });
     if (videoTrack && (!videoCodecs.length || typeof peer.addTransceiver !== 'function')) throw transportError('rtc-video-unavailable');
@@ -265,11 +269,24 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       try { response = JSON.parse(data); } catch (_) { throw transportError('control-format'); }
       if (!response || typeof response !== 'object' || Array.isArray(response)) throw transportError('control-format');
       if (response.k === 'video-error') {
+        if (response.reason === 'video-ready-timeout') {
+          if (!pendingVideoTransaction && !videoNegotiation && completedVideoTransaction?.generation === response.generation) {
+            sendControl(completedVideoTransaction);
+            sendControl({ k: 'video-ready', generation: response.generation });
+          } else if (pendingVideoTransaction?.generation === response.generation && !videoNegotiation) {
+            restartVideo().catch(error => onVideoError(error.reason ?? 'rtc-video-failed'));
+          }
+          return;
+        }
         if (!videoNegotiation && (response.generation ?? 1) === videoGeneration) onVideoError(typeof response.reason === 'string' ? response.reason : 'rtc-video-failed');
         return;
       }
       if (response.k === 'video-answer') {
         if (videoAnswer && response.generation === videoAnswer.generation && response.q === videoAnswer.q) videoAnswer.resolve(response);
+        else if (!closed && connected && pendingVideoTransaction?.generation === response.generation && pendingVideoTransaction.q === response.q) {
+          pendingVideoTransaction.response = response;
+          if (!videoNegotiation) restartVideo().catch(error => onVideoError(error.reason ?? 'rtc-video-failed'));
+        }
         return;
       }
       if (response.k === 'audio-error' || response.k === 'audio-restart-required') {
@@ -363,6 +380,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     const transceiver = videoTransceiver, track = remoteVideoTrack, generation = videoGeneration;
     const receiver = transceiver?.receiver;
     if (!track || typeof receiver?.getStats !== 'function') {
+      receiveProcessing.reset();
       rtpVideoStats = { state: !videoTrack || typeof receiver?.getStats !== 'function' ? 'unavailable' : 'collecting', generation };
       rtpVideoSampledAt = null;
       return;
@@ -387,6 +405,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       const values = { state: inbound.length === 1 ? 'selected' : inbound.length ? 'ambiguous' : 'no-inbound', generation };
       if (inbound.length === 1) {
         const source = inbound[0];
+        values.receiveProcessingMs = receiveProcessing.sample(source, generation);
         // Only numeric/boolean standardized receiver evidence crosses this boundary.
         // IDs, implementation text, candidate addresses and arbitrary getStats fields do not.
         for (const key of ['packetsReceived', 'packetsLost', 'packetsDiscarded', 'bytesReceived', 'framesReceived', 'framesDecoded', 'framesDropped',
@@ -404,10 +423,10 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
           if (Number.isFinite(value) && value >= 0 && value <= 9e12) values[output] = value * 1000;
         }
         if (typeof source.powerEfficientDecoder === 'boolean') values.powerEfficientDecoder = source.powerEfficientDecoder;
-      }
+      } else receiveProcessing.reset();
       rtpVideoStats = values; rtpVideoSampledAt = performance.now();
     } catch (_) {
-      if (current()) { rtpVideoStats = { state: 'failed', generation }; rtpVideoSampledAt = performance.now(); }
+      if (current()) { receiveProcessing.reset(); rtpVideoStats = { state: 'failed', generation }; rtpVideoSampledAt = performance.now(); }
     } finally { if (rtpVideoSampling === receiver) rtpVideoSampling = null; }
   }
   function requestControl(q, payload, deadlineMs = 5000) {
@@ -422,39 +441,56 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   }
   function restartVideo() {
     if (videoNegotiation) return videoNegotiation;
+    if (terminalVideoError) return Promise.reject(terminalVideoError);
     if (!connected || closed || !videoTrack) return Promise.reject(transportError('rtc-video-unavailable'));
-    const next = videoGeneration + 1;
-    const q = ++videoRequestSequence;
+    const next = pendingVideoTransaction?.generation ?? videoGeneration + 1;
+    const q = pendingVideoTransaction?.q ?? ++videoRequestSequence;
     if (!Number.isSafeInteger(next) || next > 0xffffffff) return Promise.reject(transportError('rtc-video-generation'));
-    let deadline;
+    let deadline, retry;
     const task = (async () => {
-      rtpVideoStats = { state: 'collecting', generation: next }; rtpVideoSampledAt = null;
-      remoteVideoTrack?.stop(); remoteVideoTrack = null;
-      videoTransceiver?.stop();
-      videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
-      videoTransceiver.setCodecPreferences(videoCodecs);
-      const offer = await createVideoOffer();
-      await duringLife(peer.setLocalDescription(offer));
-      const sdp = await duringLife(gatherLocalOffer(peer, lifetimeAbort.signal));
-      if (new TextEncoder().encode(sdp).byteLength > 48 * 1024) throw transportError('rtc-video-offer-size');
+      if (!pendingVideoTransaction) {
+        receiveProcessing.reset(); rtpVideoStats = { state: 'collecting', generation: next }; rtpVideoSampledAt = null;
+        remoteVideoTrack?.stop(); remoteVideoTrack = null;
+        videoTransceiver?.stop();
+        videoTransceiver = peer.addTransceiver('video', { direction: 'recvonly' });
+        videoTransceiver.setCodecPreferences(videoCodecs);
+        const offer = await createVideoOffer();
+        await duringLife(peer.setLocalDescription(offer));
+        const sdp = await duringLife(gatherLocalOffer(peer, lifetimeAbort.signal));
+        if (new TextEncoder().encode(sdp).byteLength > 48 * 1024) throw transportError('rtc-video-offer-size');
+        pendingVideoTransaction = { k: 'video-offer', q, generation: next, sdp };
+      }
+      const transaction = pendingVideoTransaction;
+      const resend = () => sendControl({ k: transaction.k, q, generation: next, sdp: transaction.sdp });
       const response = await duringLife(new Promise((resolve, reject) => {
         videoAnswer = { generation: next, q, resolve, reject };
         deadline = setTimeout(() => reject(transportError('rtc-video-renegotiation-timeout')), videoTimeoutMs);
-        try { sendControl({ k: 'video-offer', q, generation: next, sdp }); }
+        // Reuse the diagnostics cadence, capped by this request's existing deadline.
+        // Every retry is the same pending local offer; never create another m-line.
+        retry = setInterval(() => { try { resend(); } catch (error) { reject(error); } }, Math.min(2000, videoTimeoutMs / 2));
+        try { if (transaction.response) resolve(transaction.response); else resend(); }
         catch (error) { reject(error); }
       }));
+      clearTimeout(deadline); clearInterval(retry);
       if (closed || videoAnswer?.generation !== next) throw transportError('stopped');
-      if (response.error) throw transportError('rtc-video-renegotiation-rejected');
+      if (response.error) { pendingVideoTransaction = null; throw transportError('rtc-video-renegotiation-rejected'); }
       if (response.videoTransport !== RTC_VIDEO_TRANSPORT || typeof response.sdp !== 'string'
         || new TextEncoder().encode(response.sdp).byteLength > 48 * 1024) throw transportError('rtc-video-answer-format');
       await duringLife(peer.setRemoteDescription({ type: 'answer', sdp: response.sdp }));
       if (closed || videoAnswer?.generation !== next) throw transportError('stopped');
       await duringLife(Promise.resolve(onVideoGeneration(next)));
       videoGeneration = next; stats.videoGeneration = next;
+      completedVideoTransaction = { k: 'video-offer', q, generation: next, sdp: transaction.sdp };
+      pendingVideoTransaction = null;
       if (remoteVideoTrack) onVideoTrack(remoteVideoTrack, next);
       sendControl({ k: 'video-ready', generation: next });
     })();
-    videoNegotiation = task.finally(() => { clearTimeout(deadline); videoAnswer = null; videoNegotiation = null; });
+    videoNegotiation = task.catch(error => {
+      // A timeout leaves the original pending offer valid. Other failures may
+      // have changed native SDP state and require explicit protocol recovery.
+      if (error.reason !== 'rtc-video-renegotiation-timeout') terminalVideoError = error;
+      throw error;
+    }).finally(() => { clearTimeout(deadline); clearInterval(retry); videoAnswer = null; videoNegotiation = null; });
     return videoNegotiation;
   }
   const aborted = () => close(transportError('stopped'));
@@ -468,6 +504,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     signal?.removeEventListener('abort', aborted);
     clearInterval(statsTimer);
     videoAnswer?.reject(error); videoAnswer = null;
+    pendingVideoTransaction = completedVideoTransaction = null;
     lifetimeAbort.abort();
     rejectReady(error); rejectLifetime(error);
     for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(error); }

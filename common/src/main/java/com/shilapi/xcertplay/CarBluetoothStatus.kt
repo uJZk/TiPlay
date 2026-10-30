@@ -12,12 +12,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 
 /** Observes Android's audio profiles, never bond state or the iPhone RFCOMM connection. */
 internal class CarBluetoothStatus(private val context: Context, private val changed: () -> Unit) : AutoCloseable {
-    enum class State { CONNECTED, DISCONNECTED, UNKNOWN, VERIFY_AUDIO_DEVICE }
+    enum class State { CONNECTED, DISCONNECTED, UNKNOWN, VERIFY_AUDIO_DEVICE, NOT_SELECTED, ROUTE_UNVERIFIED }
     private val profiles = mutableMapOf<Int, BluetoothProfile>()
     private val unavailable = mutableSetOf<Int>()
     private val requested = mutableSetOf<Int>()
@@ -65,8 +67,31 @@ internal class CarBluetoothStatus(private val context: Context, private val chan
                 .map { Device(it.address, it.bluetoothClass?.deviceClass) }, iphoneAddress)
         }.getOrDefault(State.UNKNOWN)
     }
+    fun selectedState(address: String?): State {
+        if (address.isNullOrBlank()) return State.NOT_SELECTED
+        if (!permitted()) return State.UNKNOWN
+        return runCatching {
+            val bluetooth = adapter ?: return State.UNKNOWN
+            if (!bluetooth.isEnabled) return State.DISCONNECTED
+            val available = profiles.filterKeys { it !in unavailable }
+            val state = evaluateSelected(address, available.size, available.values.flatMap { it.connectedDevices }.map { it.address })
+            if (state != State.CONNECTED) state else if (Build.VERSION.SDK_INT < 31) State.ROUTE_UNVERIFIED else {
+                val routes = context.getSystemService(AudioManager::class.java)?.availableCommunicationDevices.orEmpty()
+                    .filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }.map { it.address }
+                if (routeMatches(address, routes)) State.CONNECTED else State.ROUTE_UNVERIFIED
+            }
+        }.getOrDefault(State.UNKNOWN)
+    }
     data class Device(val address: String, val deviceClass: Int?)
     companion object {
+        fun routeMatches(address: String, routes: List<String?>): Boolean =
+            routes.any { !it.isNullOrBlank() && it.equals(address, true) }
+        fun evaluateSelected(address: String?, profileCount: Int, connected: List<String>): State = when {
+            address.isNullOrBlank() -> State.NOT_SELECTED
+            connected.any { it.equals(address, true) } -> State.CONNECTED
+            profileCount == 2 -> State.DISCONNECTED
+            else -> State.UNKNOWN
+        }
         fun evaluate(profileCount: Int, devices: List<Device>, iphoneAddress: String?): State {
             val audio = devices.filter { !it.address.equals(iphoneAddress, ignoreCase = true) }
             return when {

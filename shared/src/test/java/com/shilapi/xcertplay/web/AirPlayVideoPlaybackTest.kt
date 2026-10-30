@@ -27,6 +27,20 @@ class AirPlayVideoPlaybackTest {
         mapOf("revision" to revision, "duration" to 100.0, "position" to 20.0, "bufferedPosition" to 30.0,
             "rate" to rate, "playing" to playing, "ready" to true, "buffering" to false, "seekable" to true)
 
+    @Test fun failedReportCanBeRetriedAfterAConcurrentDirective() {
+        val events = mutableListOf<String>()
+        val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }, event = events::add)
+        try {
+            video.setOutputAllowed(false)
+            val failure = mapOf("revision" to 0L, "duration" to 0, "position" to 0, "playing" to false,
+                "ready" to false, "buffering" to false, "seekable" to false, "failed" to true)
+            assertFalse(video.report(failure))
+            assertTrue(events.isEmpty())
+            assertTrue(video.report(failure + ("revision" to video.source()["revision"])))
+            assertEquals(listOf("failed"), events)
+        } finally { video.close() }
+    }
+
     @Test fun actualRateSurvivesBufferingAndPauseKeepsTheSelectedSpeed() {
         val events = mutableListOf<String>()
         val video = AirPlayVideoPlayback(ReceiverPlay("http://example.test/video.mp4", 0.0, false), { _, _ -> null }, event = events::add)

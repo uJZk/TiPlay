@@ -236,6 +236,28 @@ test('a player import failure replaces loading with the current error surface', 
   assert.equal(h.indicator(), undefined); assert.equal(h.players.length, 0);
   assert.equal(h.layer.children.find(element => element.className === 'airplay-error').textContent, 'Unable to play video. Try again from your iPhone.');
   assert.equal(h.sent.filter(event => event.k === 'ap-state').at(-1).failed, true);
+  h.controls.update(h.directive({ revision: 2 }));
+  assert.equal(h.sent.filter(event => event.k === 'ap-state').at(-1).revision, 2, 'reports survive without a player instance');
+});
+
+test('an initial failure is reported again with the latest revision until the owner is retired', async t => {
+  const h = fixture(t);
+  h.controls.update(h.directive()); await flush();
+  h.requests[0].reject(new Error('Resource unavailable')); await flush();
+  const failures = () => h.sent.filter(event => event.k === 'ap-state' && event.failed);
+  assert.equal(failures().at(-1).revision, 1);
+  // Model Android rejecting the old revision after a concurrent directive.
+  h.controls.update(h.directive({ revision: 2, outputAllowed: false }));
+  assert.equal(failures().at(-1).revision, 2);
+  const count = failures().length;
+  await new Promise(resolve => setTimeout(resolve, 450));
+  assert.ok(failures().length > count, 'a dropped terminal report is retried');
+  assert.equal(failures().at(-1).id, 1);
+  assert.equal(failures().at(-1).revision, 2);
+  h.controls.update(h.directive({ id: 2, resource: 'next', revision: 1 })); await flush();
+  const retiredCount = failures().length;
+  await new Promise(resolve => setTimeout(resolve, 450));
+  assert.equal(failures().length, retiredCount, 'the retired owner cannot fail its replacement');
 });
 
 for (const retire of ['stop', 'dispose']) test(`${retire} during player import cannot resurrect a player or loading indicator`, async t => {

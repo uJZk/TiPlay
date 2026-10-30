@@ -24,3 +24,8 @@ shared/src/main/jni/soxr/LICENCE text eol=lf -whitespace
 # Retain exact pinned SRP distribution and WebRTC binary license notices.
 site/play/vendor/tssrp6a/* -text -whitespace linguist-vendored=true
 shared/src/main/assets/licenses/webrtc/* -text -whitespace linguist-vendored=true
+# Preserve the exact patch bytes recorded in native build provenance, including
+# unified-diff context lines, and the unmodified generated component notices.
+scripts/webrtc/publisher-compat.patch -text -whitespace
+scripts/webrtc/source-rate-video.patch -text -whitespace
+shared/libs/webrtc-source-rate/LICENSE.md -text -whitespace linguist-vendored=true

@@ -140,17 +140,25 @@ including burst arrivals. Pixel conversion/scaling is rejected. An input dropped
 before encoding invalidates the dependency chain and requests a new source key
 frame. An RTP codec capability does not prove actual vehicle hardware decoding.
 
-Each M150 factory disables both raw-frame bitrate dropping and congestion-window
-frame skipping through the public `Builder.setFieldTrials` environment:
-`WebRTC-FrameDropper/Disabled/` and
-`WebRTC-CongestionWindow/QueueSize:350,MinBitrate:30000,DropFrame:false/`.
-Scaling settings and disabled degradation preference alone do not disable either
-pre-encoder mechanism. Both assume the next raw frame can be encoded independently;
-dropping an original compressed reference instead forces IDR recovery.
-The congestion window and pushback remain enabled with their default limits;
-pushback reports a reduced target rate instead of a raw-frame skip ratio. Network
-feedback, RTP pacing and actual overload guards remain active. Passthrough cannot
-change source bitrate to honor that target, so this is not source rate control.
+The video/control peer uses a factory-local source-rate trial in the pinned custom
+M150 AAR. It sends original compressed frames without the native video congestion
+controller, pacing budget or configured sender bitrate limits. The independent
+audio peer does not inherit that trial. ICE, DTLS, SRTP, SCTP, RTCP and NACK remain
+in their respective transport paths. This policy cannot make a congested network
+or a slow receiver carry the input rate: socket errors, loss and queueing remain
+possible. Source-rate video separately reserves bounded packet and byte budgets
+for the native pacer and network-task queues, shared by sender epochs on the same
+transport. Retired epochs continue to consume their outstanding reservations until
+release. Reservation failure and observable network-send failure latch against the
+sender epoch; the Android guard checks sender, bridge and generation before taking
+video-only action. With a current source configuration, it attempts at most one
+video renegotiation per peer; later failures remain video errors. Audio and control
+are not retired by that video error.
+
+These bounds do not cover every downstream socket buffer or guarantee delivery.
+TCP and TURN may use paths where a lower layer does not expose every dropped packet.
+The automatic renegotiation path and actual browser/vehicle recovery require
+end-to-end evidence; the bounds do not establish physical latency or continuity.
 The native cadence queue also coalesces raw inputs when more than one is queued.
 The producer waits outside native/send locks for the preceding encoder input to
 finish before capture. Completion follows the encoder callback or published loss
@@ -159,15 +167,11 @@ stays in the existing bounded reliable source queue. A retired wait cannot fail 
 replacement; input failure uses generation-scoped control without blocking video
 credit under the shared send lock.
 
-Each sender explicitly admits up to 128 Mbps instead of the SDK's 2.5 Mbps 1080p
-default, with a one-time 32 Mbps peer startup estimate and a 16 Mbps minimum.
-Real feedback and pacing remain enabled, but the minimum constrains reduction
-on a lower-capacity link and can increase queueing and loss. These settings do not
-establish Wi-Fi capacity. This prior does not encode at that bitrate or
-change source bytes, and is not reapplied on each IDR/source replacement.
-Actual input loss still invalidates the dependency chain. The source processor
-retains the SDK's normal drop/crop/timestamp decisions and separately counts
-observed, adaptation-dropped and forwarded inputs.
+The peer sets no video minimum, maximum or startup bitrate. Native allocation
+callbacks, when present, are diagnostics rather than a capacity measurement;
+an absent callback is reported as unavailable. Actual input loss still invalidates
+the dependency chain. The source processor separately counts observed,
+adaptation-dropped and forwarded inputs.
 
 An active bridge waiting for a keyframe also retries through the existing idle
 poll. The Hub's 500 ms source-request limit remains enforced, and both six-second
@@ -193,11 +197,21 @@ separate authentication exchange. Every retired video track and transceiver can
 then stop while DTLS/SCTP survives video replacement.
 
 The old inactive-video-anchor policy avoided stopping the shared transport but
-could starve packet feedback after replacement in M150. A 40-second native
-before/after test reproduced BWE decay to 30 kbps under that policy; data-first
-setup retained adaptive feedback and all original AUs. Each generation receives
-a distinct track; the existing generation/ready barriers prevent previous-source
-frames from being admitted. The application transport is released with the peer.
+could starve packet feedback after replacement in M150. Data-first setup keeps
+the shared application transport independent of a retired video transceiver.
+Each generation receives a distinct track; the existing generation/ready barriers
+prevent previous-source frames from being admitted. The application transport is
+released with the peer.
+
+Video replacement signaling is an idempotent transaction: a retry retains its
+request number, generation and exact local offer. The peer retains only its last
+successful answer and replays it without applying SDP or replacing the bridge
+again. A reused request number with different contents is rejected. A ready
+deadline reports a video-only timeout while preserving the committed SDP and
+bounded writer; a matching late ready or answer replay can complete that same
+generation. Older generations cannot reopen it. Deterministic native SDP failures
+remain terminal video errors; retrying those requires explicit rollback/state
+synchronization, not another offer on an unknown signaling state.
 
 Preserve source-compressed video without reencoding: the subsequent explicit
 constraint is never to encode the video a second time. Decryption, configuration

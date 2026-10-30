@@ -59,7 +59,7 @@ JNI class names are preserved by the shared consumer rules.
 - Kotlin standard library — JetBrains; Apache License 2.0.
 - Bouncy Castle 1.79 — The Legion of the Bouncy Castle Inc.; Bouncy Castle license (MIT-style).
 - JmDNS 3.6.3 — JmDNS contributors; Apache License 2.0.
-- WebRTC Android SDK `io.github.webrtc-sdk:android:150.7871.01` — Chromium M150
+- TiPlay source-rate WebRTC Android AAR — Chromium M150 original-codec RTP and
   DataChannels; [binary notices and exact provenance](#android-webrtc-datachannels)
   are retained in APK assets, including bundled component licenses.
 - geocoordinates-rs 0.14.2 — geocoordinates-rs contributors; MIT OR Apache-2.0. The Android AAR is from [uJZk/geocoordinates-rs](https://github.com/uJZk/geocoordinates-rs/releases/tag/android-v0.14.2), with upstream [justin13888/geocoordinates-rs](https://github.com/justin13888/geocoordinates-rs). Licenses, checksum and artifact provenance are in [shared/libs/geocoordinates](../shared/libs/geocoordinates/README.md).
@@ -141,12 +141,13 @@ The freestanding audio core links no standard runtime archives.
 
 ## Android WebRTC transports
 
-The pinned `io.github.webrtc-sdk:android:150.7871.01` AAR supplies Chromium M150
-WebRTC/SCTP, from [webrtc-sdk/android](https://github.com/webrtc-sdk/android/tree/v150.7871.01).
-TiPlay uses reliable ordered DataChannels and original-codec native video tracks.
-WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
-components retain their individual licenses. The unmodified publisher notices,
-source URLs, AAR SHA-256 and ABI sizes are retained under
+The local [source-rate AAR](../shared/libs/webrtc-source-rate/README.md) supplies
+Chromium M150 WebRTC/SCTP, built from pinned [webrtc-sdk/webrtc](https://github.com/webrtc-sdk/webrtc)
+source with TiPlay and compatibility patches. It is not the publisher Maven
+binary. TiPlay uses reliable ordered DataChannels and original-codec native video
+tracks. WebRTC uses BSD-3-Clause, the publisher repository uses MIT, and bundled
+components retain their individual licenses. Generated component notices, the
+unmodified publisher notices and exact source and artifact provenance are retained under
 [licenses/webrtc](../shared/src/main/assets/licenses/webrtc/PROVENANCE.txt)
 and included in APK assets with binary distributions.
 

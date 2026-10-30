@@ -16,8 +16,7 @@
     <string name="settings_capture_storage_failed">Storage write failed. Capture may be incomplete.</string>
     <string name="settings_view_logs">View logs</string>
     <string name="settings_capture_stop_share">End and share</string>
-    <string name="settings_capture_discard">Discard</string>
-    <string name="settings_logs_minimize">Minimize</string>
+    <string name="settings_report_share_again">Share again</string>
     <string name="settings_logs_action_failed">Could not complete the action. Try again.</string>
     <string name="settings_report_copy_path">Copy path</string>
     <string name="settings_report_open_folder">Open folder</string>

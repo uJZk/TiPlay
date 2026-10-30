@@ -66,6 +66,8 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
@@ -307,9 +309,20 @@ class CarPlayHostActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             onVpnConsentResult(result.resultCode)
         }
+    private val carBluetoothPicker: ActivityResultLauncher<IntentSenderRequest> = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        carBluetoothSelection.onResult(result.resultCode, result.data)
+    }
+    private val carBluetoothSelection by lazy {
+        CarBluetoothSelection(this, { sender -> carBluetoothPicker.launch(IntentSenderRequest.Builder(sender).build()) }) {
+            browserMainPage?.refresh()
+        }
+    }
     private val wirelessPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             awaitingWirelessPermissions = false
+            carBluetoothSelection.permissionsChanged()
+            if (!headUnitIntegrations()) CarBluetoothConnection.permissionsChanged(this)
+            browserMainPage?.refresh()
             val microphoneGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             val microphoneChanged = microphoneAvailable != microphoneGranted
             microphoneAvailable = microphoneGranted
@@ -881,6 +894,7 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_TiPlayNative)
         super.onCreate(savedInstanceState)
+        carBluetoothSelection.restore(savedInstanceState)
         BrowserSettingsPolicy.activate(this)
         NavigationWidgetUpdater.attach(applicationContext)
         CarPlayCallKeys.install(applicationContext) // its keys check the run mode when they arrive
@@ -1276,6 +1290,8 @@ class CarPlayHostActivity : ComponentActivity() {
                 .also { it.show() }
         }
         if (!headUnitIntegrations()) {
+            carBluetoothSelection.permissionsChanged()
+            CarBluetoothConnection.permissionsChanged(this)
             DiPlaySessionService.refreshForegroundAccess(this)
             val granted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             val changed = microphoneAvailable != granted
@@ -1908,6 +1924,7 @@ class CarPlayHostActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        carBluetoothSelection.save(outState)
         browserMainPage?.draft?.retain(outState)
         outState.putBoolean("browser_connection_requested", browserConnectionRequested)
         outState.putBoolean("carplay_night_active", darkMode)
@@ -2075,6 +2092,7 @@ class CarPlayHostActivity : ComponentActivity() {
         fallbackVideoView = null
         fallbackVideoBounds = null
         TeslaBrowserLink.detachHost(browserLinkHost)
+        carBluetoothSelection.close()
         AsyncDiagnosticLog.append(sessionLog, "CarPlay host Activity destroyed; process diagnostics retained")
         sessionLog = null
         super.onDestroy()
@@ -3633,6 +3651,7 @@ class CarPlayHostActivity : ComponentActivity() {
             requestPermissions = { wirelessPermissions.launch(it) },
             advanced = { openAdditionalSettings(SettingsCategory.ADVANCED) },
             settingsChanged = ::applyBrowserSettings,
+            chooseCarAssociation = { carBluetoothSelection.select(it) },
             about = {
                 startActivity(Intent(this, DiPlayActivity::class.java).putExtra("page", "about")
                     .putExtra(CarPlaySettingsNavigation.MENU, true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
@@ -5420,6 +5439,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     } else clearIphoneCornerMask()
 
                     CarPlayBackgroundSession.active = true
+                    if (!headUnitIntegrations()) CarBluetoothConnection.sessionActive(this@CarPlayHostActivity, session)
                     browserCarPlayPhase = "connected"
                     browserConnectionProblem = null
                     browserCarPlayRetry.sessionConnected()
@@ -5495,6 +5515,7 @@ class CarPlayHostActivity : ComponentActivity() {
                     }
                     browserDisplayReconnectHost.cancel()
                     startupRetryBudget.disconnected()
+                    if (!headUnitIntegrations()) CarBluetoothConnection.sessionEnded(this@CarPlayHostActivity, session)
                     activeAirPlaySession = null
                     clearIphoneCornerMask()
                     CarPlayBackgroundSession.active = false
@@ -6355,6 +6376,7 @@ class CarPlayHostActivity : ComponentActivity() {
         updateCallPopupGuard()
         val oldController = controller
         val oldSink = sink
+        if (!headUnitIntegrations()) activeAirPlaySession?.let { CarBluetoothConnection.sessionEnded(this, it) }
         CarPlayMediaKeys.detach(oldController)
         CarPlayBackgroundSession.clear(oldController, keepOwner = true)
         controller = null
@@ -6580,6 +6602,7 @@ class CarPlayHostActivity : ComponentActivity() {
         mainHandler.removeCallbacks(applyDisplaySize)
         val oldController = controller
         val oldSink = sink
+        if (!headUnitIntegrations()) activeAirPlaySession?.let { CarBluetoothConnection.sessionEnded(this, it) }
         CarPlayMediaKeys.detach(oldController)
         CarPlayBackgroundSession.clear(oldController)
         controller = null

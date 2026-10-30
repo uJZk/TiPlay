@@ -1,29 +1,18 @@
-Android WebRTC DataChannel dependency
+TiPlay source-rate Android WebRTC transport
 
-Maven coordinate: io.github.webrtc-sdk:android:150.7871.01
-Publisher/source: https://github.com/webrtc-sdk/android/tree/v150.7871.01
-Upstream: https://webrtc.googlesource.com/src/
-Binary: https://repo.maven.apache.org/maven2/io/github/webrtc-sdk/android/150.7871.01/android-150.7871.01.aar
-AAR SHA-256: 0a1627b1a48c2bc17d9a40d62fc47bd45166f44a311e95917f147c402de379b0
+The redistributed AAR is locally built from the pinned webrtc-sdk/webrtc revision,
+with the TiPlay source-rate patch and a local publisher-compatibility patch. It is
+not the unmodified publisher Maven binary. The exact source revision, patch hashes,
+build tool revision, four Android ABIs, focused native-test identity and AAR SHA-256
+are recorded in BUILD-PROVENANCE.json beside this file.
 
-Unmodified notices downloaded from the matching publisher tag:
-LICENSE: https://raw.githubusercontent.com/webrtc-sdk/android/v150.7871.01/LICENSE
-WEBRTC.md: https://raw.githubusercontent.com/webrtc-sdk/android/v150.7871.01/Licenses/WEBRTC.md
-LICENSE SHA-256: e6b282fe6c0fb353928923470457f31b44cbab203effd60c0cde4a5bb96c8aec
-WEBRTC.md SHA-256: d1f9382c6878ac024155fd6d44a5977329108bb8b0a01cea40e4a2f1d7de252e
+Source, build driver and patches: scripts/webrtc/
+Source: https://github.com/webrtc-sdk/webrtc
+Publisher build reference: https://github.com/webrtc-sdk/android
+Build output: shared/libs/webrtc-source-rate/webrtc-source-rate.aar
+Build-run evidence: https://github.com/uJZk/TiPlay/actions/runs/41014874037
 
-The publisher repository uses MIT; the Maven POM identifies WebRTC's BSD-3-Clause
-license. WEBRTC.md includes the WebRTC copyright/license and bundled third-party
-licenses. Keep all three files with redistributed APKs; Android packages these
-assets under assets/licenses/webrtc/. The full codec-containing publisher AAR is
-used, although TiPlay creates only DataChannels and no native media tracks.
-
-Packaged libjingle_peerconnection_so.so ABIs and uncompressed sizes:
-armeabi-v7a 6,809,404 bytes
-arm64-v8a 12,287,312 bytes
-x86 12,818,648 bytes
-x86_64 16,166,352 bytes
-classes.jar 1,063,812 bytes
-
-The exact APK size increase depends on ABI splits, compression and stripping;
-these archive sizes are not an APK size measurement.
+GENERATED-LICENSE.md contains notices generated for this build. LICENSE and
+WEBRTC.md preserve the publisher's unmodified MIT and WebRTC component notices;
+individual bundled components retain their respective licenses. These files are
+distributed in the APK under assets/licenses/webrtc/.
