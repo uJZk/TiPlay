@@ -178,11 +178,11 @@ it does not decode pictures or establish vehicle frame rate. Seven new JVM
 concurrency cases cover retained encoded buffers, dependency-loss ordering,
 timeout, retirement, interrupt and callback/recovery exceptions.
 
-The working source disables M150's raw-frame bitrate dropper and the independent
-congestion-window frame-skip policy for original compressed video. The window,
-pushback, pacing and real overload guards remain active; scaling/degradation
-controls alone did not disable these raw-frame policies. This does not provide
-source bitrate control for already compressed input.
+The working video/control factory uses the custom M150 source-rate transport:
+it bypasses native video congestion control and pacing and supplies no sender
+bitrate limits. The source is already compressed and cannot be rate-adapted by
+the encoder. Source-rate mode does not establish a bound on all native queues;
+overload and recovery require separate validation.
 `BrowserRtcVideoFlowTest` verifies original-byte output, bounded input and distinct
 input-loss/keyframe/dependency counters. These Java seam tests do not load Android
 JNI or establish vehicle frame continuity. Receiver RTP counters and bridge output

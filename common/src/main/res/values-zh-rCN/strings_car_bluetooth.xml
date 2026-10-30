@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_car_bluetooth_choose">车机蓝牙</string>
+    <string name="settings_car_bluetooth_none">未选择</string>
+    <string name="settings_car_bluetooth_clear">清除选择</string>
+    <string name="settings_car_bluetooth_find">查找并配对车机</string>
+    <string name="settings_car_bluetooth_not_selected">请选择车机蓝牙以使用车载音频。</string>
+    <string name="settings_car_bluetooth_disconnected">所选车机蓝牙未连接，无法确认是否在附近。</string>
+    <string name="settings_car_bluetooth_manual">所选车机蓝牙未连接；此 Android 版本无法自动连接，请在蓝牙设置中连接。</string>
+    <string name="settings_car_bluetooth_connect_failed">自动连接车机蓝牙失败，请检查蓝牙设置。</string>
+    <string name="settings_car_bluetooth_permission">请选择附近设备权限以选择车机蓝牙。</string>
+    <string name="settings_car_bluetooth_unsupported_pairing">此 Android 设备不支持配套设备配对。</string>
+    <string name="settings_car_bluetooth_pair_failed">车机蓝牙关联或配对失败，请重试。</string>
+    <string name="settings_car_bluetooth_not_iphone">已选 iPhone 不能同时作为车机蓝牙。</string>
+    <string name="settings_car_bluetooth_enable">请先开启蓝牙以选择车机。</string>
+    <string name="settings_car_bluetooth_route_unknown">车机蓝牙已连接，但 Android 无法确认所选车机的麦克风路由。</string>
+    <string name="settings_car_bluetooth_open_settings">打开蓝牙设置</string>
+</resources>

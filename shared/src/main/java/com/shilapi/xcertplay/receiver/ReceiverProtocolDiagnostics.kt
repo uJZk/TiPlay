@@ -42,7 +42,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
 
     fun trustIdentity(connection: Long, source: String) {
-        val safe = source.takeIf { it in setOf("x-apple-client-id", "connection-only") } ?: "other"
+        val safe = source.takeIf { it in setOf("verified-key", "x-apple-client-id", "connection-only") } ?: "other"
         emit("c=$connection stage=TRUST_IDENTITY source=$safe")
     }
 
@@ -108,7 +108,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
         emit("c=$connection stage=$stage exception=$type causes=${DiagnosticErrorText.types(error)} errorText=${DiagnosticErrorText.sanitize(runCatching { error.message }.getOrNull())}")
     }
 
-    fun setup(connection: Long, dict: Map<*, *>, verified: Boolean, handshakeBytes: Int) {
+    fun setup(connection: Long, dict: Map<*, *>, verified: Boolean, handshakeBytes: Int, pairingMode: String = "none") {
         val streams = (dict["streams"] as? List<*>)?.take(16)?.map { entry ->
             when (((entry as? Map<*, *>)?.get("type") as? Number)?.toInt()) {
                 110 -> "110"
@@ -132,7 +132,24 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
             "PTP" -> "PTP"
             else -> "OTHER"
         }
+        val ekeyState = when (val value = dict["ekey"]) {
+            null -> if (dict.containsKey("ekey")) "invalid" else "absent"
+            is ByteArray -> if (value.isNotEmpty()) "present" else "invalid"
+            else -> "invalid"
+        }
+        val eivState = when (val value = dict["eiv"]) {
+            null -> if (dict.containsKey("eiv")) "invalid" else "absent"
+            is ByteArray -> if (value.size == 16) "valid-length" else "invalid"
+            else -> "invalid"
+        }
+        val streamState = when (val value = dict["streams"]) {
+            null -> if (dict.containsKey("streams")) "invalid" else "absent"
+            is List<*> -> if (value.isEmpty()) "empty" else if (value.size > 16 || value.any { it !is Map<*, *> }) "invalid" else "present"
+            else -> "invalid"
+        }
+        val mode = pairingMode.takeIf { it in setOf("verified", "transient", "unverified", "none") } ?: "none"
         emit("c=$connection stage=SETUP verified=$verified handshakeBytes=$handshakeBytes " +
+            "pairing=$mode ekey=$ekeyState eiv=$eivState streamState=$streamState " +
             "ekeyBytes=${(dict["ekey"] as? ByteArray)?.size ?: 0} " +
             "eivBytes=${(dict["eiv"] as? ByteArray)?.size ?: 0} streams=[$streams] " +
             "timingPortProvided=${dict.containsKey("timingPort")} timingPortZero=${(dict["timingPort"] as? Number)?.toInt() == 0} " +

@@ -30,13 +30,17 @@ class ReceiverDeviceTrust(
 
     private data class Request(val decision: Decision.Pending, val fingerprint: String, val name: String,
                                val browser: String, val expires: Long, val verified: Boolean,
-                               val mediaType: String)
+                               val mediaType: String, val sessionGroup: Pair<String, String>?,
+                               val waitingConnections: MutableSet<String> = linkedSetOf())
     private var pending: Request? = null
     private var browser: String? = null
     private var browserSeenAt = Long.MIN_VALUE
     private var revision = 0L
     private val deniedUntil = linkedMapOf<String, Long>()
-    private val allowedConnections = linkedSetOf<String>()
+    // A connection may later present a different identity; its one-time grant must
+    // remain bound to the identity that was actually approved.
+    private val allowedConnections = linkedMapOf<String, String>()
+    private val sessionGrants = linkedMapOf<Pair<String, String>, MutableSet<String>>()
     private var unverifiedDeniedUntil = 0L
     private var lastDiagnostic: String? = null
     private var lastDiagnosticAt = Long.MIN_VALUE
@@ -68,22 +72,36 @@ class ReceiverDeviceTrust(
     }
 
     /** One-time permission belongs to this receiver-generated connection, never to a name/IP.
-     * The optional identity can be a presented key or a normalized stable sender claim. */
+     * The identity must be a signature-verified key or a normalized stable sender claim. */
     @Synchronized fun requestSession(sessionToken: String, publicKey: ByteArray?, deviceName: String,
-                                     mediaType: String = "unknown"): Decision {
+                                     mediaType: String = "unknown", verifiedSessionId: String? = null): Decision {
         if (!validToken(sessionToken)) return Decision.Denied
         val key = fingerprint(publicKey)
-        return requestIdentity("connection:$sessionToken", deviceName, key != null, key.orEmpty(), mediaType)
+        val sessionGroup = if (key != null && verifiedSessionId?.replace("-", "")?.matches(Regex("[A-Fa-f0-9]{32}")) == true)
+            key to requireNotNull(verifiedSessionId).replace("-", "").lowercase() else null
+        sessionGroup?.let { group ->
+            sessionGrants[group]?.takeIf { it.isNotEmpty() }?.let { connections ->
+                val connection = "connection:$sessionToken"
+                connections.add(connection)
+                while (connections.size > MAX_CONNECTION_GRANTS) connections.remove(connections.first())
+                allowedConnections[connection] = group.first
+                while (allowedConnections.size > MAX_CONNECTION_GRANTS) allowedConnections.remove(allowedConnections.keys.first())
+                report("session-hit")
+                return Decision.Allowed
+            }
+        }
+        return requestIdentity("connection:$sessionToken", deviceName, key != null, key.orEmpty(), mediaType, sessionGroup)
     }
 
     private fun requestIdentity(fingerprint: String, deviceName: String, verified: Boolean,
-                                persistentFingerprint: String = fingerprint, mediaType: String = "unknown"): Decision {
+                                persistentFingerprint: String = fingerprint, mediaType: String = "unknown",
+                                sessionGroup: Pair<String, String>? = null): Decision {
         expire()
         if (verified && store.contains(persistentFingerprint)) {
             report("remembered-hit")
             return Decision.Allowed
         }
-        if (fingerprint in allowedConnections) {
+        if (allowedConnections[fingerprint] == if (verified) persistentFingerprint else "") {
             report("connection-hit")
             return Decision.Allowed
         }
@@ -96,7 +114,7 @@ class ReceiverDeviceTrust(
         report(if (verified) "prompt-persistent" else "prompt-connection")
         return Decision.Pending(UUID.randomUUID().toString(), revision, fingerprint, verified, persistentFingerprint).also {
             pending = Request(it, fingerprint, name, activeBrowser, now + APPROVAL_MILLIS, verified,
-                mediaType.takeIf { type -> type in setOf("audio", "mirror", "video", "photo") } ?: "unknown")
+                mediaType.takeIf { type -> type in setOf("audio", "mirror", "video", "photo") } ?: "unknown", sessionGroup)
         }
     }
 
@@ -106,7 +124,29 @@ class ReceiverDeviceTrust(
     fun authorizeOnce(sessionToken: String, deviceName: String): Boolean = await(requestOnce(sessionToken, deviceName))
 
     fun authorizeSession(sessionToken: String, publicKey: ByteArray?, deviceName: String,
-                         mediaType: String = "unknown"): Boolean = await(requestSession(sessionToken, publicKey, deviceName, mediaType))
+                         mediaType: String = "unknown", verifiedSessionId: String? = null): Boolean {
+        val persistent = fingerprint(publicKey)
+        val (other, decision) = synchronized(this) {
+            expire()
+            val existing = pending?.takeIf { persistent != null && it.verified &&
+                it.decision.persistentFingerprint == persistent && it.fingerprint != "connection:$sessionToken" }
+            if (existing != null && existing.sessionGroup != null &&
+                existing.sessionGroup.second == verifiedSessionId?.replace("-", "")?.lowercase() && validToken(sessionToken)) {
+                if (existing.waitingConnections.size < MAX_CONNECTION_GRANTS)
+                    existing.waitingConnections.add("connection:$sessionToken")
+            }
+            existing to if (existing == null) requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId) else null
+        }
+        if (other != null) {
+            try {
+                other.decision.finished.await((other.expires - nowMillis()).coerceIn(0, APPROVAL_MILLIS), TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+        return await(decision ?: requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId))
+    }
 
     private fun await(decision: Decision): Boolean = when (decision) {
         Decision.Allowed -> true
@@ -121,7 +161,8 @@ class ReceiverDeviceTrust(
             synchronized(this) {
                 if (pending?.decision === decision) cancelPending()
                 decision.allowed && decision.revision == revision &&
-                    ((decision.verified && store.contains(decision.persistentFingerprint)) || decision.fingerprint in allowedConnections)
+                    ((decision.verified && store.contains(decision.persistentFingerprint)) ||
+                        allowedConnections[decision.fingerprint] == if (decision.verified) decision.persistentFingerprint else "")
             }
         }
     }
@@ -149,8 +190,15 @@ class ReceiverDeviceTrust(
                 }
             }
             else {
-                allowedConnections += request.fingerprint
-                while (allowedConnections.size > MAX_CONNECTION_GRANTS) allowedConnections.remove(allowedConnections.first())
+                allowedConnections[request.fingerprint] = if (request.verified) request.decision.persistentFingerprint else ""
+                while (allowedConnections.size > MAX_CONNECTION_GRANTS) allowedConnections.remove(allowedConnections.keys.first())
+                request.sessionGroup?.let { group ->
+                    sessionGrants.getOrPut(group) { linkedSetOf() }.apply {
+                        add(request.fingerprint)
+                        addAll(request.waitingConnections)
+                    }
+                    while (sessionGrants.size > MAX_CONNECTION_GRANTS) sessionGrants.remove(sessionGrants.keys.first())
+                }
                 report(if (remember) "remember-unavailable" else "allowed-once")
             }
         } else report("rejected")
@@ -166,6 +214,7 @@ class ReceiverDeviceTrust(
         store.forgetAll()
         deniedUntil.clear()
         allowedConnections.clear()
+        sessionGrants.clear()
         unverifiedDeniedUntil = 0
     }
 
@@ -173,6 +222,8 @@ class ReceiverDeviceTrust(
     @Synchronized fun endSession(sessionToken: String) {
         val fingerprint = "connection:$sessionToken"
         allowedConnections.remove(fingerprint)
+        pending?.waitingConnections?.remove(fingerprint)
+        sessionGrants.entries.removeIf { entry -> entry.value.remove(fingerprint); entry.value.isEmpty() }
         pending?.takeIf { it.fingerprint == fingerprint }?.let(::finish)
     }
 
@@ -181,6 +232,7 @@ class ReceiverDeviceTrust(
         browser = null
         cancelPending()
         allowedConnections.clear()
+        sessionGrants.clear()
     }
 
     private fun expire() {

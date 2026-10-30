@@ -12,23 +12,35 @@ const frame = () => ({ closed: 0, close() { this.closed++; } });
 const config = (epoch, videoGeneration = 1) => encodeRecord({ kind: RECORD.CONFIG, epoch,
   payload: new TextEncoder().encode(JSON.stringify({ mode: 'carplay', codec: 'avc1.640028', width: 800, height: 480,
     videoTransport: RTC_VIDEO_TRANSPORT, videoGeneration })) });
-async function workerHarness(t) {
+async function workerHarness(t, { canvas = false } = {}) {
   let reportStats, controller, cancelled = 0;
   const messages = [], self = { postMessage: message => messages.push(message), close() {} };
   const source = (await readFile(new URL('../../site/play/decoder-worker.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
   vm.runInNewContext(source, {
     self, createFrameDelivery, createRtcTrackReader, createRtcVideoPipeline,
-    createFramePresenter() { throw Error('unexpected canvas setup'); },
+    createFramePresenter() {
+      if (!canvas) throw Error('unexpected canvas setup');
+      return { present(value) { value.close(); }, close() {}, dispose() {}, resize() {}, stats: () => ({ renderDroppedFrames: 0 }) };
+    },
     createChunkStream() { throw Error('unexpected port feed'); },
     setInterval: callback => { reportStats = callback; return 1; }, clearInterval() {},
   });
   const send = data => self.onmessage({ data });
+  if (canvas) send({ type: 'canvas', canvas: {} });
   send({ type: 'stream', id: 7, stream: new ReadableStream({ start(value) { controller = value; }, cancel() { cancelled++; } }) });
   t.after(() => send({ type: 'stop' }));
   return { send, messages, enqueue: value => controller.enqueue(value), cancelled: () => cancelled,
     stats() { reportStats(); return messages.filter(value => value.type === 'stats').at(-1).stats; } };
 }
 const latest = (h, type) => h.messages.filter(value => value.type === type).at(-1);
+
+test('worker reports transfer drops only when frames really use worker-to-main delivery', async t => {
+  const mainCanvas = await workerHarness(t);
+  const workerCanvas = await workerHarness(t, { canvas: true });
+  assert.equal(mainCanvas.stats().transferDroppedFrames, 0);
+  assert.equal(Object.hasOwn(workerCanvas.stats(), 'transferDroppedFrames'), false);
+  assert.equal(workerCanvas.stats().renderDroppedFrames, 0);
+});
 
 test('worker renders native frames directly without WebCodecs, source-clock or touch scheduling', async t => {
   const h = await workerHarness(t);

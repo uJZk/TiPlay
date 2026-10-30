@@ -6,6 +6,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiverProtocolDiagnosticsTest {
+    @Test fun setupDistinguishesMissingMalformedAndEmptyFieldsWithoutLoggingValues() {
+        val logs = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics { logs += it }
+        diagnostics.setup(1, emptyMap<String, Any>(), false, 0, "none")
+        diagnostics.setup(2, mapOf("ekey" to "secret", "eiv" to ByteArray(2), "streams" to emptyList<Any>()), false, 0, "unverified")
+        assertTrue(logs.any { it.contains("ekey=absent eiv=absent streamState=absent") })
+        assertTrue(logs.any { it.contains("pairing=unverified ekey=invalid eiv=invalid streamState=empty") })
+        assertFalse(logs.any { it.contains("secret") })
+    }
     @Test fun logsOnlyWhitelistedMetadataAndNeverSensitiveRequestOrFailureContent() {
         val messages = mutableListOf<String>()
         val diagnostics = ReceiverProtocolDiagnostics(messages::add)

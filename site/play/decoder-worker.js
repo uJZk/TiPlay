@@ -38,7 +38,7 @@ self.onmessage = ({ data }) => {
     stop(); activeId = data.id;
     pipeline.read(data.id, data.type === 'stream' ? data.stream : createChunkStream(data.port));
     timer = setInterval(() => self.postMessage({ type: 'stats', id: activeId,
-      stats: { ...pipeline.stats(), ...delivery.stats(), ...presenter?.stats() } }), 1000);
+      stats: { ...pipeline.stats(), ...(!presenter ? delivery.stats() : {}), ...presenter?.stats() } }), 1000);
   } else if (data.type === 'video-generation' && data.id === activeId) {
     trackReader.stop(); delivery.stop(); presenter?.close();
     pipeline.resetGeneration(data.generation); generation = data.generation;

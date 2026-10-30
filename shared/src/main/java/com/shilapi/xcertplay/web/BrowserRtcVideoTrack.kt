@@ -163,8 +163,11 @@ internal class BrowserRtcVideoTrack(
         "codecMismatchFrames" to codecMismatchFrames.get(), "duplicateEncoderInputs" to duplicateEncoderInputs.get(),
         "lossEvents" to lossEvents.get(), "pendingFrames" to pending.get(), "pendingBytes" to pendingBytes.get(),
         "encoderInputsInFlight" to synchronized(inputGate) { inFlightInputs },
+        // Values describe callbacks, not a measured network capacity. Source-rate mode
+        // may receive no callback at all; report that as unavailable rather than zero.
         "waitingForKey" to waitingForKey, "rateUpdates" to rateUpdates.get(),
-        "allocatedBitrateBps" to allocatedBitrateBps.get(), "allocatedFramerate" to allocatedFramerate.get(),
+        "allocatedBitrateBps" to allocatedBitrateBps.get().takeIf { rateUpdates.get() > 0 },
+        "allocatedFramerate" to allocatedFramerate.get().takeIf { rateUpdates.get() > 0 },
     ) + sourceProcessor.flowDiagnostics()
 
     @Synchronized fun configure(record: WebVideoRecord): Boolean {
@@ -441,9 +444,9 @@ internal class BrowserRtcVideoTrack(
             }
         }
         override fun setRateAllocation(allocation: VideoEncoder.BitrateAllocation, framerate: Int): VideoCodecStatus {
-            rateUpdates.incrementAndGet()
             allocatedBitrateBps.set(allocation.sum.toLong())
             allocatedFramerate.set(framerate)
+            rateUpdates.incrementAndGet()
             return VideoCodecStatus.OK
         }
         override fun getScalingSettings(): VideoEncoder.ScalingSettings = VideoEncoder.ScalingSettings.OFF

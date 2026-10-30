@@ -31,6 +31,7 @@ internal class BrowserMainSettingsMenu(
     about: () -> Unit,
     private val settingsChanged: () -> Unit = {},
     private val setupOnly: Boolean = false,
+    private val chooseCarAssociation: (String?) -> Unit = {},
 ) {
     private val ui = TiPlayNativeUi(activity)
     private val spacing = BrowserNativeSettingsUi(activity)
@@ -63,6 +64,7 @@ internal class BrowserMainSettingsMenu(
     private val carBluetooth by lazy { CarBluetoothStatus(activity) { if (!disposed) updateActions() } }
     private var statusWatch: BrowserSettingsStatusWatch? = null
     private var phone: Button
+    private var carPhone: Button
     private lateinit var connectionMode: Button
     private var networkStatus: TextView? = null
     private var refreshAddress: () -> Unit = {}
@@ -115,7 +117,8 @@ internal class BrowserMainSettingsMenu(
             renderNetwork(); updateActions(); applyChanges(); settingsChanged()
         }
         session.addView(connectionMode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-        phone = spacing.button(session, phoneLabel(), ::choosePhone).apply { isAllCaps = false }
+        phone = spacing.button(session, phoneLabel(), ::choosePhone).apply { isAllCaps = false; tag = "iphone_bluetooth_button" }
+        carPhone = spacing.button(session, carPhoneLabel(), ::chooseCarPhone).apply { isAllCaps = false; tag = "car_bluetooth_button" }
         if (!setupOnly) session.addView(BrowserBootConnectionSettings.create(activity))
         val browser = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         val details = LinearLayout(activity).apply {
@@ -158,6 +161,31 @@ internal class BrowserMainSettingsMenu(
     }
     private fun phoneLabel() = if (draft.phoneAddress.isNullOrBlank()) activity.getString(R.string.choose_iphone)
         else activity.getString(R.string.settings_selected_iphone, draft.phoneName)
+    private fun carPhoneLabel() = activity.getString(R.string.settings_car_bluetooth_choose) + " · " +
+        (CarBluetoothPreference.name(activity) ?: activity.getString(R.string.settings_car_bluetooth_none))
+    private fun chooseCarPhone() {
+        CarBluetoothConnection.userAction()
+        if (Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)); return
+        }
+        val adapter = activity.getSystemService(BluetoothManager::class.java)?.adapter
+        if (runCatching { adapter?.isEnabled }.getOrNull() != true) {
+            Toast.makeText(activity, R.string.settings_car_bluetooth_enable, Toast.LENGTH_LONG).show(); return
+        }
+        val devices = runCatching { adapter?.bondedDevices?.filterNot { it.address.equals(draft.phoneAddress, true) }?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
+        val hasSelection = CarBluetoothPreference.address(activity) != null
+        val labels = devices.map { "${it.name ?: activity.getString(R.string.paired_device)} · ${it.address.takeLast(5)}" } +
+            (if (hasSelection) listOf(activity.getString(R.string.settings_car_bluetooth_clear)) else emptyList()) +
+            activity.getString(R.string.settings_car_bluetooth_open_settings)
+        AlertDialog.Builder(activity).setTitle(R.string.settings_car_bluetooth_choose)
+            .setItems(labels.toTypedArray()) { _, index ->
+                if (index < devices.size) chooseCarAssociation(devices[index].address)
+                else if (hasSelection && index == devices.size) { CarBluetoothPreference.save(activity, null, null); refresh() }
+                else activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+            }
+            .setNeutralButton(R.string.settings_car_bluetooth_find) { _, _ -> chooseCarAssociation(null) }
+            .setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
+    }
     private fun choosePhone() {
         if (Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             val permission = Manifest.permission.BLUETOOTH_CONNECT
@@ -272,7 +300,7 @@ internal class BrowserMainSettingsMenu(
         renderNetwork(); updateActions()
     }
     fun refresh() {
-        carBluetooth.refresh(); refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); updateActions()
+        carBluetooth.refresh(); refreshAddress(); refreshBrowser(); refreshNetwork(); phone.text = phoneLabel(); carPhone.text = carPhoneLabel(); updateActions()
     }
     fun refreshNetwork() {
         val message = if (draft.source == BrowserConnectionDraft.Source.LOCAL) {
@@ -331,6 +359,8 @@ internal class BrowserMainSettingsMenu(
         putHint("session", currentProblem?.message?.let(activity::getString))
         putHint("browser-open", if (!browserReady) activity.getString(R.string.settings_hint_browser_open, activity.getString(R.string.settings_tesla_browser)) else null)
         phone.visibility = if (draft.wireless && (setupOnly || !disabled)) View.VISIBLE else View.GONE
+        carPhone.visibility = if (!BrowserCarPlayAudioSettings.disabled(activity)) View.VISIBLE else View.GONE
+        carPhone.text = carPhoneLabel()
         val phoneMessage = if (phone.visibility == View.VISIBLE && !active) when {
             draft.phoneAddress.isNullOrBlank() -> R.string.settings_hint_phone_wireless
             draft.allTransports -> null // Only the host knows whether All currently uses USB.
@@ -340,10 +370,15 @@ internal class BrowserMainSettingsMenu(
         } else null
         putHint("phone", phoneMessage?.let(activity::getString))
         val bluetoothHint = if (BrowserCarPlayAudioSettings.disabled(activity))
-            R.string.settings_hint_iphone_car_audio else when (carBluetooth.state(draft.phoneAddress)) {
+            R.string.settings_hint_iphone_car_audio else when (carBluetooth.selectedState(CarBluetoothPreference.address(activity))) {
             CarBluetoothStatus.State.CONNECTED -> null
-            CarBluetoothStatus.State.DISCONNECTED -> R.string.settings_hint_car_bluetooth_disconnected
-            CarBluetoothStatus.State.UNKNOWN -> R.string.settings_hint_car_bluetooth_unknown
+            CarBluetoothStatus.State.NOT_SELECTED -> R.string.settings_car_bluetooth_not_selected
+            CarBluetoothStatus.State.ROUTE_UNVERIFIED -> R.string.settings_car_bluetooth_route_unknown
+            CarBluetoothStatus.State.DISCONNECTED -> if (CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.FAILED)
+                R.string.settings_car_bluetooth_connect_failed else if (Build.VERSION.SDK_INT < 37 || CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.UNSUPPORTED)
+                R.string.settings_car_bluetooth_manual else R.string.settings_car_bluetooth_disconnected
+            CarBluetoothStatus.State.UNKNOWN -> if (CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.FAILED)
+                R.string.settings_car_bluetooth_connect_failed else R.string.settings_hint_car_bluetooth_unknown
             CarBluetoothStatus.State.VERIFY_AUDIO_DEVICE -> R.string.settings_hint_car_bluetooth_verify
         }
         putHint("car-bluetooth", bluetoothHint?.let(activity::getString))
