@@ -447,7 +447,7 @@ index d0d3cd9..1803793 100644
      return;
    }
 diff --git a/modules/pacing/task_queue_paced_sender.cc b/modules/pacing/task_queue_paced_sender.cc
-index 322643c..12f455c 100644
+index 322643c..b299e4a 100644
 --- a/modules/pacing/task_queue_paced_sender.cc
 +++ b/modules/pacing/task_queue_paced_sender.cc
 @@ -31,6 +31,7 @@
@@ -467,7 +467,7 @@ index 322643c..12f455c 100644
        pacing_controller_(clock, packet_sender, field_trials),
        next_process_time_(Timestamp::MinusInfinity()),
        is_started_(false),
-@@ -116,8 +119,58 @@ void TaskQueuePacedSender::SetConfig(const PacerConfig& pacer_config) {
+@@ -116,8 +119,63 @@ void TaskQueuePacedSender::SetConfig(const PacerConfig& pacer_config) {
  
  void TaskQueuePacedSender::EnqueuePackets(
      std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
@@ -485,6 +485,9 @@ index 322643c..12f455c 100644
 +          });
 +      if (!audio_or_padding) {
 +        RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP packet has no sender epoch";
++        for (const auto& packet : packets) {
++          if (auto epoch = packet->tiplay_epoch()) epoch->pacer->Fail();
++        }
 +        return;
 +      }
 +    }
@@ -492,7 +495,9 @@ index 322643c..12f455c 100644
 +      for (const auto& packet : packets) {
 +        if (packet->tiplay_epoch() != source_rate_epoch) {
 +          RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP batch has mixed epochs";
-+          source_rate_epoch->pacer->Fail();
++          for (const auto& mixed : packets) {
++            if (auto epoch = mixed->tiplay_epoch()) epoch->pacer->Fail();
++          }
 +          return;
 +        }
 +      }

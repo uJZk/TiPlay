@@ -1012,7 +1012,7 @@ index 0370248..31a1488 100644
    const FieldTrials trials = CreateTestFieldTrials();
    PacingController pacer(&clock_, &callback_, trials);
 diff --git a/modules/pacing/task_queue_paced_sender.cc b/modules/pacing/task_queue_paced_sender.cc
-index 5646472..12f455c 100644
+index 5646472..b299e4a 100644
 --- a/modules/pacing/task_queue_paced_sender.cc
 +++ b/modules/pacing/task_queue_paced_sender.cc
 @@ -31,6 +31,7 @@
@@ -1044,7 +1044,7 @@ index 5646472..12f455c 100644
  void TaskQueuePacedSender::SetCongested(bool congested) {
    RTC_DCHECK_RUN_ON(task_queue_);
    pacing_controller_.SetCongested(congested);
-@@ -111,8 +119,58 @@ void TaskQueuePacedSender::SetConfig(const PacerConfig& pacer_config) {
+@@ -111,8 +119,63 @@ void TaskQueuePacedSender::SetConfig(const PacerConfig& pacer_config) {
  
  void TaskQueuePacedSender::EnqueuePackets(
      std::vector<std::unique_ptr<RtpPacketToSend>> packets) {
@@ -1062,6 +1062,9 @@ index 5646472..12f455c 100644
 +          });
 +      if (!audio_or_padding) {
 +        RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP packet has no sender epoch";
++        for (const auto& packet : packets) {
++          if (auto epoch = packet->tiplay_epoch()) epoch->pacer->Fail();
++        }
 +        return;
 +      }
 +    }
@@ -1069,7 +1072,9 @@ index 5646472..12f455c 100644
 +      for (const auto& packet : packets) {
 +        if (packet->tiplay_epoch() != source_rate_epoch) {
 +          RTC_LOG(LS_ERROR) << "TiPlay source-rate RTP batch has mixed epochs";
-+          source_rate_epoch->pacer->Fail();
++          for (const auto& mixed : packets) {
++            if (auto epoch = mixed->tiplay_epoch()) epoch->pacer->Fail();
++          }
 +          return;
 +        }
 +      }
@@ -1104,7 +1109,7 @@ index 5646472..12f455c 100644
          RTC_DCHECK_RUN_ON(task_queue_);
          TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                       "TaskQueuePacedSender::EnqueuePackets");
-@@ -243,6 +301,7 @@ void TaskQueuePacedSender::MaybeProcessPackets(
+@@ -243,6 +306,7 @@ void TaskQueuePacedSender::MaybeProcessPackets(
      next_send_time = pacing_controller_.NextSendTime();
      RTC_DCHECK(next_send_time.IsFinite());
  
@@ -1112,7 +1117,7 @@ index 5646472..12f455c 100644
      // Probing state could change. Get margin after process packets.
      early_execute_margin = pacing_controller_.IsProbing()
                                 ? PacingController::kMaxEarlyProbeProcessing
-@@ -260,7 +319,8 @@ void TaskQueuePacedSender::MaybeProcessPackets(
+@@ -260,7 +324,8 @@ void TaskQueuePacedSender::MaybeProcessPackets(
  
    // Do not hold back in probing.
    TimeDelta hold_back_window = TimeDelta::Zero();
