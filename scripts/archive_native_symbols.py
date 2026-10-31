@@ -9,22 +9,53 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 from native_symbols import archive, archive_tag, sha, verify
 
 TRUSTED_REPOSITORY = 'uJZk/TiPlay'
+READ_ATTEMPTS = 5
+READ_DELAY_SECONDS = 1
+ASSET_NAMES = {'native-symbols.zip', 'native-symbols-index.json'}
 
 
 def gh(*arguments):
-    return subprocess.check_output(['gh', *arguments], text=True)
+    return subprocess.check_output(['gh', *arguments], text=True, stderr=subprocess.PIPE)
+
+
+def fresh(path):
+    return path + ('&' if '?' in path else '?') + 'nonce=' + str(time.time_ns())
 
 
 def find_release(repo, tag):
-    pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{repo}/releases?per_page=100'))
+    pages = json.loads(gh('api', '--paginate', '--slurp', fresh(f'repos/{repo}/releases?per_page=100'),
+                          '--header', 'Cache-Control: no-cache'))
     matches = [release for page in pages for release in page if release['tag_name'] == tag]
     if len(matches) > 1:
         raise ValueError('Multiple symbol archives use the requested tag')
     return matches[0] if matches else None
+
+
+def release_id(release):
+    identifier = release.get('id')
+    if type(identifier) is not int or identifier <= 0:
+        raise ValueError('Expected a positive native symbols release ID')
+    return identifier
+
+
+def read_release(identifier):
+    if type(identifier) is not int or identifier <= 0:
+        raise ValueError('Expected a positive native symbols release ID')
+    try:
+        release = json.loads(gh('api', fresh(f'repos/{TRUSTED_REPOSITORY}/releases/{identifier}'),
+                                '--header', 'Cache-Control: no-cache'))
+    except subprocess.CalledProcessError as error:
+        if re.search(r'\bHTTP 404\b', error.stderr or ''):
+            return None  # Only a temporarily missing read may be retried.
+        raise
+    if release_id(release) != identifier:
+        raise ValueError('Native symbols release ID differs')
+    return release
 
 
 def validate_release(release, tag, commit, files, allow_missing):
@@ -44,6 +75,30 @@ def validate_release(release, tag, commit, files, allow_missing):
     if not allow_missing and set(actual) != set(files):
         raise ValueError('Native symbols archive is incomplete')
     return set(files) - set(actual)
+
+
+def await_complete_release(identifier, tag, commit, files):
+    for attempt in range(READ_ATTEMPTS):
+        release = read_release(identifier)
+        if release is not None:
+            # Published, identity, unexpected asset and digest mismatches are fatal immediately.
+            if not validate_release(release, tag, commit, files, allow_missing=True):
+                return release
+        if attempt + 1 < READ_ATTEMPTS:
+            time.sleep(READ_DELAY_SECONDS)
+    raise ValueError('Native symbols archive is not completely visible after bounded reads')
+
+
+def upload_asset(identifier, name, path):
+    if type(identifier) is not int or identifier <= 0 or name not in ASSET_NAMES:
+        raise ValueError('Unexpected native symbols upload target')
+    asset = json.loads(gh('api', '--method', 'POST',
+        f'https://uploads.github.com/repos/{TRUSTED_REPOSITORY}/releases/{identifier}/assets?name={name}',
+        '--header', 'Content-Type: application/octet-stream', '--input', str(path)))
+    if (type(asset.get('id')) is not int or asset['id'] <= 0 or asset.get('name') != name
+            or asset.get('size') != path.stat().st_size or asset.get('digest') != 'sha256:' + sha(path)):
+        raise ValueError('Uploaded native symbols asset identity or digest differs')
+    return asset
 
 
 def validate_producer_archives(index):
@@ -96,28 +151,25 @@ def persist(directory, env=os.environ):
         files = {path.name: path for path in (bundle, manifest)}
         release = find_release(TRUSTED_REPOSITORY, tag)
         if release is None:
-            notes = temporary / 'notes.txt'
-            notes.write_text(
+            notes = (
                 f'Native symbols for producer commit {commit}.\n'
                 f'Component: {index["producer"]["component"]}.\n'
                 f'Index SHA-256: {sha(manifest)}.\n'
                 'ABI/Build ID and published ELF SHA-256 are recorded in the index.\n'
                 'Authenticated maintenance archive; keep draft to exclude it from APK downloads.\n')
-            gh('release', 'create', tag, '--repo', TRUSTED_REPOSITORY, '--draft', '--prerelease',
-               '--target', commit, '--title', 'Native symbols ' + index['producer']['component'],
-               '--notes-file', str(notes))
-            release = find_release(TRUSTED_REPOSITORY, tag)
-        if release is None:
-            raise ValueError('Native symbols draft was not created')
+            payload = temporary / 'create-release.json'
+            payload.write_text(json.dumps({'tag_name': tag, 'target_commitish': commit,
+                'name': 'Native symbols ' + index['producer']['component'], 'body': notes,
+                'draft': True, 'prerelease': True}))
+            release = json.loads(gh('api', '--method', 'POST',
+                f'repos/{TRUSTED_REPOSITORY}/releases', '--input', str(payload)))
+        identifier = release_id(release)
         missing = validate_release(release, tag, commit, files, allow_missing=True)
-        if missing:
-            # No --clobber, edit, delete or publish path: mismatched assets are immutable.
-            gh('release', 'upload', tag, *(str(files[name]) for name in sorted(missing)),
-               '--repo', TRUSTED_REPOSITORY)
-        release = find_release(TRUSTED_REPOSITORY, tag)
-        if release is None:
-            raise ValueError('Native symbols draft disappeared')
-        validate_release(release, tag, commit, files, allow_missing=False)
+        for name in sorted(missing):
+            # The ID comes directly from creation or an existing verified draft; no tag/list lookup.
+            # No overwrite, edit, delete or publish path exists for mismatched assets.
+            upload_asset(identifier, name, files[name])
+        release = await_complete_release(identifier, tag, commit, files)
         print(release['html_url'])
         return release
 

@@ -103,7 +103,7 @@ uncontrolled network load across an external CDN deployment.
 
 The complete [AGENTS](../AGENTS.md) Android command passed: 4,535 unit cases
 (2,613 shared, 1,916 common and six home), mobile/home/maphost Debug lint and all
-three Debug assemblies. Node 22 passed all 690 browser cases. The 49 Python
+three Debug assemblies. Node 22 passed all 690 browser cases. The 52 Python
 checks cover native symbols, the WebRTC build driver, final-APK verification,
 release drafts and site deployment. The freshly assembled mobile Debug APK also
 passes the pinned WebRTC identity/provenance, four-ABI ELF and ZIP-alignment gate.

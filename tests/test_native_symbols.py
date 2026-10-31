@@ -106,23 +106,40 @@ class NativeSymbolsTest(unittest.TestCase):
         commands, releases = [], []
         def fake_gh(*args):
             commands.append(args)
-            if args[:2] == ('release', 'create'):
-                self.assertIn('--draft', args)
-                self.assertIn('--prerelease', args)
-                releases.append({'draft': True, 'prerelease': True, 'tag_name': args[2],
-                                 'target_commitish': SHA, 'assets': [], 'html_url': 'draft-url'})
-            elif args[:2] == ('release', 'upload'):
-                for name in args[3:args.index('--repo')]:
-                    path = Path(name)
-                    releases[0]['assets'].append({'name': path.name, 'size': path.stat().st_size,
-                                                 'digest': 'sha256:' + symbols.sha(path)})
-            return ''
-        with mock.patch.object(durable, 'find_release', side_effect=lambda *a: releases[0] if releases else None), \
+            self.assertEqual(args[0], 'api')
+            if args[1:3] == ('--method', 'POST'):
+                path = Path(args[args.index('--input') + 1])
+                if args[3] == 'repos/' + durable.TRUSTED_REPOSITORY + '/releases':
+                    payload = json.loads(path.read_text())
+                    self.assertEqual(set(payload), {'draft', 'prerelease', 'tag_name', 'target_commitish', 'name', 'body'})
+                    self.assertIs(payload['draft'], True)
+                    self.assertIs(payload['prerelease'], True)
+                    releases.append({'id': 71, 'draft': True, 'prerelease': True,
+                        'tag_name': payload['tag_name'], 'target_commitish': payload['target_commitish'],
+                        'assets': [], 'html_url': 'draft-url'})
+                    return json.dumps(releases[0])
+                prefix = f'https://uploads.github.com/repos/{durable.TRUSTED_REPOSITORY}/releases/71/assets?name='
+                self.assertTrue(args[3].startswith(prefix))
+                name = args[3].removeprefix(prefix)
+                self.assertIn(name, durable.ASSET_NAMES)
+                self.assertEqual(name, path.name)
+                asset = {'id': len(releases[0]['assets']) + 1, 'name': name,
+                         'size': path.stat().st_size, 'digest': 'sha256:' + symbols.sha(path)}
+                releases[0]['assets'].append(asset)
+                return json.dumps(asset)
+            self.assertTrue(args[1].startswith(f'repos/{durable.TRUSTED_REPOSITORY}/releases/71?nonce='))
+            self.assertIn('Cache-Control: no-cache', args)
+            return json.dumps(releases[0])
+        # Even if the list remains stale forever after creation, its returned ID is authoritative.
+        with mock.patch.object(durable, 'find_release', return_value=None) as find, \
                 mock.patch.object(durable, 'gh', side_effect=fake_gh):
             durable.persist(self.directory, TRUSTED)
-            writes = len(commands)
+            find.assert_called_once()
+        writes = sum(call[1:3] == ('--method', 'POST') for call in commands)
+        with mock.patch.object(durable, 'find_release', return_value=releases[0]), \
+                mock.patch.object(durable, 'gh', side_effect=fake_gh):
             durable.persist(self.directory, TRUSTED)
-            self.assertEqual(writes, len(commands))
+        self.assertEqual(writes, sum(call[1:3] == ('--method', 'POST') for call in commands))
         self.assertEqual({asset['name'] for asset in releases[0]['assets']},
                          {'native-symbols.zip', 'native-symbols-index.json'})
         self.assertTrue(all('--clobber' not in call and 'edit' not in call and '--draft=false' not in call for call in commands))
@@ -136,7 +153,7 @@ class NativeSymbolsTest(unittest.TestCase):
                     self.assertRaisesRegex(ValueError, 'trusted main'):
                 durable.persist(self.directory, {**TRUSTED, **overrides})
             gh.assert_not_called()
-        release = {'draft': False, 'tag_name': symbols.archive_tag(self.directory),
+        release = {'id': 71, 'draft': False, 'tag_name': symbols.archive_tag(self.directory),
                    'prerelease': True, 'target_commitish': SHA, 'assets': []}
         with mock.patch.object(durable, 'find_release', return_value=release), \
                 mock.patch.object(durable, 'gh') as gh, self.assertRaisesRegex(ValueError, 'remain draft'):
@@ -148,6 +165,72 @@ class NativeSymbolsTest(unittest.TestCase):
                 mock.patch.object(durable, 'gh') as gh, self.assertRaisesRegex(ValueError, 'overwrite'):
             durable.persist(self.directory, TRUSTED)
         gh.assert_not_called()
+
+    def test_upload_confirmation_retries_only_missing_or_incomplete_visibility(self):
+        self.record()
+        release = {'id': 71, 'draft': True, 'prerelease': True, 'target_commitish': SHA,
+                   'tag_name': symbols.archive_tag(self.directory), 'assets': [], 'html_url': 'draft-url'}
+        uploaded, reads = [], []
+        def fake_gh(*args):
+            if args[1:3] == ('--method', 'POST'):
+                path = Path(args[args.index('--input') + 1])
+                self.assertEqual(args[3], f'https://uploads.github.com/repos/{durable.TRUSTED_REPOSITORY}/releases/71/assets?name={path.name}')
+                asset = {'id': len(uploaded) + 1, 'name': path.name,
+                         'size': path.stat().st_size, 'digest': 'sha256:' + symbols.sha(path)}
+                uploaded.append(asset)
+                return json.dumps(asset)
+            reads.append(args[1])
+            if len(reads) == 1:
+                raise subprocess.CalledProcessError(1, ['gh'], stderr='gh: Not Found (HTTP 404)')
+            return json.dumps({**release, 'assets': uploaded[:1] if len(reads) == 2 else uploaded})
+        with mock.patch.object(durable, 'find_release', return_value=release), \
+                mock.patch.object(durable, 'gh', side_effect=fake_gh), \
+                mock.patch.object(durable.time, 'sleep') as pause:
+            result = durable.persist(self.directory, TRUSTED)
+        self.assertEqual(len(result['assets']), 2)
+        self.assertEqual(len(reads), 3)
+        self.assertEqual(len(set(reads)), 3)
+        self.assertEqual(pause.call_count, 2)
+
+    def test_confirmation_mismatches_fail_immediately_and_missing_reads_are_bounded(self):
+        self.record()
+        release = {'id': 71, 'draft': True, 'prerelease': True, 'target_commitish': SHA,
+                   'tag_name': symbols.archive_tag(self.directory), 'assets': [], 'html_url': 'draft-url'}
+        mismatch = {'name': 'native-symbols.zip', 'size': 1, 'digest': 'sha256:' + '0' * 64}
+        for changed in ({'draft': False}, {'target_commitish': 'f' * 40}, {'assets': [mismatch]},
+                        {'assets': [{'name': 'identity.pk8'}]}):
+            with self.subTest(changed=changed), mock.patch.object(durable, 'find_release', return_value=release), \
+                    mock.patch.object(durable, 'upload_asset'), \
+                    mock.patch.object(durable, 'read_release', return_value={**release, **changed}) as read, \
+                    mock.patch.object(durable.time, 'sleep') as pause, self.assertRaises(ValueError):
+                durable.persist(self.directory, TRUSTED)
+            read.assert_called_once_with(71)
+            pause.assert_not_called()
+        for missing in (None, release):
+            with self.subTest(missing=missing is None), mock.patch.object(durable, 'find_release', return_value=release), \
+                    mock.patch.object(durable, 'upload_asset'), \
+                    mock.patch.object(durable, 'read_release', return_value=missing) as read, \
+                    mock.patch.object(durable.time, 'sleep') as pause, \
+                    self.assertRaisesRegex(ValueError, 'bounded reads'):
+                durable.persist(self.directory, TRUSTED)
+            self.assertEqual(read.call_count, durable.READ_ATTEMPTS)
+            self.assertEqual(pause.call_count, durable.READ_ATTEMPTS - 1)
+
+    def test_direct_id_upload_rejects_response_mismatch_and_nonpositive_targets(self):
+        good = {'id': 19, 'name': 'native-symbols.zip', 'size': self.full.stat().st_size,
+                'digest': 'sha256:' + symbols.sha(self.full)}
+        for changed in ({'id': 0}, {'name': 'identity.pk8'}, {'size': 1}, {'digest': 'sha256:' + '0' * 64}):
+            with self.subTest(changed=changed), mock.patch.object(durable, 'gh', return_value=json.dumps({**good, **changed})) as gh, \
+                    self.assertRaisesRegex(ValueError, 'asset identity or digest'):
+                durable.upload_asset(71, 'native-symbols.zip', self.full)
+            self.assertEqual(gh.call_args.args[3], f'https://uploads.github.com/repos/{durable.TRUSTED_REPOSITORY}/releases/71/assets?name=native-symbols.zip')
+        for identifier in (0, -1, True, '71'):
+            with self.subTest(identifier=identifier), mock.patch.object(durable, 'gh') as gh, self.assertRaises(ValueError):
+                durable.upload_asset(identifier, 'native-symbols.zip', self.full)
+            gh.assert_not_called()
+        with mock.patch.object(durable, 'gh', side_effect=subprocess.CalledProcessError(1, ['gh'], stderr='gh: Forbidden (HTTP 403)')), \
+                self.assertRaises(subprocess.CalledProcessError):
+            durable.read_release(71)
 
     def test_agp_ndk_layout_is_matched_to_apk_and_old_prebuilt_symbols_remain_missing(self):
         ndk = self.root / 'cxx'

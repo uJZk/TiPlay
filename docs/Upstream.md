@@ -54,7 +54,10 @@ checking an unused local AAR is insufficient. Release packaging also verifies
 the final APK against the pinned native artifact. Future native producers retain
 line information before stripping and index matching symbol files by ABI, Build
 ID and digest. Symbol-only durable archives remain private draft Releases, so
-they do not replace driver APK releases in the public download list. Historical
+they do not replace driver APK releases in the public download list. Creation,
+asset upload and confirmation use the returned release ID; bounded fresh reads
+allow asset visibility to settle without accepting identity or digest changes.
+Do not infer creation failure from a stale releases list. Historical
 missing symbols cannot be reconstructed by applying a new build's addresses.
 See [Robustness](Robustness.md) for the recovery and verification boundaries.
 
