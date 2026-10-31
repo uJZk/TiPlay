@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build the fixed libdatachannel encoded-media transport without codec libraries."""
-import argparse, hashlib, json, os, pathlib, shutil, struct, subprocess, tarfile, urllib.request
+import argparse, hashlib, json, os, pathlib, shutil, struct, subprocess, sys, tarfile, urllib.request
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import native_symbols
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 VENDOR = ROOT / 'shared/src/main/jni/rtc-audio'
 ABIS = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64']
@@ -34,6 +36,7 @@ def main():
     parser.add_argument('--jobs', default='4')
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--host', action='store_true', help='Build a Linux host transport for browser/JNI tests; never package it for Android.')
+    parser.add_argument('--symbols-dir', type=pathlib.Path, help='Dedicated unstripped ELF/index output (Android only).')
     args = parser.parse_args()
     if args.verify:
         manifest = json.loads((VENDOR / 'artifacts.json').read_text())
@@ -70,10 +73,16 @@ def main():
         print(' '.join(map(str, command)), flush=True)
         subprocess.run(list(map(str, command)), check=True)
     artifacts = json.loads((VENDOR / 'artifacts.json').read_text()) if (VENDOR / 'artifacts.json').exists() else {}
+    symbols = (args.symbols_dir or work / 'native-symbols').resolve()
+    producer = native_symbols.producer_context('rtc-audio',
+        source_lock_sha256=sha(VENDOR / 'sources.lock.json'), cmake_build_type='Release',
+        debug_flags=['-gline-tables-only'])
     for abi in ['host'] if args.host else args.abi or ABIS:
         build = work / 'build' / abi; prefix = work / 'install' / abi
+        debug_flags = ' -gline-tables-only' if abi != 'host' else ''
         common = ['-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
-            '-DCMAKE_C_FLAGS=-DMBEDTLS_SSL_DTLS_SRTP', '-DCMAKE_CXX_FLAGS=-DMBEDTLS_SSL_DTLS_SRTP',
+            '-DCMAKE_C_FLAGS=-DMBEDTLS_SSL_DTLS_SRTP' + debug_flags,
+            '-DCMAKE_CXX_FLAGS=-DMBEDTLS_SSL_DTLS_SRTP' + debug_flags,
             '-DCMAKE_MAKE_PROGRAM=' + args.ninja]
         if abi != 'host': common += ['-DCMAKE_TOOLCHAIN_FILE=' + str(args.ndk / 'build/cmake/android.toolchain.cmake'),
             '-DANDROID_ABI=' + abi, '-DANDROID_PLATFORM=android-25', '-DANDROID_STL=c++_static',
@@ -103,9 +112,20 @@ def main():
             output = VENDOR / 'prebuilt' / abi / 'libdatachannel.so'; output.parent.mkdir(parents=True, exist_ok=True)
             strip = args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
             run([strip, '--strip-unneeded', build / 'libdatachannel/libdatachannel.so', '-o', output])
-            artifacts[abi] = verify_library(output)
+            symbol_entry = native_symbols.record(symbols, abi, 'libdatachannel.so',
+                build / 'libdatachannel/libdatachannel.so', output, producer,
+                args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf')
+            artifacts[abi] = {**verify_library(output), 'build_id': symbol_entry['build_id']}
             (VENDOR / 'artifacts.json').write_text(json.dumps(artifacts, indent=2) + '\n')
     if not args.host:
+        native_symbols.verify(symbols, args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf')
+        reference = {'format': native_symbols.FORMAT,
+            'index_sha256': native_symbols.sha(symbols / 'index.json'),
+            'archive_tag': native_symbols.archive_tag(symbols),
+            'archive_visibility': 'authenticated-draft-only'}
+        for abi in args.abi or ABIS:
+            artifacts[abi]['native_symbols'] = reference
+        (VENDOR / 'artifacts.json').write_text(json.dumps(artifacts, indent=2) + '\n')
         NOTICES.mkdir(parents=True, exist_ok=True)
         for source in notice_sources(): shutil.copyfile(source, NOTICES / source.name)
 

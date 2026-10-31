@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.CountDownLatch
@@ -20,6 +21,34 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class CarPlayEventChannelTest {
+    @Test fun blockedEventCommandHasARealWriteDeadlineAndUnblocksQueuedCommands() {
+        val entered = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val socket = object : TestSocket() {
+            override fun getOutputStream(): OutputStream = object : OutputStream() {
+                override fun write(value: Int) = write(byteArrayOf(value.toByte()), 0, 1)
+                override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                    entered.countDown()
+                    check(released.await(2, TimeUnit.SECONDS))
+                    throw IOException("closed blocked event socket")
+                }
+            }
+            override fun close() { super.close(); released.countDown() }
+        }
+        val session = session().apply { eventWriteTimeoutMillis = 50 }
+        val worker = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            install(session, socket)
+            val first = worker.submit<Boolean> { session.sendCommand(mapOf("type" to "forceKeyFrame")) }
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            val queued = worker.submit<Boolean> { session.sendCommand(mapOf("type" to "forceKeyFrame")) }
+            assertFalse(first.get(1, TimeUnit.SECONDS))
+            assertFalse(queued.get(1, TimeUnit.SECONDS))
+            assertTrue(socket.isClosed)
+            assertTrue(session.isClosed)
+        } finally { session.close(); socket.close(); released.countDown(); worker.shutdownNow() }
+    }
+
     @Test fun retiredReaderEofCannotCloseOrClearItsWritableSuccessor() = retiredReader(false)
     @Test fun retiredReaderFailureCannotCloseOrClearItsWritableSuccessor() = retiredReader(true)
 
@@ -81,6 +110,7 @@ class CarPlayEventChannelTest {
             borrow.setEventReady(true)
             session.setScreenBorrowed(true)
             runReader(session, socket, generation)
+            assertTrue(RawTraffic.awaitMetadataIdle(2_000))
             val rows = capture.readLines().mapNotNull { row ->
                 val columns = row.split('\t')
                 if (columns.getOrNull(2) == "iphone/carplay-screen-loan/events")
@@ -165,10 +195,10 @@ class CarPlayEventChannelTest {
         }
     }
 
-    private class TestSocket(private val input: InputStream = ByteArrayInputStream(ByteArray(0))) : Socket() {
+    private open class TestSocket(private val input: InputStream = ByteArrayInputStream(ByteArray(0))) : Socket() {
         val output = ByteArrayOutputStream()
         override fun getInputStream(): InputStream = input
-        override fun getOutputStream() = output
+        override fun getOutputStream(): OutputStream = output
     }
 
     private fun install(session: AirPlaySession, socket: TestSocket): Long {

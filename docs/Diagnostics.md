@@ -200,10 +200,23 @@ process-local sequence, channel, byte count and Base64 bytes. Payload chunks are
 at most 48 KiB. Full Android/browser diagnostic messages share the journal as
 `android/log`. Process-local session IDs and timestamps distinguish restarts.
 
-Compression/encoding/disk writes remain synchronous and can backpressure ingress;
+Original ingress compression/encoding/disk writes remain synchronous and can backpressure ingress;
 vehicle performance needs measurement. Flush is not fsync. Crashes may interrupt
 the last frame; earlier completed frames remain recoverable. New process files avoid
 appending after old truncated frames. Integrity counters cover the current process.
+
+Small system diagnostic metadata can use a bounded asynchronous lane so a
+broadcast callback does not wait on capture disk I/O. Its admission belongs to
+the original capture session. Oversize, saturation, failure or cancellation of
+admitted entries is counted explicitly and marks that capture incomplete; old
+work cannot enter a later session. This is a failure state, not payload sampling.
+For deferred metadata, `epochMillis` is the observation time; the sequence follows
+journal append order. Timestamps can therefore move backwards in file order when
+metadata arrives after synchronous media. Use both fields rather than treating
+append time as the event time.
+Before ending a capture, export gives this lane a short bounded drain, then
+accounts for remaining cancelled metadata. Native callbacks likewise hand off
+logging and heavy retirement while updating essential state/latches immediately.
 
 Standard exports a redacted `.txt` report with no raw history. Debug exports `.zip`
 as a **STORED-only container**; all compressed content uses Zstandard:
@@ -223,7 +236,14 @@ concatenating decoded Base64 payload chunks in file order, respecting capture/st
 session boundaries. The old split-stream exporter remains for compatibility tests;
 it now packages STORED entries too and performs no DEFLATE compression.
 
-Export snapshots lengths/handles and copies off-thread; failed writes preserve capture.
+Export fixes snapshot lengths and file handles off-thread, computes journal CRCs
+and writes the same handles directly into the STORED ZIP without a full temporary
+journal copy. It prepares one reusable ZIP in an available app-private staging
+location; final ZIP space is still required. Failed writes preserve capture.
+Queue draining and metadata storage-lock acquisition share a snapshot budget;
+history skipped on timeout is explicitly marked partial. This is not a promise
+that every opaque operating-system file operation has a fixed wall-clock bound.
+Restart cleanup includes abandoned ZIP, archive and native-trace staging files.
 The result dialog offers **Copy path / Open folder / Close**, without Share. Copying
 keeps it open. Open folder targets the parent directory, never the report file;
 inaccessible/private locations show an error. Saved files survive raw cleanup.

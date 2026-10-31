@@ -15,9 +15,9 @@ internal object CarBluetoothPreference {
     private const val PREFS = "tiplay_car_bluetooth"
     fun address(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("address", null)
     fun name(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("name", null)
-    fun save(context: Context, address: String?, name: String?) {
+    fun save(context: Context, address: String?, name: String?, retrySelected: Boolean = false) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("address", address).putString("name", name).apply()
-        CarBluetoothConnection.selectionChanged(context)
+        CarBluetoothConnection.selectionChanged(context, forceRetry = retrySelected)
     }
 }
 
@@ -48,7 +48,9 @@ internal class CarBluetoothSelection(
             message(if (permitted()) R.string.settings_car_bluetooth_pair_first else R.string.settings_car_bluetooth_permission)
             return
         }
-        CarBluetoothPreference.save(activity, selection.first, selection.second)
+        // Re-selecting the same paired car is an explicit retry, even when the
+        // platform accepted the earlier request without ever connecting it.
+        CarBluetoothPreference.save(activity, selection.first, selection.second, retrySelected = true)
         changed()
     }
 

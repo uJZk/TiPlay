@@ -56,6 +56,7 @@ class WebVideoHub(
     private val displayOwner = BrowserDisplayOwner()
     private var stream: Stream? = null
     private var config: Config? = null
+    private var configurationFailure: String? = null
     private var lastCodec: VideoCodec? = null
     private var lastRecord: ByteArray? = null
     private var epochs = 0
@@ -87,6 +88,7 @@ class WebVideoHub(
             stream = Stream(width, height, fps, requestKeyFrame, report, mode)
             pendingKeyFrame = null
             config = null
+            configurationFailure = null
             lastCodec = null
             lastRecord = null
             lastKeyFrameRequestNanos = null
@@ -110,6 +112,8 @@ class WebVideoHub(
             val parameterSets = WebVideoCodecs.parameterSets(codec, copy)
             if (codecString == null || parameterSets.isEmpty()) {
                 config = null
+                configurationFailure = "video-source-configuration-invalid"
+                subscription?.takeIf { it.reliable }?.endLocked(requireNotNull(configurationFailure))
                 return@withLock "Web video: unsupported $codec config recordBytes=${copy.size}"
             }
             val epoch = ++epochs
@@ -118,6 +122,7 @@ class WebVideoHub(
             )
             val next = Config(epoch, codec, codecString, parameterSets, WebVideoRecords.config(epoch, codec, payload))
             config = next
+            configurationFailure = null
             sequence = 0
             origin = false
             subscription?.let {
@@ -175,6 +180,7 @@ class WebVideoHub(
             stream = null
             pendingKeyFrame = null
             config = null
+            configurationFailure = null
             lastCodec = null
             lastRecord = null
             subscription?.offerIdle()
@@ -263,6 +269,7 @@ class WebVideoHub(
                 "skippedFrames" to queue?.skipped,
                 "reliable" to subscription?.reliable,
                 "queueFailure" to queue?.failureReason,
+                "configurationFailure" to configurationFailure,
                 "overAgeFrames" to queue?.overAgeFrames,
                 "maxQueueAgeMs" to queue?.maxQueueAgeNanos?.div(1e6),
             )
@@ -278,7 +285,9 @@ class WebVideoHub(
             subscription?.endLocked("replaced")
             WebVideoSubscription(this, lock.newCondition(), now, reliable).also { next ->
                 subscription = next
-                config?.let { next.offerConfig(it.message, now) }
+                val failure = configurationFailure
+                if (reliable && failure != null) next.endLocked(failure)
+                else config?.let { next.offerConfig(it.message, now) }
             }
         }
         requestKeyFrame(force = true)

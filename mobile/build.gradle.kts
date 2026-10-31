@@ -44,6 +44,8 @@ android {
             versionNameSuffix = "-hud-test"
         }
         release {
+            // Preserve this build's JNI metadata separately; shipped libraries stay stripped.
+            ndk { debugSymbolLevel = "FULL" }
             optimization {
                 enable = false
             }

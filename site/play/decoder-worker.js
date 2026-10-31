@@ -31,7 +31,10 @@ function stop() {
 }
 self.onmessage = ({ data }) => {
   if (data.type === 'canvas') presenter = createFramePresenter(data.canvas, {
-    onFirstPresent: config => self.postMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration }),
+    onFirstPresent: config => {
+      pipeline.presented(config);
+      self.postMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration });
+    },
   });
   else if (data.type === 'resize') presenter?.resize(data.width, data.height);
   else if (data.type === 'stream' || data.type === 'feed') {
@@ -44,6 +47,8 @@ self.onmessage = ({ data }) => {
     pipeline.resetGeneration(data.generation); generation = data.generation;
     self.postMessage({ type: 'video-generation-ready', id: activeId, generation });
   } else if (data.type === 'video-error' && data.id === activeId) pipeline.fail(data.reason);
+  else if (data.type === 'video-presented' && data.id === activeId && data.generation === generation)
+    pipeline.presented({ streamId: data.id, epoch: data.epoch, videoGeneration: data.generation });
   else if (data.type === 'frame-ack') delivery.acknowledge(data.frameId);
   else if (data.type === 'rtc-track') {
     if (data.id === activeId && data.generation === generation)

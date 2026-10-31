@@ -7,9 +7,10 @@ export function createBrowserDiagnosticLog({ language = 'en', limit = 100 } = {}
   const say = (en, cn) => zh ? cn : en;
   // Only fixed protocol codes may reach the visible log; even a syntactically
   // valid arbitrary string could be an address, session identifier or token.
-  const videoReasons = new Set(['rtc-video-failed', 'rtc-video-first-frame-timeout', 'rtc-video-codecs-unavailable',
+  const videoReasons = new Set(['rtc-video-failed', 'rtc-video-first-frame-timeout', 'rtc-video-first-presentation-timeout', 'rtc-video-codecs-unavailable',
     'rtc-video-track-ended', 'rtc-video-frame-transfer-failed', 'rtc-video-worker-failed', 'rtc-video-processor-unavailable',
     'rtc-video-track-transfer-failed', 'rtc-video-renegotiation-failed', 'rtc-video-unavailable',
+    'video-source-configuration-invalid',
     'codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch', 'reordered-video-timestamp',
     'video-encoder-input-timeout', 'video-encoder-selection-timeout', 'video-encoder-start-timeout', 'video-ready-timeout',
     'encoded-video-rejected', 'native-buffer-not-preserved', 'pixel-adaptation-requested', 'pixel-conversion-requested']);
@@ -25,6 +26,8 @@ export function createBrowserDiagnosticLog({ language = 'en', limit = 100 } = {}
   };
   const videoText = {
     'rtc-video-first-frame-timeout': say('first frame timed out', '等待首帧超时'),
+    'rtc-video-first-presentation-timeout': say('first Canvas presentation timed out', '等待画面首次显示超时'),
+    'video-source-configuration-invalid': say('source video configuration is invalid', '源视频配置无效'),
     'rtc-video-codecs-unavailable': say('no supported WebRTC video codec', '没有可用的 WebRTC 视频编码'),
     'codec-profile-not-negotiated': say('video codec profile was not negotiated', '视频编码配置未协商成功'),
     'video-codec-not-negotiated': say('video codec was not negotiated', '视频编码未协商成功'),

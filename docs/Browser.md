@@ -137,6 +137,12 @@ caches only page assets, never phone media/unrelated downloads. Asset changes re
 a complete manifest/new cache identity. The removed `/webrtc/` location receives
 no compatibility alias or redirect in this deployment.
 
+An installed update waits while any old TiPlay page is still controlled by the
+previous service worker. Close or leave all TiPlay pages, then open the site
+again to activate it. Disconnecting within the page, or reloading while another
+old page remains open, does not guarantee an upgrade. This preserves the active
+page and its lazily created Workers as one protocol version.
+
 ## Audio and microphone
 
 Bulk audio computation uses [genuine WASM libraries](Browser-wasm.md); browser

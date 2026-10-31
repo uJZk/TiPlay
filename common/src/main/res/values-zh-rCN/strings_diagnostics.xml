@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">打开文件夹</string>
     <string name="settings_report_path_copied">路径已复制。</string>
     <string name="settings_report_open_folder_failed">无法打开此文件夹。</string>
+    <string name="settings_logs_storage_unavailable">无法准备报告。请释放存储空间或重新连接外部存储后重试。</string>
 </resources>

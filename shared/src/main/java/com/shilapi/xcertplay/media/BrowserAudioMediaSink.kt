@@ -27,6 +27,7 @@ class BrowserAudioMediaSink(
     // share a semantic type without replacing each other's browser decoder.
     private val transportIds = mutableMapOf<AudioStreamId, Int>()
     private val microphoneDemands = linkedMapOf<AudioStreamId, MicrophoneConfig>()
+    private val downlinkFailures = mutableMapOf<AudioStreamId, Decoder>()
     private var microphoneId: AudioStreamId? = null
     private var voice: BluetoothVoiceChannel? = null
     @Volatile private var closed = false
@@ -46,14 +47,16 @@ class BrowserAudioMediaSink(
             return
         }
         transportIds[id] = transportId
+        downlinkFailures.remove(id)
         renderers.remove(id)?.close()
         voice?.clear(id)
         renderers[id] = Decoder(id, format, transportId)
+        publishDownlinkStatus()
     }
 
     override fun onAudioRtp(id: AudioStreamId, format: AudioFormat, rtp: ByteArray, sample: Int) {
         if (paused) return
-        val renderer = synchronized(this) { if (closed) null else renderers[id] } ?: return
+        val renderer = synchronized(this) { if (closed) null else renderers[id]?.takeIf { it.running } } ?: return
         renderer.offer(rtp, sample)
     }
 
@@ -67,6 +70,8 @@ class BrowserAudioMediaSink(
             renderer.close()
         }
         transportIds.remove(id)
+        downlinkFailures.remove(id)
+        publishDownlinkStatus()
         voice?.clear(id)
     }
 
@@ -142,7 +147,44 @@ class BrowserAudioMediaSink(
         voiceHeld = held; voiceActive = active
         if (changed) resetDecoders(voiceOnly = true)
         hub.voiceRoute(this, if (demanded || !next.released) next.state else "idle", held,
-            next.error.takeIf { demanded || !next.released })
+            next.error.takeIf { demanded || !next.released } ?: downlinkError())
+    }
+
+    private fun downlinkError(): String? = if (voiceActive && downlinkFailures.isNotEmpty())
+        "bluetooth-downlink-decoder-failed" else null
+
+    /** A failed downlink does not release the working microphone/SCO keepalive route. */
+    private fun publishDownlinkStatus() {
+        if (voiceActive) hub.voiceRoute(this, "active", voiceHeld, downlinkError())
+    }
+
+    private fun decoderFailed(decoder: Decoder, cleanupComplete: Boolean) {
+        routeHandler.post {
+            synchronized(this) {
+                if (closed || paused || renderers[decoder.id] !== decoder || decoder.epoch != routeEpoch ||
+                    !voiceActive || !voiceHeld || microphoneId == null) return@synchronized
+                downlinkFailures[decoder.id] = decoder
+                publishDownlinkStatus()
+                // Retry only once, and only after the failed codec has really released its resources.
+                if (cleanupComplete && decoder.recoveryAttempt == 0) {
+                    runCatching { voice?.clear(decoder.id) }
+                    val next = Decoder(decoder.id, decoder.format, decoder.transportId, decoder.timeline, 1)
+                    renderers[decoder.id] = next
+                    downlinkFailures[decoder.id] = next
+                }
+            }
+        }
+    }
+
+    private fun decoderReady(decoder: Decoder) {
+        routeHandler.post {
+            synchronized(this) {
+                if (closed || paused || renderers[decoder.id] !== decoder || decoder.epoch != routeEpoch || !decoder.running)
+                    return@synchronized
+                downlinkFailures.remove(decoder.id)
+                publishDownlinkStatus()
+            }
+        }
     }
 
     /** Retire workers and codec input/output, not just transport queues; in-flight PCM belongs to the old route. */
@@ -151,6 +193,7 @@ class BrowserAudioMediaSink(
         val previous = renderers.filterKeys { !voiceOnly || callDownlink(it) }
         previous.forEach { (id, decoder) ->
             renderers.remove(id)
+            downlinkFailures.remove(id)
             if (voiceOnly) hub.endEncodedStream(this, decoder.transportId, decoder.publication)
             decoder.close()
             voice?.clear(id)
@@ -174,6 +217,7 @@ class BrowserAudioMediaSink(
         if (voice == null) hub.voiceRoute(this, "idle", false)
         hub.end(this)
         resetDecoders()
+        downlinkFailures.clear()
         transportIds.clear()
     }
 
@@ -181,12 +225,14 @@ class BrowserAudioMediaSink(
     private fun callDownlink(id: AudioStreamId): Boolean = id.audioType.equals("telephony", true)
 
     private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val transportId: Int,
-                                val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate)) : Closeable {
-        private val epoch = routeEpoch
+                                val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate),
+                                val recoveryAttempt: Int = 0) : Closeable {
+        val epoch = routeEpoch
         private val packets = ArrayBlockingQueue<IncomingAudioPacket>(24)
         private val order = AudioPacketOrder<IncomingAudioPacket>(nowNanos)
         private val speechPackets = SpeechAudioQueue(format, timeline, nowNanos)
-        @Volatile private var running = true
+        @Volatile var running = true
+            private set
         private var outputRate = format.sampleRate
         private var outputChannels = format.channels
         private var nextPcmSample: Double? = null
@@ -220,10 +266,12 @@ class BrowserAudioMediaSink(
             // Apply upstream's audio scheduling fix to TiPlay's SCO decoder, not buffered network prefetch.
             if (bluetoothDecode) runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var codec: MediaCodec? = null
+            var failed = false
             try {
                 if (browserForward) hub.beginEncodedStream(this@BrowserAudioMediaSink, transportId, browserFormat(format),
                     publication = publication, buffered = id.type == 103, semanticType = semanticType(id))
                 if (bluetoothDecode && format.codec != AudioCodecKind.LPCM) codec = decoderFactory(format)
+                if (bluetoothDecode) decoderReady(this)
                 val info = MediaCodec.BufferInfo()
                 while (running) {
                     if (id.type != 103) synchronized(order) { order.drain().forEach(::enqueue) }
@@ -267,11 +315,14 @@ class BrowserAudioMediaSink(
                 }
             } catch (_: InterruptedException) {
             } catch (error: Exception) {
+                failed = true
+                if (bluetoothDecode) decoderFailed(this, cleanupComplete = false)
                 Log.w("TiPlayBrowserAudio", "Browser audio decoder ended codec=${format.codec}", error)
             } finally {
                 running = false
                 publication.close()
                 runCatching { codec?.stop() }; runCatching { codec?.release() }
+                if (failed && bluetoothDecode) decoderFailed(this, cleanupComplete = true)
             }
         }
 

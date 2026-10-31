@@ -356,7 +356,10 @@ async function setUpVideo() {
       const offscreen = canvas.transferControlToOffscreen();
       worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     } else presenter = (await import('./video.js')).createFramePresenter(canvas, {
-      onFirstPresent: config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration }),
+      onFirstPresent: config => {
+        worker.postMessage({ type: 'video-presented', id: config.streamId, epoch: config.epoch, generation: config.videoGeneration });
+        onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration });
+      },
     });
     worker.onmessage = ({ data }) => {
       if (data.type === 'frame') {
@@ -409,7 +412,10 @@ async function setUpVideo() {
     };
   } else {
     const presenter = (await import('./video.js')).createFramePresenter(canvas, {
-      onFirstPresent: config => onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration }),
+      onFirstPresent: config => {
+        pipeline.presented(config);
+        onVideoMessage({ type: 'decoded', id: config.streamId, epoch: config.epoch, videoGeneration: config.videoGeneration });
+      },
     });
     let activeTrack = null, trackId = null, generation = 1, timer = null;
     const pipeline = createRtcVideoPipeline({ post: message => {
@@ -1048,12 +1054,20 @@ window.visualViewport?.addEventListener('resize', onResize);
 
 function keepScreenOn() {
   if (!active || wakeLock || document.hidden || !navigator.wakeLock) return;
-  wakeLock = navigator.wakeLock.request('screen').then(lock => {
-    lock.addEventListener('release', () => { wakeLock = null; });
+  let request;
+  try { request = navigator.wakeLock.request('screen'); } catch (_) { return; }
+  const owner = Promise.resolve(request).then(lock => {
+    if (wakeLock !== owner || !active || document.hidden || lock.released) {
+      if (wakeLock === owner) wakeLock = null;
+      if (!lock.released) void Promise.resolve().then(() => lock.release()).catch(() => {});
+      return null;
+    }
+    lock.addEventListener('release', () => { if (wakeLock === owner) wakeLock = null; });
     return lock;
   }, () => {
-    wakeLock = null; // refused (no user activation yet, or a policy); the next decoded epoch asks again
+    if (wakeLock === owner) wakeLock = null;
   });
+  wakeLock = owner;
 }
 
 $('link-form').addEventListener('submit', event => {

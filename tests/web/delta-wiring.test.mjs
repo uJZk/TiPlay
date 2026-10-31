@@ -12,15 +12,16 @@ const frame = () => ({ closed: 0, close() { this.closed++; } });
 const config = (epoch, videoGeneration = 1) => encodeRecord({ kind: RECORD.CONFIG, epoch,
   payload: new TextEncoder().encode(JSON.stringify({ mode: 'carplay', codec: 'avc1.640028', width: 800, height: 480,
     videoTransport: RTC_VIDEO_TRANSPORT, videoGeneration })) });
-async function workerHarness(t, { canvas = false } = {}) {
+async function workerHarness(t, { canvas = false, now, firstFrameWaitMs } = {}) {
   let reportStats, controller, cancelled = 0;
   const messages = [], self = { postMessage: message => messages.push(message), close() {} };
   const source = (await readFile(new URL('../../site/play/decoder-worker.js', import.meta.url), 'utf8')).replace(/^import .*;\r?\n/gm, '');
   vm.runInNewContext(source, {
-    self, createFrameDelivery, createRtcTrackReader, createRtcVideoPipeline,
-    createFramePresenter() {
+    self, createFrameDelivery, createRtcTrackReader,
+    createRtcVideoPipeline: options => createRtcVideoPipeline({ ...options, ...(now ? { now } : {}), ...(firstFrameWaitMs ? { firstFrameWaitMs } : {}) }),
+    createFramePresenter(_canvas, options) {
       if (!canvas) throw Error('unexpected canvas setup');
-      return { present(value) { value.close(); }, close() {}, dispose() {}, resize() {}, stats: () => ({ renderDroppedFrames: 0 }) };
+      return { present(value, config) { value.close(); options.onFirstPresent(config); }, close() {}, dispose() {}, resize() {}, stats: () => ({ renderDroppedFrames: 0 }) };
     },
     createChunkStream() { throw Error('unexpected port feed'); },
     setInterval: callback => { reportStats = callback; return 1; }, clearInterval() {},
@@ -96,4 +97,35 @@ test('a video processing failure remains video-only and closes incoming late fra
   assert.equal(latest(h, 'video-error').reason, 'rtc-video-processor-unavailable');
   assert.equal(h.cancelled(), 0);
   const late = frame(); h.send({ type: 'rtc-frame', id: 7, generation: 1, frame: late, frameId: 1 }); assert.equal(late.closed, 1);
+});
+
+test('worker Canvas success and the current main-thread Canvas proof cancel presentation waiting', async t => {
+  let tick, now = 100;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  for (const canvas of [true, false]) {
+    const h = await workerHarness(t, { canvas, now: () => now, firstFrameWaitMs: 1000 });
+    h.enqueue(config(1)); await settle();
+    h.send({ type: 'rtc-frame', id: 7, generation: 1, frame: frame(), frameId: 1 });
+    if (!canvas) h.send({ type: 'video-presented', id: 7, epoch: 1, generation: 1 });
+    now += 2000; tick();
+    assert.equal(latest(h, 'video-error'), undefined);
+    if (canvas) assert.equal(latest(h, 'decoded').epoch, 1);
+    h.send({ type: 'stop' });
+  }
+});
+
+test('a retired main-thread Canvas proof cannot acknowledge the new worker generation', async t => {
+  let tick, now = 100;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  const h = await workerHarness(t, { now: () => now, firstFrameWaitMs: 1000 });
+  h.enqueue(config(1)); await settle(); h.send({ type: 'rtc-frame', id: 7, generation: 1, frame: frame(), frameId: 1 });
+  const previous = latest(h, 'frame');
+  h.send({ type: 'video-generation', id: 7, generation: 2 }); h.enqueue(config(2, 2)); await settle();
+  h.send({ type: 'frame-ack', frameId: previous.frameId });
+  h.send({ type: 'rtc-frame', id: 7, generation: 2, frame: frame(), frameId: 2 });
+  for (const value of [{ id: 6, epoch: 2, generation: 2 }, { id: 7, epoch: 1, generation: 2 }, { id: 7, epoch: 1, generation: 1 }])
+    h.send({ type: 'video-presented', ...value });
+  now = 1100; tick();
+  assert.equal(latest(h, 'video-error').reason, 'rtc-video-first-presentation-timeout');
+  assert.equal(h.cancelled(), 0, 'only video presentation fails');
 });

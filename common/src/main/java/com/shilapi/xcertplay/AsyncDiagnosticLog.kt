@@ -20,12 +20,18 @@ internal object AsyncDiagnosticLog {
 
     fun append(target: SessionLogFile?, message: String, nowMillis: Long = System.currentTimeMillis()) {
         if (target == null) return
-        val safe = target.prepare(message) ?: return
+        val safe = target.prepare(message, nowMillis) ?: return
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS Z", Locale.US).format(Date(nowMillis))
         if (!target.reserve()) return
         val enqueued = runCatching { writer.enqueue(Entry(target, "$timestamp  $safe")) }.getOrDefault(false)
         if (!enqueued) target.complete(droppedFromQueue = true)
     }
 
-    internal fun awaitIdle(timeoutMillis: Long): Boolean = writer.awaitIdle(timeoutMillis)
+    internal fun awaitIdle(timeoutMillis: Long): Boolean {
+        val deadline = System.nanoTime() + timeoutMillis.coerceAtLeast(0) * 1_000_000L
+        val metadataDrained = writer.awaitIdle(timeoutMillis)
+        val remaining = ((deadline - System.nanoTime()).coerceAtLeast(0) / 1_000_000L)
+        val rawDrained = com.shilapi.xcertplay.diagnostics.RawTraffic.awaitMetadataIdle(remaining)
+        return metadataDrained && rawDrained
+    }
 }

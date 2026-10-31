@@ -19,11 +19,17 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        ivy {
-            url = uri("shared/libs")
-            patternLayout { artifact("[module]/[artifact].[ext]") }
-            metadataSources { artifact() }
-            content {
+        // These coordinates name reviewed local binaries, never remote Maven artifacts.
+        exclusiveContent {
+            forRepository {
+                ivy {
+                    name = "TiPlayPinnedVendor"
+                    url = uri("shared/libs")
+                    patternLayout { artifact("[module]/[artifact].[ext]") }
+                    metadataSources { artifact() }
+                }
+            }
+            filter {
                 includeModule("com.ujzk.vendor", "geocoordinates")
                 includeModule("com.ujzk.vendor", "webrtc-source-rate")
             }

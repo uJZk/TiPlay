@@ -55,6 +55,8 @@ jobs:
         with:
           packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
       - uses: gradle/actions/setup-gradle@v4
+      - name: Native symbol identity and private archive contracts
+        run: python3 -m unittest discover -s tests -p 'test_native_symbols.py'
       - name: Unit tests, lint and source-only debug build
         run: >-
           ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest :home:testDebugUnitTest

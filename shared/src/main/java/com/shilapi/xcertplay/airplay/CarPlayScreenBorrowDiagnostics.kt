@@ -16,7 +16,7 @@ internal enum class CarPlayScreenDataBoundary { SETUP, DATA_EOF, DATA_FAILED, TE
 /** Sparse semantic evidence beside encrypted wire bytes, with no peer or authentication identity. */
 internal class CarPlayScreenBorrowDiagnostics(
     private val activeCapture: () -> String? = RawTraffic::activeSessionId,
-    private val record: (String, String, ByteArray) -> Boolean = RawTraffic::recordForSession,
+    private val record: (String, String, ByteArray, Long) -> Boolean = RawTraffic::recordMetadataForSessionAsync,
 ) {
     private val connectionId = nextConnectionId.incrementAndGet()
     private var closed = false
@@ -48,12 +48,13 @@ internal class CarPlayScreenBorrowDiagnostics(
         // Capture failures and clear/disable races cannot interrupt control or listener delivery.
         // No payload or string supplied by the sender enters this fixed schema.
         runCatching {
+            val observedAt = System.currentTimeMillis()
             val capture = activeCapture() ?: return
             val line = "schema=1 connectionId=$connectionId event=$event reason=$reason " +
                 "desired=${state.desired} sent=${state.sent} owner=${state.owner} " +
                 "pending=${state.pending} confirmedBorrow=${state.confirmedBorrow} " +
                 "carPlayHasScreen=${state.carPlayHasScreen}$extra\n"
-            record(capture, CHANNEL, line.toByteArray(Charsets.UTF_8))
+            record(capture, CHANNEL, line.toByteArray(Charsets.UTF_8), observedAt)
         }
     }
 

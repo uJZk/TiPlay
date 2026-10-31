@@ -176,6 +176,7 @@ class BluetoothSuspendLifecycleTest {
         assertTrue(old.awaitClosed(2_000))
         assertNull("current owner must survive the old controller close", lease.recoveryOnAppOpen())
         current.close()
+        assertTrue(current.awaitClosed(2_000))
         assertNotNull(lease.recoveryOnAppOpen())
     }
 

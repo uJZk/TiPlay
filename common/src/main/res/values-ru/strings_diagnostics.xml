@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">Открыть папку</string>
     <string name="settings_report_path_copied">Путь скопирован.</string>
     <string name="settings_report_open_folder_failed">Не удалось открыть эту папку.</string>
+    <string name="settings_logs_storage_unavailable">Не удалось подготовить отчёт. Освободите место или подключите внешнее хранилище заново и повторите попытку.</string>
 </resources>

@@ -1,0 +1,172 @@
+{
+  "baseline": {
+    "apk": "TiPlay-0.2.20-beta.36.apk",
+    "sha256": "75b9e71a8e575bc61721e46ffb14bc1bfa6ee6d17e38ab1bb9bcb32dfe542687"
+  },
+  "entries": [
+    {
+      "abi": "arm64-v8a",
+      "library": "libandroidx.graphics.path.so",
+      "packaged_bytes": 10096,
+      "packaged_sha256": "41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6"
+    },
+    {
+      "abi": "arm64-v8a",
+      "library": "libdatachannel.so",
+      "packaged_bytes": 2727560,
+      "packaged_sha256": "867b6db8efd07eb33213279f40fba369bc0f5f7c336e6d0e9c55d10bef77afb2"
+    },
+    {
+      "abi": "arm64-v8a",
+      "library": "libgeocoordinates_ffi.so",
+      "packaged_bytes": 1568712,
+      "packaged_sha256": "c5f590d82e1a20c29e1b0dabeb5fee2b97ba68889485ade135c01b5e567bd15f"
+    },
+    {
+      "abi": "arm64-v8a",
+      "library": "libjingle_peerconnection_so.so",
+      "packaged_bytes": 12304808,
+      "packaged_sha256": "bb65cfd7a47adf7ca07b8d5c74dc518b1f0648518242169789d357b87199b80d"
+    },
+    {
+      "abi": "arm64-v8a",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 165992,
+      "packaged_sha256": "ddfc6c965bbe366615c000ec1f06552ddf0bb2b4f9d921d0bff8c75b3cb2ca4c"
+    },
+    {
+      "abi": "arm64-v8a",
+      "library": "libzstd-jni-1.5.7-4.so",
+      "packaged_bytes": 603960,
+      "packaged_sha256": "f4a6a0d6134ea17f7c106b6f35d2f1058822e419d980a0535ad94ca7b1587880"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libandroidx.graphics.path.so",
+      "packaged_bytes": 7252,
+      "packaged_sha256": "41399eba6fc2a60f6f14642375c1824f3cf25eb8fec7397d753730a3ceda3e2b"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libdatachannel.so",
+      "packaged_bytes": 1825436,
+      "packaged_sha256": "7c3f7aa92c53b4bb3d8b134e70124ae48442928a69dab2f027e60eb4861d2524"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libgeocoordinates_ffi.so",
+      "packaged_bytes": 1100332,
+      "packaged_sha256": "f34b8dda54bd5553a6932fc0310be5782dbf02e80250d288a54539bdc4750690"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libjingle_peerconnection_so.so",
+      "packaged_bytes": 6816864,
+      "packaged_sha256": "a9c5c3aa4899959f21ac95cdbcf46c098b718eefbffa8693a1ca116f25bac847"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 116344,
+      "packaged_sha256": "4a2fc525286a13179b1e62e10bd8ab96422eb205a2db8dbeb2e177564700bf4a"
+    },
+    {
+      "abi": "armeabi-v7a",
+      "library": "libzstd-jni-1.5.7-4.so",
+      "packaged_bytes": 478512,
+      "packaged_sha256": "6b1fd37da87a9c7f537c1d1fab2534d9647b89fc821c27624dfd2deece041735"
+    },
+    {
+      "abi": "armeabi",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 126980,
+      "packaged_sha256": "101daa2222382f3727800c0c49731346c5c4f81f1ecf1fde85ebcea64b151901"
+    },
+    {
+      "abi": "mips",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 130556,
+      "packaged_sha256": "eb549d34eb17b394f4ba74c21c51f41340d8b049aa90cc9feaef734695890402"
+    },
+    {
+      "abi": "mips64",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 150256,
+      "packaged_sha256": "93f5b0bec919b95160db0bf35c5ed6904d4d48f282501f0ff4a85f6511f3e44d"
+    },
+    {
+      "abi": "x86",
+      "library": "libandroidx.graphics.path.so",
+      "packaged_bytes": 9284,
+      "packaged_sha256": "eb0570b41fd3bff25d8204a967c03bd7550719e768b791f680cc40cbe35f29af"
+    },
+    {
+      "abi": "x86",
+      "library": "libdatachannel.so",
+      "packaged_bytes": 2694452,
+      "packaged_sha256": "90dd2455517e6e1870f8635f9b68dbeafb1f36eb6a0f0892a282d7eee7a3b784"
+    },
+    {
+      "abi": "x86",
+      "library": "libgeocoordinates_ffi.so",
+      "packaged_bytes": 1920028,
+      "packaged_sha256": "ed7c2eb2f7546b1b6e1777778f7d514b3a2c74f199c3f9cc464bf81c8b4b3988"
+    },
+    {
+      "abi": "x86",
+      "library": "libjingle_peerconnection_so.so",
+      "packaged_bytes": 12835660,
+      "packaged_sha256": "c0a031fa653d19fb9455e562ed62c963296133f17ff51df5f5d4832af95b48c5"
+    },
+    {
+      "abi": "x86",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 116260,
+      "packaged_sha256": "5bdc5edf4d0722a01051d836d9f404e895dc5465b11a07d83953cbad323b71de"
+    },
+    {
+      "abi": "x86",
+      "library": "libzstd-jni-1.5.7-4.so",
+      "packaged_bytes": 691236,
+      "packaged_sha256": "05356a3c69d417be05f4aed54acb2826c046667a9244c27016d4da194400a014"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libandroidx.graphics.path.so",
+      "packaged_bytes": 10760,
+      "packaged_sha256": "4e56c996f13670e70082658de7880c4020eabf4f25e43387f88ed78a713fc9f0"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libdatachannel.so",
+      "packaged_bytes": 2791376,
+      "packaged_sha256": "5e454ea96f285c2a3efe38931c2dca563b857c86f000f99018b66781ff01ff85"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libgeocoordinates_ffi.so",
+      "packaged_bytes": 1716656,
+      "packaged_sha256": "e9280f599a8c8ad571b7bdacd7d7c551b6169334f5268681e876c4ed1b3ea56f"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libjingle_peerconnection_so.so",
+      "packaged_bytes": 16182696,
+      "packaged_sha256": "0684027cc05444e0934da2657aecd16b15658e8b69650f9e05da752538acfa93"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libjnidispatch.so",
+      "packaged_bytes": 116904,
+      "packaged_sha256": "288eafff19a70e833498201071c3d724f03f32ee8ff64a14fca50b57d975db70"
+    },
+    {
+      "abi": "x86_64",
+      "library": "libzstd-jni-1.5.7-4.so",
+      "packaged_bytes": 726088,
+      "packaged_sha256": "1085c6dc98bb71fb2181bb69df79376cac3f61e0d25b6648dfab51840c94d5a7"
+    }
+  ],
+  "format": "tiplay-historical-native-symbol-exceptions-v1",
+  "reason": "These exact beta.36 prebuilt bytes predate matching retained symbols. New producer artifacts require matching symbols; third-party upgrades require an explicit reviewed exception update. No symbols or Build IDs are invented for this migration."
+}

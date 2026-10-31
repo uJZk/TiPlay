@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">فتح المجلد</string>
     <string name="settings_report_path_copied">تم نسخ المسار.</string>
     <string name="settings_report_open_folder_failed">تعذر فتح هذا المجلد.</string>
+    <string name="settings_logs_storage_unavailable">تعذر إعداد التقرير. حرر مساحة تخزين أو أعد توصيل وحدة التخزين الخارجية، ثم حاول مجددًا.</string>
 </resources>

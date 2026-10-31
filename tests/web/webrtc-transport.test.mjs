@@ -2,6 +2,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRtcMediaTransport, RTC_FRAGMENT_BYTES, RTC_HEADER_BYTES, RTC_MAGIC, RTC_TRANSPORT } from '../../site/play/webrtc-transport.js';
+import { createRtcVideoPipeline, RTC_VIDEO_TRANSPORT } from '../../site/play/rtc-video.js';
+import { RECORD, encodeRecord } from '../../site/play/link.js';
 
 class Channel {
   constructor(label, options) { this.label = label; this.options = options; this.readyState = 'connecting'; this.bufferedAmount = 0; this.sent = []; }
@@ -337,6 +339,87 @@ test('video-only renegotiation waits for generation preparation and retains audi
     assert.equal(f.media.isConnected(), true); assert.equal(f.channels.audio.readyState, 'open'); assert.equal(f.channels.video.readyState, 'open');
     assert.equal(f.peer.options.bundlePolicy, 'max-bundle');
   } finally { f.media.close(); }
+});
+
+test('a new source error during the preparation barrier is delivered once to its exact generation', async () => {
+  let prepare;
+  const errors = [], f = await fixture({ ...videoOptions, onVideoError: reason => errors.push(reason),
+    onVideoGeneration: () => new Promise(resolve => { prepare = resolve; }) });
+  try {
+    const pending = f.media.restartVideo(); await settle();
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    f.channels.control.receive(videoAnswer(offer)); await settle();
+    for (const [generation, reason] of [[1, 'old-source'], [3, 'future-source'], [2, 'video-source-configuration-invalid'], [2, 'secondary-failure']])
+      f.channels.control.receive(JSON.stringify({ k: 'video-error', generation, reason }));
+    assert.deepEqual(errors, [], 'no error can target a consumer before its barrier is installed');
+    prepare(); await pending;
+    assert.deepEqual(errors, ['video-source-configuration-invalid']);
+    assert.equal(f.media.isConnected(), true); assert.equal(f.channels.audio.readyState, 'open'); assert.deepEqual(f.errors, []);
+  } finally { f.media.close(); }
+});
+
+test('a matching source error survives the retained-offer timeout until its late answer commits', async () => {
+  const errors = [], f = await fixture({ ...videoOptions, videoTimeoutMs: 15, onVideoError: reason => errors.push(reason) });
+  try {
+    await assert.rejects(f.media.restartVideo(), error => error.reason === 'rtc-video-renegotiation-timeout');
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 2, reason: 'video-source-configuration-invalid' }));
+    assert.deepEqual(errors, []);
+    f.channels.control.receive(videoAnswer(offer)); await settle(); await settle();
+    assert.deepEqual(errors, ['video-source-configuration-invalid']); assert.equal(f.media.isConnected(), true);
+    const next = f.media.restartVideo(); await settle();
+    const nextOffer = f.channels.control.sent.filter(value => value.k === 'video-offer').at(-1);
+    assert.equal(nextOffer.generation, 3);
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 2, reason: 'retired-source' }));
+    f.channels.control.receive(videoAnswer(nextOffer)); await next;
+    assert.deepEqual(errors, ['video-source-configuration-invalid'], 'retired transaction error is not replayed into generation 3');
+  } finally { f.media.close(); }
+});
+
+test('closing with a deferred new-source error cancels its delivery and ignores later control callbacks', async () => {
+  let prepare;
+  const errors = [], f = await fixture({ ...videoOptions, onVideoError: reason => errors.push(reason),
+    onVideoGeneration: () => new Promise(resolve => { prepare = resolve; }) });
+  const pending = f.media.restartVideo(); await settle();
+  const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+  f.channels.control.receive(videoAnswer(offer)); await settle();
+  f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 2, reason: 'video-source-configuration-invalid' }));
+  const rejected = assert.rejects(pending); f.media.close(); prepare(); await rejected;
+  f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 1, reason: 'late-retired-peer' }));
+  assert.deepEqual(errors, []); assert.equal(f.media.stats().state, 'closed');
+});
+
+test('source failure before CONFIG crosses the generation barrier without accepting an unscoped old END', async () => {
+  let controller, prepare;
+  const events = [], pipeline = createRtcVideoPipeline({ post: value => events.push(value), present: frame => frame.close() });
+  pipeline.read(17, new ReadableStream({ start(value) { controller = value; } }));
+  const f = await fixture({ ...videoOptions, onVideoError: reason => pipeline.fail(reason),
+    onVideoGeneration: generation => { pipeline.resetGeneration(generation); return new Promise(resolve => { prepare = resolve; }); } });
+  const metadata = generation => encodeRecord({ kind: RECORD.CONFIG, epoch: 23, payload: new TextEncoder().encode(JSON.stringify({
+    mode: 'carplay', codec: 'avc1.640028', width: 800, height: 480, videoTransport: RTC_VIDEO_TRANSPORT, videoGeneration: generation,
+  })) });
+  try {
+    controller.enqueue(metadata(1)); await settle();
+    assert.equal(pipeline.presented({ streamId: 17, epoch: 23, videoGeneration: 1 }), true);
+    const replacing = f.media.restartVideo(); await settle();
+    const offer = f.channels.control.sent.find(value => value.k === 'video-offer');
+    f.channels.control.receive(videoAnswer(offer)); await settle();
+    controller.enqueue(encodeRecord({ kind: RECORD.END, epoch: 23, payload: new TextEncoder().encode('retired-source') }));
+    f.channels.control.receive(JSON.stringify({ k: 'video-error', generation: 2, reason: 'video-source-configuration-invalid' }));
+    await settle();
+    assert.equal(events.some(value => value.type === 'video-error'), false, 'old unscoped END cannot fail an awaiting reader');
+    prepare(); await replacing;
+    assert.deepEqual(events.filter(value => value.type === 'video-error').map(value => [value.videoGeneration, value.reason]),
+      [[2, 'video-source-configuration-invalid']], 'the exact source error ends generation 2 before any CONFIG or first-present deadline');
+    const recovering = f.media.restartVideo(); await settle();
+    const next = f.channels.control.sent.filter(value => value.k === 'video-offer').at(-1);
+    f.channels.control.receive(videoAnswer(next)); await settle(); prepare(); await recovering;
+    controller.enqueue(metadata(3)); await settle();
+    assert.equal(pipeline.presented({ streamId: 17, epoch: 23, videoGeneration: 2 }), false);
+    assert.equal(pipeline.presented({ streamId: 17, epoch: 23, videoGeneration: 3 }), true);
+    assert.equal(pipeline.stats().errorReason, null); assert.equal(f.media.isConnected(), true);
+    assert.equal(f.channels.audio.readyState, 'open'); assert.deepEqual(f.errors, []);
+  } finally { f.media.close(); pipeline.stop(); }
 });
 
 test('repeated video replacements retire every old video receiver and keep audio/control usable', async () => {

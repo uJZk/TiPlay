@@ -11,7 +11,7 @@ import java.util.zip.ZipOutputStream
 internal object RawTrafficArchive {
     fun write(output: OutputStream, logName: String, report: String, snapshot: RawTraffic.Snapshot, temporaryRoot: File,
               attachments: Map<String, File> = emptyMap()) {
-        val directory = java.nio.file.Files.createTempDirectory(temporaryRoot.toPath(), "traffic-export-").toFile()
+        val directory = archiveStagingDirectory(temporaryRoot)
         data class Stream(val channel: String, val name: String, val file: File, var length: Long = 0)
         val streams = linkedMapOf<String, Stream>()
         // Media captures contain many short records on a small set of active channels.
@@ -25,7 +25,7 @@ internal object RawTrafficArchive {
                     oldest.remove()
                     entry.value.close()
                 }
-                java.io.FileOutputStream(stream.file, true).buffered().also { outputs[stream.file] = it }
+                archiveStagingOutput(stream.file, true).buffered().also { outputs[stream.file] = it }
             }
             output.write(bytes)
         }
@@ -35,8 +35,8 @@ internal object RawTrafficArchive {
         try {
             val index = File(directory, "events.tsv")
             val unparsed = File(directory, "unparsed.tsv")
-            unparsed.bufferedWriter().use { rejected ->
-                index.bufferedWriter().use { writer ->
+            archiveStagingOutput(unparsed).bufferedWriter().use { rejected ->
+                archiveStagingOutput(index).bufferedWriter().use { writer ->
                     writer.append("epochMillis\tsequence\tstream\toffset\tlength\n")
                     snapshot.open().bufferedReader().useLines { lines ->
                         lines.forEach { line ->
@@ -86,9 +86,9 @@ internal object RawTrafficArchive {
             }).use { zip ->
                 fun entry(name: String, write: (OutputStream) -> Unit) {
                     val stored = File(directory, "stored-entry")
-                    stored.outputStream().buffered().use(write)
+                    archiveStagingOutput(stored).buffered().use(write)
                     val crc = java.util.zip.CRC32()
-                    stored.inputStream().buffered().use { input ->
+                    archiveStagingInput(stored).buffered().use { input ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
                             val count = input.read(buffer)
@@ -99,7 +99,7 @@ internal object RawTrafficArchive {
                     zip.putNextEntry(ZipEntry(name).apply {
                         method = ZipEntry.STORED; size = stored.length(); compressedSize = size; this.crc = crc.value
                     })
-                    stored.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                    archiveStagingInput(stored).use { it.copyTo(zip) }; zip.closeEntry()
                     stored.delete()
                 }
                 entry(logName) { sink -> sink.write(report.toByteArray(Charsets.UTF_8)) }
@@ -124,8 +124,8 @@ internal object RawTrafficArchive {
                         sink.write("$id\t${metadata.first}\t${metadata.second}\n".toByteArray())
                     }
                 }
-                if (unparsedRecords > 0) entry("unparsed.tsv") { sink -> unparsed.inputStream().use { it.copyTo(sink) } }
-                entry("events.tsv") { sink -> index.inputStream().use { it.copyTo(sink) } }
+                if (unparsedRecords > 0) entry("unparsed.tsv") { sink -> archiveStagingInput(unparsed).use { it.copyTo(sink) } }
+                entry("events.tsv") { sink -> archiveStagingInput(index).use { it.copyTo(sink) } }
                 entry("streams.tsv") { sink ->
                     sink.write("stream\tchannelBase64\tbytes\n".toByteArray())
                     streams.values.forEach { stream ->
@@ -133,7 +133,7 @@ internal object RawTrafficArchive {
                         sink.write("${stream.name}\t$encoded\t${stream.length}\n".toByteArray())
                     }
                 }
-                streams.values.forEach { stream -> entry(stream.name) { sink -> stream.file.inputStream().use { it.copyTo(sink) } } }
+                streams.values.forEach { stream -> entry(stream.name) { sink -> archiveStagingInput(stream.file).use { it.copyTo(sink) } } }
                 extraEntries.forEach { (name, source) -> entry(name) { sink ->
                     ZstdOutputStreamNoFinalizer(sink, RawTraffic.COMPRESSION_LEVEL).use { compressed ->
                         source.inputStream().use { it.copyTo(compressed) }

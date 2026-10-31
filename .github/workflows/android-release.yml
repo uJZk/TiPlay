@@ -38,6 +38,7 @@ jobs:
           PY
           python3 scripts/check_public_tree.py
           python3 -m unittest discover -s tests -p 'test_release_draft.py'
+          python3 -m unittest discover -s tests -p 'test_native_symbols.py'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -82,6 +83,20 @@ jobs:
           PY
       - name: Lint and build signed release
         run: ./gradlew :mobile:lintRelease :mobile:assembleRelease --stacktrace
+      - name: Verify final WebRTC binary and provenance
+        run: python3 scripts/webrtc/verify_release_apk.py mobile/build/outputs/apk/release/mobile-release.apk
+      - name: Preserve this build's JNI symbols and describe prebuilt coverage
+        run: |
+          python3 scripts/collect_apk_native_symbols.py mobile/build/outputs/apk/release/mobile-release.apk \
+            --ndk-outputs shared/build/intermediates/cxx \
+            --full-symbols mobile/build/outputs/native-debug-symbols/release/native-debug-symbols.zip \
+            --output "$RUNNER_TEMP/tiplay-jni-symbols"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TiPlay-JNI-symbols
+          path: ${{ runner.temp }}/tiplay-jni-symbols/
+          if-no-files-found: error
+          retention-days: 90
       - name: Verify release APK and prepare artifacts
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs mobile/build/outputs/apk/release/mobile-release.apk
@@ -122,9 +137,28 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/tiplay-release-inputs"
 
-  draft:
-    if: ${{ inputs.create_draft }}
+  symbols:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'uJZk/TiPlay' }}
     needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TiPlay-JNI-symbols
+          path: native-symbols
+      - name: Retain immutable symbols in an authenticated draft only
+        run: python3 scripts/archive_native_symbols.py native-symbols
+
+  draft:
+    # A failed durable archive must block the APK draft. Other refs only build artifacts.
+    if: ${{ inputs.create_draft && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'uJZk/TiPlay' }}
+    needs: [release, symbols]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

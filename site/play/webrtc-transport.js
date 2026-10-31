@@ -75,6 +75,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
   let remoteVideoTrack = null;
   let videoTransceiver = null, videoGeneration = 1, videoNegotiation = null, videoAnswer = null, videoRequestSequence = 0;
   let pendingVideoTransaction = null, completedVideoTransaction = null;
+  let pendingVideoError = null;
   let terminalVideoError = null;
   let rtpVideoStats = { state: 'collecting', generation: 1 }, rtpVideoSampledAt = null;
   let rtpVideoSampling = null;
@@ -269,6 +270,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       try { response = JSON.parse(data); } catch (_) { throw transportError('control-format'); }
       if (!response || typeof response !== 'object' || Array.isArray(response)) throw transportError('control-format');
       if (response.k === 'video-error') {
+        if (closed) return;
         if (response.reason === 'video-ready-timeout') {
           if (!pendingVideoTransaction && !videoNegotiation && completedVideoTransaction?.generation === response.generation) {
             sendControl(completedVideoTransaction);
@@ -278,7 +280,10 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
           }
           return;
         }
-        if (!videoNegotiation && (response.generation ?? 1) === videoGeneration) onVideoError(typeof response.reason === 'string' ? response.reason : 'rtc-video-failed');
+        const generation = response.generation ?? 1, reason = typeof response.reason === 'string' ? response.reason : 'rtc-video-failed';
+        if (!videoNegotiation && generation === videoGeneration) onVideoError(reason);
+        else if (pendingVideoTransaction?.generation === generation && !pendingVideoError)
+          pendingVideoError = { generation, reason };
         return;
       }
       if (response.k === 'video-answer') {
@@ -490,7 +495,16 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
       // have changed native SDP state and require explicit protocol recovery.
       if (error.reason !== 'rtc-video-renegotiation-timeout') terminalVideoError = error;
       throw error;
-    }).finally(() => { clearTimeout(deadline); clearInterval(retry); videoAnswer = null; videoNegotiation = null; });
+    }).finally(() => {
+      clearTimeout(deadline); clearInterval(retry); videoAnswer = null; videoNegotiation = null;
+      // A source may fail before its new CONFIG, while the consumer's generation
+      // barrier is still pending. Retain only that exact transaction's first
+      // error; an old source must never fail a replacement reader.
+      const failure = pendingVideoError;
+      if (failure && !closed && failure.generation === videoGeneration) {
+        pendingVideoError = null; onVideoError(failure.reason);
+      } else if (closed || terminalVideoError || failure?.generation !== pendingVideoTransaction?.generation) pendingVideoError = null;
+    });
     return videoNegotiation;
   }
   const aborted = () => close(transportError('stopped'));
@@ -505,6 +519,7 @@ export function createRtcMediaTransport({ signal, exchange, credentials, onError
     clearInterval(statsTimer);
     videoAnswer?.reject(error); videoAnswer = null;
     pendingVideoTransaction = completedVideoTransaction = null;
+    pendingVideoError = null;
     lifetimeAbort.abort();
     rejectReady(error); rejectLifetime(error);
     for (const pending of requests.values()) { clearTimeout(pending.timer); pending.reject(error); }

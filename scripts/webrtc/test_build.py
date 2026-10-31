@@ -6,10 +6,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
 from unittest import mock
+import zipfile
 
 SPEC = importlib.util.spec_from_file_location("webrtc_build", Path(__file__).with_name("build.py"))
 build = importlib.util.module_from_spec(SPEC)
@@ -230,7 +232,7 @@ class BuildDriverTest(unittest.TestCase):
             self.assertEqual(run.call_args_list[0].args[0][-1],
                              "--args=is_debug=false rtc_include_tests=true rtc_enable_protobuf=true "
                              "rtc_use_h264=false use_rtti=true rtc_build_examples=false "
-                             "rtc_build_tools=false rtc_use_pipewire=false")
+                             "rtc_build_tools=false rtc_use_pipewire=false symbol_level=1 use_debug_fission=false")
             self.assertEqual(run.call_args_list[1].args[0][-2:],
                              ["-j2", "modules/pacing:tiplay_source_rate_tests"])
             result = json.loads((root / "focused-tests.json").read_text())
@@ -351,11 +353,38 @@ pathlib.Path(args.output).write_text(json.dumps(vars(args)))
             self.assertEqual(set(actual["extra_gn_args"]), {
                 "is_debug=false", "use_rtti=true", "rtc_use_h264=false", "is_component_build=false",
                 "rtc_build_examples=false", "rtc_build_tools=false", "rtc_enable_protobuf=false",
-                "treat_warnings_as_errors=false"})
+                "treat_warnings_as_errors=false", "symbol_level=1", "use_debug_fission=false"})
             # build_aar invokes Siso directly, so Ninja's compact -j2 is invalid;
             # Siso's -j is also ineffective. Keep a real local concurrency cap.
             self.assertEqual(actual["extra_ninja_switches"], ["-local_jobs=2"])
             self.assertNotIn("-j2", actual["extra_ninja_switches"])
+
+    @unittest.skipUnless(shutil.which("cc") and shutil.which("strip") and shutil.which("readelf"), "Host ELF tools required")
+    def test_aar_symbols_are_paired_with_the_actual_packaged_abi_and_line_tables(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "src"
+            full = source / "out_tiplay_aar/x86_64/lib.unstripped/libjingle_peerconnection_so.so"
+            full.parent.mkdir(parents=True)
+            code = root / "symbol.c"
+            code.write_text("int tiplay_symbol_probe(int value) { return value + 1; }\n")
+            stripped = root / "stripped.so"
+            subprocess.run(["cc", "-shared", "-fPIC", "-O3", "-g", "-Wl,--build-id=sha1",
+                            str(code), "-o", str(full)], check=True, capture_output=True)
+            subprocess.run(["strip", "--strip-unneeded", "-o", str(stripped), str(full)], check=True)
+            output = root / "artifacts/test.aar"
+            output.parent.mkdir()
+            with zipfile.ZipFile(output, "w") as archive:
+                archive.writestr("jni/x86_64/libjingle_peerconnection_so.so", stripped.read_bytes())
+            producer = build.native_symbols.producer_context("webrtc", source_revision=build.REVISION)
+            result = build.collect_symbols(source, output, ["x86_64"], producer)
+            self.assertEqual(result["archive_visibility"], "authenticated-draft-only")
+            directory = output.parent / "native-symbols"
+            index = build.native_symbols.verify(directory)
+            self.assertEqual(index["entries"][0]["packaged_sha256"], build.native_symbols.sha(stripped))
+            full.write_bytes(stripped.read_bytes())
+            with self.assertRaisesRegex(ValueError, "DWARF line"):
+                build.collect_symbols(source, output, ["x86_64"], producer)
 
     def test_floating_depot_tools_is_rejected_before_source_changes(self):
         with tempfile.TemporaryDirectory() as directory:

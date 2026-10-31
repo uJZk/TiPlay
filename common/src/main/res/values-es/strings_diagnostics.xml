@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">Abrir carpeta</string>
     <string name="settings_report_path_copied">Ruta copiada.</string>
     <string name="settings_report_open_folder_failed">No se puede abrir esta carpeta.</string>
+    <string name="settings_logs_storage_unavailable">No se pudo preparar el informe. Libera espacio o vuelve a conectar el almacenamiento externo e inténtalo de nuevo.</string>
 </resources>

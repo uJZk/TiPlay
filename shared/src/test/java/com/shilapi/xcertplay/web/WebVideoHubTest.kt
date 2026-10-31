@@ -294,6 +294,44 @@ class WebVideoHubTest {
         assertEquals(2, subscription.drain().size)
     }
 
+    @Test fun reliableInvalidConfigurationPublishesAnExplicitFailureAndReplaysItUntilValid() {
+        val hub = WebVideoHub(Executor { it.run() }, { now })
+        hub.beginStream(owner, 1182, 920, 60, {}, {})
+        val first = hub.subscribe(reliable = true)
+        hub.configure(owner, VideoCodec.H265, byteArrayOf())
+        assertEquals("video-source-configuration-invalid", String(requireNotNull(first.take(0)).payload))
+        assertEquals("video-source-configuration-invalid", first.endReason)
+        val retry = hub.subscribe(reliable = true)
+        assertEquals("video-source-configuration-invalid", String(requireNotNull(retry.take(0)).payload))
+        // Repeated rejected source records stay deduplicated without erasing the terminal state.
+        hub.configure(owner, VideoCodec.H265, byteArrayOf())
+        assertEquals("video-source-configuration-invalid", hub.subscribe(reliable = true).endReason)
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val recovered = hub.subscribe(reliable = true)
+        hub.frame(owner, idr(), 0, now)
+        assertEquals(listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME), recovered.drain().map { it.kind })
+        assertNull(recovered.endReason)
+        recovered.close()
+    }
+
+    @Test fun invalidCurrentConfigurationRetiresQueuedPicturesButAnOldOwnerCannotFailANewStream() {
+        begin()
+        hub.configure(owner, VideoCodec.H264, avcc)
+        val first = hub.subscribe(reliable = true)
+        hub.frame(owner, idr(), 0, now)
+        hub.configure(owner, VideoCodec.H265, byteArrayOf())
+        assertEquals(WebVideoRecords.KIND_END, requireNotNull(first.take(0)).kind)
+        val newer = Any()
+        hub.beginStream(newer, 640, 480, 60, {}, {})
+        hub.configure(newer, VideoCodec.H264, avcc)
+        val current = hub.subscribe(reliable = true)
+        hub.configure(owner, VideoCodec.H265, byteArrayOf())
+        hub.frame(newer, idr(), 0, now)
+        assertNull(current.endReason)
+        assertEquals(listOf(WebVideoRecords.KIND_CONFIG, WebVideoRecords.KIND_FRAME), current.drain().map { it.kind })
+        current.close()
+    }
+
     @Test fun anEndedStreamClearsTheConfigAndTheNextStreamStartsAtAKeyFrame() {
         begin()
         hub.configure(owner, VideoCodec.H264, avcc)

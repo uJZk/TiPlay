@@ -39,13 +39,13 @@ internal object NativeCrashDiagnostics {
         }
     }
 
-    fun collect(context: Context): Capture = safely {
+    fun collect(context: Context, temporaryRoot: File = context.cacheDir): Capture = safely {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            collect(Build.VERSION.SDK_INT, System.currentTimeMillis(), "", context.cacheDir) { emptyList() }
+            collect(Build.VERSION.SDK_INT, System.currentTimeMillis(), "", temporaryRoot) { emptyList() }
         } else {
             val packageName = context.packageName
             val mainProcessName = context.applicationInfo.processName?.takeIf { it.isNotBlank() } ?: packageName
-            collect(Build.VERSION.SDK_INT, System.currentTimeMillis(), mainProcessName, context.cacheDir) {
+            collect(Build.VERSION.SDK_INT, System.currentTimeMillis(), mainProcessName, temporaryRoot) {
                 val manager = context.getSystemService(ActivityManager::class.java) ?: throw IllegalStateException()
                 manager.getHistoricalProcessExitReasons(packageName, 0, MAX_RECORDS).take(MAX_RECORDS).map { exit ->
                     Record(exit.processName, exit.pid, exit.timestamp, exit.reason, exit.status,

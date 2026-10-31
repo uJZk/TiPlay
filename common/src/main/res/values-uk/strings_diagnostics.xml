@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">Відкрити теку</string>
     <string name="settings_report_path_copied">Шлях скопійовано.</string>
     <string name="settings_report_open_folder_failed">Не вдалося відкрити цю теку.</string>
+    <string name="settings_logs_storage_unavailable">Не вдалося підготувати звіт. Звільніть місце або підключіть зовнішнє сховище знову й повторіть спробу.</string>
 </resources>

@@ -33,6 +33,7 @@ object RawTraffic {
     @Volatile private var timing = RawCaptureTiming()
     private val channelOffsets = mutableMapOf<String, Long>()
     @Volatile private var referenceIntegrity = true
+    @Volatile private var metadataSession: MetadataCaptureSession? = null
     private val videoReferenceLock = Any()
     private val videoReferences = java.util.WeakHashMap<ByteArray, Reference>()
 
@@ -47,22 +48,26 @@ object RawTraffic {
     }
 
     fun bindVideoReference(payload: ByteArray, reference: Reference?) {
-        if (!enabled || reference == null) return
+        if (!enabled || reference == null || metadataSession?.referenceIntegrity?.get() == false) return
         synchronized(videoReferenceLock) { if (enabled && reference.session == sessionId) videoReferences[payload] = reference }
     }
 
     fun videoReference(payload: ByteArray): Reference? {
-        if (!enabled) return null
+        if (!enabled || !referenceIntegrity || metadataSession?.referenceIntegrity?.get() == false) return null
         return synchronized(videoReferenceLock) { videoReferences[payload]?.takeIf { it.session == sessionId } }
     }
 
     /** Status reads never wait for capture disk I/O or hold a media/control lock behind it. */
     fun integrity(): Map<String, Any?> {
-        val count = failures
-        return mapOf("enabled" to enabled, "failures" to count, "lastFailure" to lastFailure,
-            "complete" to (count == 0L), "referenceIntegrity" to referenceIntegrity,
-            "coverage" to if (count == 0L) "no-observed-write-failure" else "partial",
-            "durability" to "application-flush-no-fsync", "timing" to timing.snapshot())
+        val metadata = metadataSession
+        val count = failures + (metadata?.failureCount() ?: 0)
+        val metadataState = metadata?.snapshot()
+        val complete = count == 0L && (metadataState?.get("pending") as? Int ?: 0) == 0
+        return mapOf("enabled" to enabled, "failures" to count,
+            "lastFailure" to if (failures == 0L && count > 0) "AsyncMetadataLoss" else lastFailure,
+            "complete" to complete, "referenceIntegrity" to (referenceIntegrity && metadata?.referenceIntegrity?.get() != false),
+            "coverage" to if (complete) "no-observed-write-failure" else "partial",
+            "asyncMetadata" to metadataState, "durability" to "application-flush-no-fsync", "timing" to timing.snapshot())
     }
 
     @Volatile var startedAtMillis = 0L
@@ -80,7 +85,10 @@ object RawTraffic {
         this.ingressOnly = ingressOnly
         val changed = file != destination || this.compressed != compressed
         val starting = active && (!enabled || changed)
-        if (!active && enabled) record("capture/stop", "disabled".toByteArray())
+        if ((changed || !active) && enabled) {
+            metadataSession?.retire()
+            record("capture/stop", "${if (active) "reconfigured" else "disabled"} ${metadataSession?.summary().orEmpty()}".toByteArray())
+        }
         if (changed || !active) closeWriter()
         if (changed || starting) needsBoundaryCheck = true
         file = destination
@@ -98,6 +106,7 @@ object RawTraffic {
         startedAtMillis = System.currentTimeMillis()
         val session = java.util.UUID.randomUUID().toString()
         sessionId = session
+        metadataSession = MetadataCaptureSession(session)
         channelOffsets.clear()
         referenceIntegrity = true
         synchronized(videoReferenceLock) { videoReferences.clear() }
@@ -110,6 +119,7 @@ object RawTraffic {
 
     /** Explicit user action; saved artifacts are independent. An active capture starts a fresh session. */
     fun clear() = synchronized(lock) {
+        metadataSession?.retire()
         closeWriter()
         val target = file
         check(target == null || !target.exists() || target.delete()) { "Could not clear raw capture" }
@@ -121,11 +131,40 @@ object RawTraffic {
         lastFailureText = ""; firstFailureEpochMillis = 0; lastFailureEpochMillis = 0
         failedByteAttempts = 0; lastFailureChannel = "none"; needsBoundaryCheck = true
         timing = RawCaptureTiming()
+        metadataSession = null
         if (enabled) startSession()
     }
 
     fun record(channel: String, bytes: ByteArray, offset: Int = 0, length: Int = bytes.size - offset) {
         recordReferenced(channel, bytes, offset, length)
+    }
+
+    /** Nonblocking admission for metadata-only platform callbacks. Rejection is explicit integrity loss. */
+    fun recordMetadataAsync(channel: String, bytes: ByteArray, observedAtMillis: Long = System.currentTimeMillis()): Boolean {
+        val session = activeSessionId() ?: return false
+        return recordMetadataForSessionAsync(session, channel, bytes, observedAtMillis)
+    }
+
+    fun recordMetadataForSessionAsync(expectedSession: String, channel: String, bytes: ByteArray,
+                                      observedAtMillis: Long = System.currentTimeMillis()): Boolean {
+        if (!enabled || bytes.isEmpty()) return false
+        val state = metadataSession?.takeIf { it.id == expectedSession } ?: return false
+        return state.enqueue(channel, bytes, observedAtMillis)
+    }
+
+    /** Background export may spend a small budget draining; never call while holding a journal lock. */
+    fun awaitMetadataIdle(timeoutMillis: Long): Boolean = metadataSession?.awaitIdle(timeoutMillis) ?: true
+
+    internal fun writeMetadata(entry: MetadataCaptureSession.Entry) = synchronized(lock) {
+        if (!entry.isPending) return@synchronized
+        if (!enabled || metadataSession !== entry.session || sessionId != entry.session.id) {
+            entry.finish(false)
+            return@synchronized
+        }
+        val before = failures
+        val previousSequence = sequence
+        recordReferenced(entry.channel, entry.bytes, 0, entry.bytes.size, observedAtMillis = entry.observedAtMillis)
+        entry.finish(sequence != previousSequence && failures == before)
     }
 
     /** Session validation and append share the clear/enable monitor: delayed reports cannot enter a new capture. */
@@ -143,7 +182,7 @@ object RawTraffic {
     }
 
     private fun recordReferenced(channel: String, bytes: ByteArray, offset: Int, length: Int,
-                                 requestedAtNanos: Long = 0L): Reference? {
+                                 requestedAtNanos: Long = 0L, observedAtMillis: Long? = null): Reference? {
         if (!enabled || length <= 0) return null
         // Keep canonical ingress plus lifecycle/diagnostic metadata. Outgoing media and
         // Android playback PCM duplicate input and are not part of the requested capture.
@@ -195,7 +234,7 @@ object RawTraffic {
                 val end = offset + length
                 while (position < end) {
                     val count = minOf(48 * 1024, end - position)
-                    output.write("${System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t".toByteArray(Charsets.UTF_8))
+                    output.write("${observedAtMillis ?: System.currentTimeMillis()}\t${++sequence}\t$channel\t$count\t".toByteArray(Charsets.UTF_8))
                     // The JDK bulk encoder reads this exact range without a source
                     // copy and emits ASCII directly. Avoid a payload-sized String,
                     // interpolated line and UTF-16/UTF-8 encoding in the capture lock.
@@ -210,7 +249,7 @@ object RawTraffic {
                 compressedBytes = target.length()
                 if (channel == "capture/start") pendingSessionHeader = null
                 channelOffsets[channel] = channelOffset + length
-                return if (referenceIntegrity) Reference(requireNotNull(sessionId), channel, firstSequence, sequence, channelOffset, length) else null
+                return if (referenceIntegrity && metadataSession?.referenceIntegrity?.get() != false) Reference(requireNotNull(sessionId), channel, firstSequence, sequence, channelOffset, length) else null
             } catch (error: Exception) {
                 needsBoundaryCheck = true
                 closeWriter()
@@ -292,8 +331,16 @@ object RawTraffic {
     }
 
     internal class Snapshot(private val input: InputStream, val length: Long, val status: String, val compressed: Boolean = false, val name: String = "raw-traffic.tsv.zst") : java.io.Closeable {
+        private var opened = false
         override fun close() = input.close()
-        fun open(): InputStream {
+        /** Rewind the owned descriptor, including an unlinked journal; never reopen its pathname. */
+        @Synchronized fun open(): InputStream {
+            when (input) {
+                is java.io.FileInputStream -> input.channel.position(0)
+                is java.io.ByteArrayInputStream -> input.reset()
+                else -> check(!opened) { "Snapshot stream cannot be replayed" }
+            }
+            opened = true
             return object : InputStream() {
                 private var remaining = length
                 override fun read(): Int {
@@ -309,24 +356,37 @@ object RawTraffic {
                     check(read > 0) { "Raw capture snapshot ended early" }
                     remaining -= read; return read
                 }
-                override fun close() = input.close()
+                // Snapshot owns the descriptor across CRC and ZIP passes.
+                override fun close() = Unit
             }
         }
     }
 
     private fun snapshot(target: File? = file): Snapshot = synchronized(lock) {
         val length = target?.length() ?: 0L
+        val async = metadataSession
+        val totalFailures = failures + (async?.failureCount() ?: 0)
         Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else target!!.inputStream(), length,
-            "RAW_CAPTURE failures=$failures lastFailure=$lastFailure enabled=$enabled format=${if (compressed) "zstd-tsv-base64-v1" else "tsv-base64"} bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
-                "RAW_CAPTURE_INTEGRITY coverage=${if (failures == 0L) "no-observed-write-failure" else "partial"} " +
+            "RAW_CAPTURE failures=$totalFailures lastFailure=$lastFailure enabled=$enabled format=${if (compressed) "zstd-tsv-base64-v1" else "tsv-base64"} bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
+                "RAW_CAPTURE_INTEGRITY coverage=${if (integrity()["complete"] == true) "no-observed-write-failure" else "partial"} " +
                 "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
                 "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
-                "lastFailureText=$lastFailureText referenceIntegrity=$referenceIntegrity durability=application-flush\n" +
+                "lastFailureText=$lastFailureText referenceIntegrity=${referenceIntegrity && async?.referenceIntegrity?.get() != false} durability=application-flush\n" +
+                "RAW_ASYNC_METADATA ${async?.summary().orEmpty()}\n" +
                 "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n", compressed, target?.name ?: "raw-traffic.tsv.zst")
     }
 
-    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File,
-                     attachments: Map<String, File> = emptyMap()) {
+    class ArchiveSnapshot internal constructor(private val compressedExport: Boolean, private val snapshots: List<Snapshot>) : java.io.Closeable {
+        val payloadBytes: Long get() = snapshots.sumOf { it.length }
+        fun write(output: OutputStream, logName: String, report: String, temporaryRoot: File,
+                  attachments: Map<String, File> = emptyMap()) {
+            if (compressedExport) CompressedTrafficArchive.write(output, logName, report, snapshots, temporaryRoot, attachments)
+            else snapshots.firstOrNull()?.let { RawTrafficArchive.write(output, logName, report, it, temporaryRoot, attachments) }
+        }
+        override fun close() { snapshots.forEach { runCatching { it.close() } } }
+    }
+
+    fun archiveSnapshot(): ArchiveSnapshot {
         val (compressedExport, snapshots) = synchronized(lock) {
             val selected = if (!compressed) listOf(snapshot()) else {
                 val retained = file?.parentFile?.listFiles()?.filter {
@@ -340,10 +400,11 @@ object RawTraffic {
             }
             compressed to selected
         }
-        try {
-            if (compressedExport) {
-                CompressedTrafficArchive.write(output, logName, report, snapshots, temporaryRoot, attachments)
-            } else snapshots.firstOrNull()?.let { RawTrafficArchive.write(output, logName, report, it, temporaryRoot, attachments) }
-        } finally { snapshots.forEach { it.close() } }
+        return ArchiveSnapshot(compressedExport, snapshots)
+    }
+
+    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File,
+                     attachments: Map<String, File> = emptyMap()) {
+        archiveSnapshot().use { it.write(output, logName, report, temporaryRoot, attachments) }
     }
 }

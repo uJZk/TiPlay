@@ -3,6 +3,8 @@ package com.shilapi.xcertplay
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** Private rolling metadata logs. Pending accepted writes retain their target through close. */
 internal class SessionLogFile(val file: File) : Closeable {
@@ -18,8 +20,8 @@ internal class SessionLogFile(val file: File) : Closeable {
     @Volatile private var lastFailure = "none"
     private var reportedLoss = 0L // guarded by storageLock
 
-    fun reset(header: String) = synchronized(storageLock) {
-        if (synchronized(stateLock) { closing }) return@synchronized
+    fun reset(header: String) = storageLock.withLock {
+        if (synchronized(stateLock) { closing }) return@withLock
         runCatching {
             val directory = file.parentFile
             if (directory != null && !directory.isDirectory && !directory.mkdirs()) {
@@ -41,9 +43,9 @@ internal class SessionLogFile(val file: File) : Closeable {
         }
     }
 
-    internal fun prepare(message: String): String? {
+    internal fun prepare(message: String, observedAtMillis: Long = System.currentTimeMillis()): String? {
         if (com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) {
-            com.shilapi.xcertplay.diagnostics.RawTraffic.record("android/log", message.toByteArray(Charsets.UTF_8))
+            com.shilapi.xcertplay.diagnostics.RawTraffic.recordMetadataAsync("android/log", message.toByteArray(Charsets.UTF_8), observedAtMillis)
         }
         // Full Debug text lives in the realtime Zstandard journal. Rolling metadata is always safe.
         val safe = DiagnosticRedactor.redact(message)
@@ -67,7 +69,7 @@ internal class SessionLogFile(val file: File) : Closeable {
         true
     }
 
-    internal fun appendReserved(safe: String) = synchronized(storageLock) {
+    internal fun appendReserved(safe: String) = storageLock.withLock {
         runCatching {
             val lost = dropped.get() + writeFailures.get() + rejectedAfterClose.get()
             // Persist recovery evidence so a later process can still see earlier logging gaps.
@@ -119,7 +121,7 @@ internal class SessionLogFile(val file: File) : Closeable {
 
     companion object {
         // Covers rotation and report snapshots across old and new target objects.
-        internal val storageLock = Any()
+        internal val storageLock = ReentrantLock()
         const val MAX_BYTES = 512 * 1024L
         private val ARCHIVE_NAMES = listOf("previous.log") + (2..7).map { "previous-$it.log" }
         val REPORT_NAMES = ARCHIVE_NAMES.reversed() + "diplay.log"

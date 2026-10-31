@@ -190,7 +190,9 @@ class CarPlayBonjourDualStackTest {
             factory.`when`<JmDNS> { JmDNS.create(ipv4, "carplay-020000000002") }.thenThrow(IOException("bind failed"))
             val bonjour = CarPlayBonjour(context, config, identity, ipv6.hostAddress, true,
                 additionalAddresses = listOf(ipv4))
-            assertThrows(IOException::class.java) { bonjour.start() }
+            val failure = assertThrows(IOException::class.java) { bonjour.start() }
+            assertEquals("bind failed", failure.message)
+            assertTrue("Failed startup must finish all reserved cleanup before verification", bonjour.awaitClosed(2_000))
             verify(first).close()
             verify(lock).release()
         }

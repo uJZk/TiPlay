@@ -43,7 +43,8 @@ private fun audioAddress(device: AudioDeviceInfo): String? =
 
 private val retryableFailures = setOf("car-bluetooth-unavailable", "car-bluetooth-disconnected",
     "bluetooth-input-unavailable", "bluetooth-output-unavailable", "bluetooth-connect-timeout", "bluetooth-route-rejected",
-    "bluetooth-route-failed", "bluetooth-duplex-failed", "bluetooth-output-failed", "communication-route-busy")
+    "bluetooth-route-failed", "bluetooth-duplex-failed", "bluetooth-output-failed", "communication-route-busy",
+    "audio-focus-unavailable")
 
 /** Android is the HFP audio gateway. Device selection never substitutes the handset microphone. */
 @Suppress("DEPRECATION")
@@ -68,6 +69,11 @@ class AndroidBluetoothVoiceChannel(
     private var previousMode = AudioManager.MODE_NORMAL
     private var acquired = false
     private var focusHeld = false
+    private var focusGranted = false
+    private var focusWaiting = false
+    private var focusEpoch = 0L
+    private var focus: AudioFocusRequest? = null
+    private var routeReleaseRequested = false
     private var connectingAt = 0L
     private var releasingAt = 0L
     private var failure: String? = null
@@ -82,10 +88,57 @@ class AndroidBluetoothVoiceChannel(
     private var devices: Devices? = null
     private var workerRetiring = false
     private var generation = 0
-    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-        .setAudioAttributes(attributes).setOnAudioFocusChangeListener({ value ->
-            if (value < 0 && acquired) fail("audio-focus-lost")
-        }, main).build()
+    private fun requestFocus(): Int {
+        if (focusGranted) return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (focusWaiting) return AudioManager.AUDIOFOCUS_REQUEST_DELAYED
+        val epoch = ++focusEpoch
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(attributes).setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener({ value ->
+                if (epoch == focusEpoch) focusChanged(value)
+            }, main).build()
+        focus = request
+        val result = manager.requestAudioFocus(request)
+        focusGranted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        focusWaiting = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED
+        focusHeld = focusGranted || focusWaiting
+        return result
+    }
+
+    private fun focusChanged(value: Int) {
+        if (!focusHeld || wanted == null || closed) return
+        when (value) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (!focusWaiting) return
+                focusWaiting = false; focusGranted = true
+                if (failure == "audio-focus-transient") failure = null
+                state(BluetoothVoiceState("connecting"))
+                // The retained request has regained focus; do not request it again
+                // or bypass a worker/route that is still being retired.
+                val epoch = focusEpoch
+                val demand = wanted
+                main.post { if (epoch == focusEpoch && wanted === demand && focusHeld && focusGranted &&
+                    wanted != null && failure == null && !closed && !acquired && !profilePending &&
+                    !workerRetiring && releasingAt == 0L) acquire() }
+                schedule()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                focusGranted = false; focusWaiting = true
+                failure = "audio-focus-transient"; failedCarAddress = activeCarAddress ?: failedCarAddress
+                retryAt = Long.MAX_VALUE
+                state(BluetoothVoiceState("failed", failure, released = !acquired && !workerRetiring))
+                release(keepFocus = true)
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> fail("audio-focus-lost")
+        }
+    }
+
+    private fun abandonFocus() {
+        val previous = focus
+        focus = null; focusEpoch++
+        if (focusHeld && previous != null) runCatching { manager.abandonAudioFocusRequest(previous) }
+        focusHeld = false; focusGranted = false; focusWaiting = false
+    }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             legacySco = intent?.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1) == AudioManager.SCO_AUDIO_STATE_CONNECTED
@@ -96,12 +149,14 @@ class AndroidBluetoothVoiceChannel(
 
     override fun start(config: MicrophoneConfig) { main.post {
         if (closed) return@post
+        val replacing = wanted != null && wanted !== config
         wanted = config; failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
+        if (replacing) { state(BluetoothVoiceState("connecting")); release(); return@post }
         retireDevices()
         mixer.clear()
         state(BluetoothVoiceState("connecting"))
         if (releasingAt != 0L) schedule()
-        else if (!acquired) acquire() else { connectingAt = SystemClock.elapsedRealtime(); tick() }
+        else if (!acquired && !focusWaiting) acquire() else { connectingAt = SystemClock.elapsedRealtime(); tick() }
     } }
     override fun stop() { main.post { wanted = null; failure = null; release() } }
     override fun close() { main.post { closed = true; wanted = null; failure = null; release() } }
@@ -117,6 +172,7 @@ class AndroidBluetoothVoiceChannel(
         try {
             val address = selectedCarAddress?.invoke()?.trim()?.uppercase(java.util.Locale.ROOT)
             activeCarAddress = address
+            failedCarAddress = address
             if (!permitted()) { fail("microphone-or-bluetooth-permission"); return }
             if (manager.mode == AudioManager.MODE_IN_CALL || manager.mode == AudioManager.MODE_IN_COMMUNICATION ||
                 (Build.VERSION.SDK_INT >= 31 && manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
@@ -174,10 +230,13 @@ class AndroidBluetoothVoiceChannel(
 
     private fun openRoute() {
         if (wanted == null || closed) return
-        if (manager.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { fail("audio-focus-unavailable"); return }
-        focusHeld = true
+        when (requestFocus()) {
+            AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> { scheduleFailure(); return }
+            AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> Unit
+            else -> { fail("audio-focus-unavailable"); return }
+        }
         previousMode = manager.mode
-        acquired = true; releasingAt = 0; connectingAt = SystemClock.elapsedRealtime()
+        acquired = true; releasingAt = 0; routeReleaseRequested = false; connectingAt = SystemClock.elapsedRealtime()
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
         if (Build.VERSION.SDK_INT >= 31) {
             if (!manager.setCommunicationDevice(requireNotNull(selected))) { fail("bluetooth-route-rejected"); return }
@@ -199,6 +258,9 @@ class AndroidBluetoothVoiceChannel(
         main.removeCallbacks(poll)
         try {
             if (releasingAt != 0L) {
+                // Device stop/release runs on its existing capture worker. Do not
+                // reroute a still-playing AudioTrack to the handset during retirement.
+                if (!workerRetiring && acquired && !routeReleaseRequested) releaseRoute()
                 // Never resume browser sound while an owned SCO connection is still up.
                 val up = if (Build.VERSION.SDK_INT >= 31) manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO else legacySco
                 if (!up && !workerRetiring) finishRelease()
@@ -212,6 +274,14 @@ class AndroidBluetoothVoiceChannel(
                 return
             }
             if (wanted == null || closed) return
+            if (focusWaiting) {
+                if (!permitted()) { fail("microphone-or-bluetooth-permission"); return }
+                if (!sameBluetoothSelection(activeCarAddress ?: failedCarAddress, selectedCarAddress?.invoke())) {
+                    restartForSelectionChange(); return
+                }
+                scheduleFailure()
+                return
+            }
             if (failure != null && !acquired && !profilePending && !workerRetiring) {
                 val changed = selectedCarAddress != null && !sameBluetoothSelection(failedCarAddress, selectedCarAddress.invoke())
                 val permissionRestored = failure == "microphone-or-bluetooth-permission" && permitted()
@@ -263,7 +333,7 @@ class AndroidBluetoothVoiceChannel(
 
     private fun fail(reason: String) {
         Log.w("TiPlayBluetoothVoice", "Voice route failed reason=$reason")
-        failure = reason; failedCarAddress = activeCarAddress; profilePending = false
+        failure = reason; failedCarAddress = activeCarAddress ?: failedCarAddress; profilePending = false
         retryAt = if (reason in retryableFailures && selectedCarAddress != null && activeCarAddress != null) {
             val delay = (2_000L shl unavailableAttempts.coerceAtMost(4)).coerceAtMost(30_000L)
             unavailableAttempts++
@@ -277,20 +347,24 @@ class AndroidBluetoothVoiceChannel(
         val retiring = devices ?: return
         devices = null; workerRetiring = true
         retiring.running.set(false)
-        // Stop can unblock a blocking read; releasing belongs to the worker after it exits.
-        runCatching { synchronized(retiring) { retiring.record?.stop() } }
-        runCatching { retiring.track?.pause(); retiring.track?.flush() }
+        // Capture uses READ_NON_BLOCKING. Its owner observes running=false and
+        // stops/releases both devices in finally; main/focus callbacks never wait on it.
     }
-    private fun release() {
+    private fun release(keepFocus: Boolean = false) {
         profilePending = false; profileAttempt++
         main.removeCallbacks(poll)
+        if (!keepFocus) abandonFocus()
         retireDevices(); mixer.clear()
         if (!acquired) {
-            if (workerRetiring) { releasingAt = SystemClock.elapsedRealtime(); schedule() } else finishRelease()
+            if (workerRetiring) { releasingAt = SystemClock.elapsedRealtime().coerceAtLeast(1); schedule() } else finishRelease()
             return
         }
         state(BluetoothVoiceState("releasing", failure))
-        releasingAt = SystemClock.elapsedRealtime()
+        releasingAt = SystemClock.elapsedRealtime().coerceAtLeast(1)
+        tick()
+    }
+    private fun releaseRoute() {
+        routeReleaseRequested = true
         runCatching {
             if (Build.VERSION.SDK_INT >= 31) {
                 // Do not clear a different communication device selected by another session/app.
@@ -300,17 +374,16 @@ class AndroidBluetoothVoiceChannel(
             } else { manager.isBluetoothScoOn = false; manager.stopBluetoothSco() }
             if (manager.mode == AudioManager.MODE_IN_COMMUNICATION) manager.mode = previousMode
         }.onFailure { failure = "bluetooth-release-failed" }
-        if (focusHeld) { runCatching { manager.abandonAudioFocusRequest(focus) }; focusHeld = false }
-        tick()
     }
     private fun finishRelease() {
         main.removeCallbacks(poll)
-        acquired = false; releasingAt = 0; selected = null; activeCarAddress = null
+        acquired = false; releasingAt = 0; routeReleaseRequested = false; selected = null; activeCarAddress = null
         if (receiverRegistered) { runCatching { context.unregisterReceiver(receiver) }; receiverRegistered = false }
-        if (wanted != null && failure == null && !closed) acquire()
+        if (wanted != null && failure == null && !closed && !focusWaiting) acquire()
         else {
-            state(BluetoothVoiceState(if (failure != null && wanted != null) "failed" else "idle", failure, released = true))
-            if (wanted != null && failure != null && selectedCarAddress != null && !closed) scheduleFailure()
+            val next = if (wanted == null || closed) "idle" else if (failure != null) "failed" else if (focusWaiting) "connecting" else "idle"
+            state(BluetoothVoiceState(next, failure, released = true))
+            if (wanted != null && (failure != null || focusWaiting) && selectedCarAddress != null && !closed) scheduleFailure()
         }
     }
 

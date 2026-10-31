@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">Open folder</string>
     <string name="settings_report_path_copied">Path copied.</string>
     <string name="settings_report_open_folder_failed">Cannot open this folder.</string>
+    <string name="settings_logs_storage_unavailable">Could not prepare the report. Free storage space or reconnect external storage, then retry.</string>
 </resources>

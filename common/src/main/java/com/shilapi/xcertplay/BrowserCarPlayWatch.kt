@@ -29,8 +29,9 @@ internal class BrowserCarPlayWatch(context: Context, private val bluetoothConnec
         override fun onReceive(context: Context, intent: Intent) {
             if (RawTraffic.enabled && (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED ||
                     intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED)) {
+                val observedAt = System.currentTimeMillis()
                 val device = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
-                RawTraffic.record("usb/device-event", "action=${intent.action} device=$device".toByteArray())
+                RawTraffic.recordMetadataAsync("usb/device-event", "action=${intent.action} device=$device".toByteArray(), observedAt)
             }
             if (intent.action == BluetoothDevice.ACTION_ACL_CONNECTED) {
                 val device = IntentCompat.getParcelableExtra(intent, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)

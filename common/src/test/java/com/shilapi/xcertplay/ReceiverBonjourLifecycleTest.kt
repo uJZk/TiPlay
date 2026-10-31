@@ -5,6 +5,9 @@ import com.shilapi.xcertplay.receiver.ReceiverBonjour
 import com.shilapi.xcertplay.receiver.ReceiverConfig
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.jmdns.JmDNS
 import javax.jmdns.ServiceInfo
 import org.junit.Assert.*
@@ -22,6 +25,34 @@ class ReceiverBonjourLifecycleTest {
                 .`when`(dns).registerService(any(ServiceInfo::class.java))
             doAnswer { closes++; null }.`when`(dns).close()
         }
+    }
+
+    @Test fun aReplacementReceiverCannotAdvertiseWhileTheOldAddressIsStillClosing() {
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        val address = InetAddress.getByName("192.0.2.41") as Inet4Address
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val oldDns = Advertisement().dns
+        doAnswer { entered.countDown(); release.await(); null }.`when`(oldDns).close()
+        val old = ReceiverBonjour(config, 7000, interfaceAddresses = { listOf("wlan2" to address) },
+            createDns = { _, _ -> oldDns })
+        val created = AtomicInteger()
+        val replacement = ReceiverBonjour(config, 7000, interfaceAddresses = { listOf("wlan2" to address) },
+            createDns = { _, _ -> created.incrementAndGet(); Advertisement().dns })
+        assertTrue(old.refresh())
+        val closer = Thread { old.close() }
+        closer.start()
+        try {
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            assertFalse(replacement.refresh())
+            assertEquals(0, created.get())
+            release.countDown()
+            closer.join(2_000)
+            assertFalse(closer.isAlive)
+            assertTrue(replacement.refresh())
+            assertEquals(1, created.get())
+            assertFalse(old.refresh())
+        } finally { release.countDown(); closer.join(2_000); replacement.close() }
     }
 
     @Test fun classicCodecChangesRetireStaleRaopEvenWhenTheAirPlayTxtIsUnchanged() {

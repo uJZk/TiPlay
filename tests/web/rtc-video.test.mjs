@@ -151,12 +151,13 @@ test('a native source with live metadata but no first decoded frame reports a vi
   assert.equal(pipeline.usesTrack(), false, 'failed video is stopped without falling back');
 });
 
-test('a decoded native first frame cancels the startup deadline without requiring recurring video frames', async t => {
+test('a successfully presented native first frame cancels both startup deadlines without requiring recurring frames', async t => {
   let controller, tick, now = 100;
   t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
   t.mock.method(performance, 'now', () => now);
   const messages = [];
-  const pipeline = createRtcVideoPipeline({ post: value => messages.push(value), present: value => value.close(), firstFrameWaitMs: 1000 });
+  const pipeline = createRtcVideoPipeline({ post: value => messages.push(value),
+    present: (value, metadata) => { value.close(); pipeline.presented(metadata); }, firstFrameWaitMs: 1000 });
   t.after(() => pipeline.stop());
   pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
   controller.enqueue(config(1)); await settle();
@@ -171,7 +172,7 @@ test('one static RTP picture arriving before CONFIG renders after metadata and n
   const messages = [], order = [], drawn = [];
   const pipeline = createRtcVideoPipeline({ now: () => now, firstFrameWaitMs: 1000,
     post: value => { messages.push(value); if (value.type === 'config') order.push('config'); },
-    present: (value, metadata, id) => { order.push('present'); drawn.push({ value, metadata, id }); value.close(); } });
+    present: (value, metadata, id) => { order.push('present'); drawn.push({ value, metadata, id }); value.close(); pipeline.presented(metadata); } });
   t.after(() => pipeline.stop());
   pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
   const early = frame(); pipeline.trackFrame(early, 1);
@@ -183,6 +184,65 @@ test('one static RTP picture arriving before CONFIG renders after metadata and n
   now = 5000; tick();
   assert.equal(messages.some(value => value.type === 'video-error'), false);
   assert.equal(pipeline.stats().errorReason, null);
+});
+
+test('decoded frames that cannot reach Canvas retain a bounded presentation deadline', async t => {
+  let controller, tick, now = 100;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  const messages = [], canvas = { width: 800, height: 480, addEventListener() {}, removeEventListener() {},
+    getContext: name => name.startsWith('webgl') ? gl : null };
+  const gl = new Proxy({ canvas, isContextLost: () => true }, { get(target, name) {
+    if (name in target) return target[name];
+    return /^[A-Z_]+$/.test(name) ? name : () => name.startsWith('create') ? {} : 0;
+  } });
+  const presenter = createFramePresenter(canvas, { onFirstPresent: value => pipeline.presented(value) });
+  const pipeline = createRtcVideoPipeline({ now: () => now, firstFrameWaitMs: 1000,
+    post: value => messages.push(value), present: (value, metadata) => presenter.present(value, metadata) });
+  t.after(() => { pipeline.stop(); presenter.dispose(); });
+  pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); await settle(); const picture = frame(); pipeline.trackFrame(picture);
+  assert.equal(picture.closed, 1); assert.equal(presenter.stats().drawnFrames, 0); assert.equal(pipeline.stats().decoded, 1);
+  now = 1099; tick(); assert.equal(messages.some(value => value.type === 'video-error'), false);
+  now = 1100; tick(); tick();
+  assert.deepEqual(messages.filter(value => value.type === 'video-error').map(value => value.reason), ['rtc-video-first-presentation-timeout']);
+  assert.equal(messages.some(value => value.type === 'end'), false, 'presentation failure remains video-only');
+});
+
+test('only current source presentation proof cancels the deadline and idle clears it', async t => {
+  let controller, tick, now = 100, metadata;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  const messages = [], pipeline = createRtcVideoPipeline({ now: () => now, firstFrameWaitMs: 1000,
+    post: value => messages.push(value), present: (value, config) => { value.close(); metadata = config; } });
+  t.after(() => pipeline.stop());
+  pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
+  now = 5000; tick(); assert.equal(messages.some(value => value.type === 'video-error'), false, 'legal initial idle has no deadline');
+  controller.enqueue(config(1)); await settle(); pipeline.trackFrame(frame()); const previous = metadata;
+  pipeline.resetGeneration(2); controller.enqueue(config(2, RTC_VIDEO_TRANSPORT, 2)); await settle(); pipeline.trackFrame(frame());
+  for (const stale of [previous, { ...metadata, streamId: 8 }, { ...metadata, epoch: 1 }, { ...metadata, videoGeneration: 1 }])
+    assert.equal(pipeline.presented(stale), false);
+  now = 6000; tick(); assert.equal(messages.at(-1).reason, 'rtc-video-first-presentation-timeout');
+  pipeline.resetGeneration(3); controller.enqueue(config(3, RTC_VIDEO_TRANSPORT, 3)); await settle(); pipeline.trackFrame(frame());
+  assert.equal(pipeline.presented(metadata), true); now = 9000; tick();
+  assert.equal(messages.filter(value => value.type === 'video-error').length, 1, 'successful static frame needs no recurring frames');
+  pipeline.resetGeneration(4); controller.enqueue(encodeRecord({ kind: RECORD.IDLE, epoch: 3 })); await settle(); now = 12000; tick();
+  assert.equal(messages.filter(value => value.type === 'video-error').length, 1, 'IDLE cancels both startup deadlines');
+});
+
+test('an explicit source configuration failure before CONFIG is immediate and a new valid generation can recover', async t => {
+  let controller, tick, now = 100;
+  t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+  const messages = [], pipeline = createRtcVideoPipeline({ now: () => now,
+    post: value => messages.push(value), present: (value, metadata) => { value.close(); pipeline.presented(metadata); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
+  now = 20000; tick(); assert.equal(messages.some(value => value.type === 'video-error'), false, 'an idle phone is still allowed');
+  controller.enqueue(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode('video-source-configuration-invalid') }));
+  await settle(); assert.equal(messages.at(-1).reason, 'video-source-configuration-invalid');
+  assert.equal(messages.some(value => value.type === 'end'), false, 'failure does not end the audio/control transport');
+  const retired = frame(); pipeline.trackFrame(retired); assert.equal(retired.closed, 1);
+  pipeline.resetGeneration(2); controller.enqueue(config(1, RTC_VIDEO_TRANSPORT, 2)); await settle(); pipeline.trackFrame(frame());
+  now += 10000; tick(); assert.equal(pipeline.stats().errorReason, null);
+  assert.equal(messages.filter(value => value.type === 'video-error').length, 1);
 });
 
 test('pending native pictures retain only the latest frame until the first matching CONFIG', async t => {

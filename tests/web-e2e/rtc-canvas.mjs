@@ -97,7 +97,7 @@ try {
           worker.postMessage({ type: 'stream', id: 3, stream: videoBody }, [videoBody]);
           trackReader = createRtcTrackReader({ present: frame => delivery.present(frame, null, 3, null), onError: error => failures.push(error.message) });
         } else {
-          presenter = createFramePresenter(canvas, { onFirstPresent: () => { drawn = true; },
+          presenter = createFramePresenter(canvas, { onFirstPresent: config => { pipeline.presented(config); drawn = true; },
             onPresent: () => {
               const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
               if (gl) { const pixel = new Uint8Array(4); gl.readPixels(80, 45, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); if (pixel[0] > 100 && pixel[1] < 80) samples++; }

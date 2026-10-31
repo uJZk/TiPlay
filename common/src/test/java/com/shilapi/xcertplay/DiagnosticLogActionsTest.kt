@@ -74,6 +74,26 @@ class DiagnosticLogActionsTest {
         assertTrue(captures().isEmpty())
     }
 
+    @Test fun stopExportDrainsAdmittedMetadataBeforeDisablingCapture() {
+        assertTrue(RawTraffic.recordMetadataAsync("usb/device-event", "just-before-export".toByteArray(), observedAtMillis = 123))
+        DiagnosticLogActions.execute(context, DiagnosticLogAction.STOP_EXPORT) { content, _ ->
+            val bytes = ByteArrayOutputStream().also(content::writeTo).toByteArray()
+            val journals = StringBuilder()
+            ZipInputStream(bytes.inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break
+                    if (entry.name.startsWith("captures/")) journals.append(
+                        ZstdInputStream(zip.readBytes().inputStream()).use { String(it.readBytes()) })
+                }
+            }
+            assertTrue(journals.lineSequence().any { it.startsWith("123\t") && it.contains("\tusb/device-event\t") })
+            val stopMessages = journals.lineSequence().filter { it.contains("\tcapture/stop\t") }.map {
+                String(Base64.getDecoder().decode(it.split('\t', limit = 5)[4]))
+            }.toList()
+            assertTrue(stopMessages.any { it.contains("metadataFailures=0") })
+            DiagnosticExportStore.SavedReport(Uri.EMPTY, mimeType = content.mimeType)
+        }
+    }
+
     @Test fun ordinaryShareIsRedactedTextAndDoesNotIncludeRetainedRawData() {
         DiagnosticLogs.append("token=private-token")
         AirPlayPersistence.saveDiagnosticLogLevel(context, DiagnosticLogLevel.STANDARD)

@@ -5,6 +5,36 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 Release-specific test counts and public artifact checks are evidence for their
 recorded source, not interchangeable coverage counts for later engines.
 
+## Unreleased robustness fixes
+
+The [19-item remediation](Robustness.md) follows audit baseline `42db8dca`.
+Browser/cache v112 is prepared; beta.36/code78 and public browser v111 remain the
+published product. Original-codec RTP video, native Opus, fallback audio,
+Bluetooth microphones and SCO silence keepalive remain. Audio trimming is paused;
+committed native binaries and AARs are unchanged.
+
+The full local Android workflow command passes 4,535 unit cases: 2,613 shared,
+1,916 common and six home. Mobile, home and maphost Debug lint and assembly pass.
+Node 22 passes all 690 web cases. The 49 Python checks comprise 13 native-symbol,
+17 WebRTC build-driver, eight final-APK verifier, nine release-draft and two
+site-deployment cases. The new mobile Debug APK passes the pinned AAR identity,
+provenance, four-ABI ELF and ZIP-alignment check. This source-only Debug package
+is not the standalone signed CarPlay release.
+
+Actual `:shared:externalNativeBuildRelease :shared:stripReleaseDebugSymbols`
+passes. All 24 real Release JNI pairs across six modules and four ABIs have
+matching Build IDs, with line tables and symbol tables in the unstripped ELF;
+AGP models confirm `NDK_DEBUG=0`. This validates the JNI symbol input, separately
+from a signed Release APK, FULL metadata ZIP fallback and durable archive upload.
+
+Actual Chromium 151 checks pass for the two-page legacy service-worker update
+and main/Worker Processor-to-Canvas local-track paths. Public-tree/cache checks,
+workflow syntax, diff whitespace and documentation limits pass. Remote CI and
+publication were not dispatched. Full future WebRTC/audio producer builds and
+durable symbol upload remain separate workflow validation. Historical SIGSEGV
+attribution, vehicle reconnect behavior, SCO/focus recovery and graphics/device
+failures still need matching hardware evidence.
+
 ## Current release source
 
 **Beta.36/code78, browser v111, is published** from
@@ -364,6 +394,15 @@ production RTP page using synthetic H.264 and metadata-only video records; it do
 not use a live WebCodecs hardware override or an encoded-video fallback. Only URL
 AVPlayer harnesses retain the explicit desktop software-video override. API support
 and Canvas submission do not prove hardware use or physical output.
+
+The [service-worker update check](../tests/web-e2e/service-worker-update.mjs) loads
+two pages under the previously forced-activation policy, installs the production
+replacement and verifies that it waits until both pages leave. The next page
+must load matching main/decoder-worker versions; an uncontrolled initial page
+must not be claimed. Node tests separately cover first-presentation deadlines,
+generation-safe acknowledgements and late WakeLock completion. The
+`rtc-canvas.mjs --local-track` smoke exercises actual Processor/Canvas main and
+Worker paths, without claiming an RTP network or vehicle hardware test.
 
 Initial setup must reserve the application m-line through an unpublished data-only
 local offer, then update that pending offer with video before external signaling.

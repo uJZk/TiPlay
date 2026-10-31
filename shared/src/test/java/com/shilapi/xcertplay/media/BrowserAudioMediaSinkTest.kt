@@ -103,15 +103,85 @@ class BrowserAudioMediaSinkTest {
             start(call)
             assertEquals(0, codecCreations.get())
             voice.ready()
-            val deadline = System.nanoTime() + 1_000_000_000L
-            while (codecCreations.get() == 0 && System.nanoTime() < deadline) Thread.sleep(1)
-            assertEquals(1, codecCreations.get())
+            awaitMain { codecCreations.get() == 2 && hub.voiceStatus()["error"] == "bluetooth-downlink-decoder-failed" }
             start(AudioStreamId(100, "alert"))
             sink.onMicrophoneStopped(call); voice.released()
             start(media)
             Thread.sleep(20)
-            assertEquals(1, codecCreations.get())
+            assertEquals(2, codecCreations.get())
         } finally { sink.close(); voice.released() }
+    }
+
+    @Test fun failedCallDecoderRetriesOnceThenReportsDownlinkFailureWithoutReleasingSco() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val creations = java.util.concurrent.atomic.AtomicInteger()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { next -> voice = next } },
+            decoderFactory = { creations.incrementAndGet(); error("transient codec unavailable") })
+        val call = AudioStreamId(100, "telephony")
+        val compressed = AudioFormat(AudioCodecKind.AAC_LC, 16000, 1, call.type, call.audioType)
+        try {
+            sink.onMicrophoneStarted(call, config("telephony")); voice.ready()
+            sink.onAudioStarted(call, compressed, 0)
+            awaitMain { creations.get() == 2 && hub.voiceStatus()["error"] == "bluetooth-downlink-decoder-failed" }
+            voice.ready() // Duplicate platform readiness cannot hide the current decoder failure.
+            assertEquals("active", hub.voiceStatus()["state"])
+            assertEquals("bluetooth-downlink-decoder-failed", hub.voiceStatus()["error"])
+            assertEquals(0, voice.stops); assertEquals(0, voice.closes)
+            repeat(20) { sink.onAudioRtp(call, compressed, ByteArray(12) + byteArrayOf(1, 2), it * 1024) }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals(2, creations.get())
+            // A fresh upstream stream has a fresh budget and clears only its own failure.
+            packet(sink, call, 7)
+            awaitMain { hub.voiceStatus()["error"] == null && voice.audio.isNotEmpty() }
+            assertEquals(0, voice.stops)
+        } finally { sink.close(); voice.released() }
+    }
+
+    @Test fun retiredCallDecoderFailureCannotRetireOrMarkItsReplacement() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val creations = java.util.concurrent.atomic.AtomicInteger()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { next -> voice = next } },
+            decoderFactory = {
+                creations.incrementAndGet(); entered.countDown()
+                val deadline = System.nanoTime() + 3_000_000_000L
+                while (release.count != 0L && System.nanoTime() < deadline) {
+                    try { release.await(10, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { }
+                }
+                error("retired codec failure")
+            })
+        val call = AudioStreamId(100, "telephony")
+        try {
+            sink.onMicrophoneStarted(call, config("telephony")); voice.ready()
+            sink.onAudioStarted(call, AudioFormat(AudioCodecKind.AAC_LC, 16000, 1, call.type, call.audioType), 0)
+            assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
+            @Suppress("UNCHECKED_CAST")
+            val renderers = BrowserAudioMediaSink::class.java.getDeclaredField("renderers").apply { isAccessible = true }
+                .get(sink) as Map<AudioStreamId, Any>
+            val old = requireNotNull(renderers[call])
+            val oldWorker = old.javaClass.getDeclaredField("thread").apply { isAccessible = true }.get(old) as Thread
+            packet(sink, call, 9)
+            release.countDown()
+            oldWorker.join(1_000)
+            assertFalse(oldWorker.isAlive)
+            awaitMain { voice.audio.isNotEmpty() }
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertNull(hub.voiceStatus()["error"])
+            assertEquals("active", hub.voiceStatus()["state"])
+            assertEquals(1, creations.get())
+        } finally { release.countDown(); sink.close(); voice.released() }
+    }
+
+    private fun awaitMain(condition: () -> Boolean) {
+        val deadline = System.nanoTime() + 2_000_000_000L
+        while (!condition() && System.nanoTime() < deadline) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            Thread.sleep(1)
+        }
+        assertTrue("Audio worker state did not complete", condition())
     }
 
     @Test fun presentationUsesTheRtpClockWhilePcmKeepsItsDecodeSampleRate() {

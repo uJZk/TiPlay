@@ -11,9 +11,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * transport's bounded timeout. The returned stream is owned by the caller. This client never
  * closes its caller-owned [Iap2UsbMuxHost], persists a record, sends iAP2, or performs UI work.
  */
-class LockdownCarKitClient(
-    private val host: Iap2UsbMuxHost,
+class LockdownCarKitClient internal constructor(
+    private val connect: (Int, Long) -> BlockingDuplexByteStream,
+    private val tls: (BlockingDuplexByteStream, LockdownPairRecord, Long) -> BlockingDuplexByteStream,
 ) {
+    constructor(host: Iap2UsbMuxHost) : this(
+        { port, timeout -> host.connect(port, timeout) },
+        { stream, record, timeout -> TlsDuplexChannel.open(stream, record, timeout) },
+    )
     @Throws(IphoneUsbException::class, GeneralSecurityException::class)
     fun open(pairedRecord: PairedRecord, label: String): BlockingDuplexByteStream =
         open(pairedRecord.pairRecord, label)
@@ -26,10 +31,7 @@ class LockdownCarKitClient(
         require(label.isNotBlank()) { "label must not be blank" }
         require(serviceName.isNotBlank()) { "serviceName must not be blank" }
 
-        val lockdownConnection = host.connect(
-            destinationPort = Iap2UsbMuxHost.LOCKDOWN_PORT,
-            timeoutMillis = STEP_TIMEOUT_MILLIS,
-        )
+        val lockdownConnection = connect(Iap2UsbMuxHost.LOCKDOWN_PORT, STEP_TIMEOUT_MILLIS)
         val sessionTls = LockdownPlistChannel(lockdownConnection).use { plaintext ->
             val response = plaintext.request(
                 LockdownPlistValue.Dictionary(
@@ -48,15 +50,12 @@ class LockdownCarKitClient(
             if (!enableSessionSsl) {
                 throw IphoneUsbException.Protocol("StartSession did not enable TLS")
             }
-            TlsDuplexChannel.open(
-                underlying = plaintext.detach(),
-                pairRecord = pairRecord,
-                handshakeTimeoutMillis = STEP_TIMEOUT_MILLIS,
-            )
+            tls(plaintext.detach(), pairRecord, STEP_TIMEOUT_MILLIS)
         }
 
         val secureLockdown = LockdownPlistChannel(sessionTls)
         var serviceStream: BlockingDuplexByteStream? = null
+        var transferred = false
         try {
             val response = secureLockdown.request(
                 LockdownPlistValue.Dictionary(
@@ -76,30 +75,21 @@ class LockdownCarKitClient(
             val enableServiceSsl = (response.entries["EnableServiceSSL"] as? LockdownPlistValue.Boolean)?.value
                 ?: false
 
-            val serviceConnection = host.connect(
-                destinationPort = port.toInt(),
-                timeoutMillis = STEP_TIMEOUT_MILLIS,
-            )
+            val serviceConnection = connect(port.toInt(), STEP_TIMEOUT_MILLIS)
             val readyStream = if (enableServiceSsl) {
-                TlsDuplexChannel.open(
-                    underlying = serviceConnection,
-                    pairRecord = pairRecord,
-                    handshakeTimeoutMillis = STEP_TIMEOUT_MILLIS,
-                )
+                tls(serviceConnection, pairRecord, STEP_TIMEOUT_MILLIS)
             } else {
                 serviceConnection
             }
             serviceStream = readyStream
             val ownedStream = CarkitServiceStream(readyStream, secureLockdown)
-            serviceStream = null
+            transferred = true
             return ownedStream
         } finally {
-            if (serviceStream != null) {
-                try {
-                    serviceStream.close()
-                } finally {
-                    secureLockdown.close()
-                }
+            if (!transferred) {
+                // Cleanup must release both owners without replacing the original failure.
+                runCatching { serviceStream?.close() }
+                runCatching { secureLockdown.close() }
             }
         }
     }

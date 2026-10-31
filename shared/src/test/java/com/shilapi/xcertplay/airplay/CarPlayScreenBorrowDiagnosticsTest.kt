@@ -17,6 +17,20 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class CarPlayScreenBorrowDiagnosticsTest {
+    @Test fun semanticObservationDoesNotWaitForABlockedCaptureWriter() = capture { file ->
+        val diagnostics = CarPlayScreenBorrowDiagnostics()
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val journalLock = RawTraffic::class.java.getDeclaredField("lock").apply { isAccessible = true }.get(RawTraffic)
+        try {
+            synchronized(journalLock) {
+                worker.submit { diagnostics.changed(CarPlayScreenBorrowState(desired = true, pending = true)) }
+                    .get(1, java.util.concurrent.TimeUnit.SECONDS)
+                assertFalse(RawTraffic.awaitMetadataIdle(10))
+            }
+            assertEquals("true", semanticRows(file).single()["pending"])
+        } finally { worker.shutdownNow() }
+    }
+
     @Test fun rawSemanticFieldsHaveLocalConnectionIdentityAndNoSenderPayload() = capture { file ->
         val first = CarPlayScreenBorrowDiagnostics()
         val second = CarPlayScreenBorrowDiagnostics()
@@ -60,7 +74,7 @@ class CarPlayScreenBorrowDiagnosticsTest {
 
     @Test fun clearBetweenObservationAndAppendCannotInsertOldCaptureIntoNewJournal() = capture { file ->
         var clearBeforeAppend = true
-        val diagnostics = CarPlayScreenBorrowDiagnostics(record = { session, channel, bytes ->
+        val diagnostics = CarPlayScreenBorrowDiagnostics(record = { session, channel, bytes, _ ->
             if (clearBeforeAppend) { clearBeforeAppend = false; RawTraffic.clear() }
             RawTraffic.recordForSession(session, channel, bytes)
         })
@@ -75,7 +89,7 @@ class CarPlayScreenBorrowDiagnosticsTest {
         var writes = 0
         val events = mutableListOf<String>()
         val diagnostics = CarPlayScreenBorrowDiagnostics(activeCapture = { "test-capture" },
-            record = { _, _, bytes ->
+            record = { _, _, bytes, _ ->
                 writes++
                 if (writes == 1) throw IOException("private sender data must stay out of schema")
                 events += bytes.toString(Charsets.UTF_8)
@@ -167,13 +181,15 @@ class CarPlayScreenBorrowDiagnosticsTest {
         finally { RawTraffic.configure(file, false); directory.deleteRecursively() }
     }
 
-    private fun semanticRows(file: File): List<Map<String, String>> =
-        if (!file.exists()) emptyList() else file.readLines().mapNotNull { line ->
+    private fun semanticRows(file: File): List<Map<String, String>> {
+        assertTrue("metadata capture did not become idle", RawTraffic.awaitMetadataIdle(2_000))
+        return if (!file.exists()) emptyList() else file.readLines().mapNotNull { line ->
             val fields = line.split('\t')
             if (fields.getOrNull(2) != "iphone/carplay-screen-loan/events") null
             else String(Base64.getDecoder().decode(fields[4]), Charsets.UTF_8).trim().split(' ')
                 .associate { it.substringBefore('=') to it.substringAfter('=') }
         }
+    }
 
     private fun inputSocket(input: InputStream): Socket = object : Socket() {
         override fun getInputStream(): InputStream = input

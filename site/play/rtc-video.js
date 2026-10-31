@@ -51,7 +51,7 @@ export async function probeRtcMirrorCapabilities(width, height, onProbe = () => 
 
 /** RTP source metadata and browser-decoded frames; compressed video is never decoded here. */
 export function createRtcVideoPipeline({ post, present, now = () => performance.now(), firstFrameWaitMs = 6000 } = {}) {
-  let id = null, config = null, firstEpoch = null, failed = false, timer = null, firstFrameAt = null, decoded = 0, generation = 1, awaitingGeneration = false, lastFailure = null;
+  let id = null, config = null, firstEpoch = null, failed = false, timer = null, firstFrameAt = null, firstPresentationAt = null, decoded = 0, generation = 1, awaitingGeneration = false, lastFailure = null;
   let pendingFrame = null, preConfigDroppedFrames = 0;
   const stats = () => ({ ...records.stats(), streamGeneration: id, epoch: config?.epoch ?? null,
     mode: config?.mode ?? null, codec: config?.codec ?? null, width: config?.width ?? null, height: config?.height ?? null,
@@ -62,7 +62,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
   function fail(reason = 'rtc-video-unavailable') {
     if (id === null || failed && (reason !== 'video-renegotiation-required' || lastFailure === reason)) return;
     lastFailure = reason;
-    failed = true; firstFrameAt = null; discardPendingFrame();
+    failed = true; firstFrameAt = firstPresentationAt = null; discardPendingFrame();
     post({ type: 'video-error', id, videoGeneration: generation, reason, codec: config?.codec, stats: stats() });
   }
   function trackFrame(frame, frameGeneration = generation) {
@@ -89,7 +89,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
         const reason = new TextDecoder().decode(record.payload);
         fail(/^[a-z0-9-]{1,100}$/.test(reason) ? reason : 'rtc-video-failed'); return;
       }
-      if (record.kind === RECORD.IDLE) { discardPendingFrame(); config = null; firstFrameAt = null; post({ type: 'idle', id, videoGeneration: generation }); return; }
+      if (record.kind === RECORD.IDLE) { discardPendingFrame(); config = null; firstFrameAt = firstPresentationAt = null; post({ type: 'idle', id, videoGeneration: generation }); return; }
       if (failed) return;
       if (record.kind === RECORD.CONFIG) {
         let value;
@@ -104,7 +104,7 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
         if (firstEpoch !== null && (record.epoch !== firstEpoch || config?.mode !== value.mode || config?.codec !== value.codec)) {
           fail('video-source-changed-reconnect-required'); return;
         }
-        if (firstEpoch === null) firstFrameAt = now();
+        if (firstEpoch === null) firstFrameAt = firstPresentationAt = now();
         firstEpoch = record.epoch;
         config = { ...value, streamId: id, epoch: record.epoch, videoGeneration: generation };
         const accepted = config, acceptedId = id, acceptedGeneration = generation, acceptedDecoded = decoded;
@@ -122,21 +122,27 @@ export function createRtcVideoPipeline({ post, present, now = () => performance.
     onAlive: () => post({ type: 'alive', id, videoGeneration: generation }),
     onEnd: (_id, reason) => fail(reason),
   });
-  function stop() { records.stop(); clearInterval(timer); timer = null; discardPendingFrame(); id = config = firstEpoch = null; firstFrameAt = null; failed = false; decoded = 0; preConfigDroppedFrames = 0; generation = 1; awaitingGeneration = false; lastFailure = null; }
+  function stop() { records.stop(); clearInterval(timer); timer = null; discardPendingFrame(); id = config = firstEpoch = null; firstFrameAt = firstPresentationAt = null; failed = false; decoded = 0; preConfigDroppedFrames = 0; generation = 1; awaitingGeneration = false; lastFailure = null; }
   return {
     read(nextId, body) {
       stop(); id = nextId;
       timer = setInterval(() => {
         records.watchdog();
         if (!failed && firstFrameAt !== null && now() - firstFrameAt >= firstFrameWaitMs) fail('rtc-video-first-frame-timeout');
+        else if (!failed && firstPresentationAt !== null && now() - firstPresentationAt >= firstFrameWaitMs) fail('rtc-video-first-presentation-timeout');
       }, 1000);
       records.read(nextId, body);
     },
     trackFrame,
+    presented(value) {
+      if (failed || !config || value?.streamId !== id || value.epoch !== config.epoch || value.videoGeneration !== generation) return false;
+      firstPresentationAt = null;
+      return true;
+    },
     resetGeneration(next) {
       if (!Number.isSafeInteger(next) || next !== generation + 1) throw Error('Invalid RTP video generation.');
       discardPendingFrame();
-      generation = next; config = firstEpoch = null; failed = false; preConfigDroppedFrames = 0; firstFrameAt = now(); awaitingGeneration = true; lastFailure = null;
+      generation = next; config = firstEpoch = null; failed = false; preConfigDroppedFrames = 0; firstFrameAt = firstPresentationAt = now(); awaitingGeneration = true; lastFailure = null;
     },
     usesTrack: () => Boolean(config && !failed), fail, stop, stats,
   };

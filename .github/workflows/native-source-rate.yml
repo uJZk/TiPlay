@@ -45,7 +45,9 @@ jobs:
             --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
             --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder"
       - name: Check build-driver pin and reuse contracts
-        run: python3 scripts/webrtc/test_build.py
+        run: |
+          python3 scripts/webrtc/test_build.py
+          python3 -m unittest discover -s tests -p 'test_native_symbols.py'
       - name: Prepare runner disk and the upstream Android tool environment
         shell: bash
         run: |
@@ -119,10 +121,31 @@ jobs:
           cd "$RUNNER_TEMP/tiplay-webrtc-artifacts"
           sha256sum tiplay-source-rate.aar > SHA256SUMS
           sha256sum --check SHA256SUMS
-      - name: Upload AAR, licenses and provenance
+      - name: Verify retained symbols
+        run: python3 scripts/native_symbols.py verify "$RUNNER_TEMP/tiplay-webrtc-artifacts/native-symbols"
+      - name: Upload AAR, licenses, provenance and matching symbols
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: tiplay-source-rate-${{ inputs.architectures }}
           path: ${{ runner.temp }}/tiplay-webrtc-artifacts/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
+
+  symbols:
+    # Other refs/forks may build artifact copies but cannot create durable archives here.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'uJZk/TiPlay' }}
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@v4
+        with:
+          name: tiplay-source-rate-${{ inputs.architectures }}
+          path: native-artifacts
+      - name: Retain immutable symbols in an authenticated draft only
+        run: python3 scripts/archive_native_symbols.py native-artifacts/native-symbols

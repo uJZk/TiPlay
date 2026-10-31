@@ -105,11 +105,15 @@ test('video format and numeric failures give useful bounded detail without raw i
   const log = createBrowserDiagnosticLog({ language: 'zh' });
   log.observe({ phase: 'retry', failure: 'timeout', videoConfig: { codec: 'avc1.64002a', width: 1920, height: 1080, url: 'https://secret.invalid' } });
   log.observe({ videoError: 'rtc-video-first-frame-timeout' });
+  log.observe({ videoError: 'rtc-video-first-presentation-timeout' });
+  log.observe({ videoError: 'video-source-configuration-invalid' });
   log.observeSummary({ 'video.decodeErrors': 2, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
   log.observeSummary({ 'video.decodeErrors': 4, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
   assert.ok(log.lines().includes('连接中断，正在重试（连接超时）'));
   assert.ok(log.lines().includes('视频格式：H.264，1920 × 1080'));
   assert.ok(log.lines().includes('视频错误：rtc-video-first-frame-timeout（等待首帧超时）'));
+  assert.ok(log.lines().includes('视频错误：rtc-video-first-presentation-timeout（等待画面首次显示超时）'));
+  assert.ok(log.lines().includes('视频错误：video-source-configuration-invalid（源视频配置无效）'));
   assert.ok(log.lines().includes('视频解码错误增加：累计 4（+2）'));
   assert.ok(log.lines().includes('网络传输：UDP'));
   assert.equal(log.lines().filter(line => line === '网络传输：UDP').length, 1);

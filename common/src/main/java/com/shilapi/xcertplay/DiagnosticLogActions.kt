@@ -35,7 +35,9 @@ internal object DiagnosticLogActions {
                             else -> BrowserDiagnosticResultUi.saved(activity, saved)
                         }
                     }, {
-                        Toast.makeText(activity, R.string.settings_logs_action_failed, Toast.LENGTH_LONG).show()
+                        Toast.makeText(activity, if (it is DiagnosticArchiveUnavailable)
+                            R.string.settings_logs_storage_unavailable else R.string.settings_logs_action_failed,
+                            Toast.LENGTH_LONG).show()
                     })
                 }
             }
@@ -48,7 +50,10 @@ internal object DiagnosticLogActions {
             else DiagnosticExportStore.saveWithoutPicker(context, content)
         },
     ): DiagnosticExportStore.SavedReport? {
-        if (action.stops) AirPlayPersistence.saveDiagnosticLogLevel(context, DiagnosticLogLevel.STANDARD)
+        if (action.stops) {
+            RawTraffic.awaitMetadataIdle(250)
+            AirPlayPersistence.saveDiagnosticLogLevel(context, DiagnosticLogLevel.STANDARD)
+        }
         if (action == DiagnosticLogAction.STOP) {
             RawTraffic.clear()
             return null

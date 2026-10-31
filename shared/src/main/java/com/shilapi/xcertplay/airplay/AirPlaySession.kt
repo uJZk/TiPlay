@@ -127,6 +127,8 @@ class AirPlaySession(
     private var keepAliveSocket: DatagramSocket? = null
     private var keepAliveThread: Thread? = null
     private val eventWriteLock = Any()
+    internal var eventWriteTimeoutMillis = 5_000L
+    private val eventWriteDeadline = EventWriteDeadline(timeoutMillis = { eventWriteTimeoutMillis })
     // Dispatch may call listeners that send commands, so never hold eventWriteLock around it.
     // Activation takes these locks in the same order to reject retired ownership notifications.
     private val eventReadLock = Any()
@@ -207,6 +209,7 @@ class AirPlaySession(
         // Native writes hold eventWriteLock and can wait indefinitely for a slow peer. Closing
         // their owned sockets must precede any listener or teardown that might need that lock.
         closeEventResources()
+        eventWriteDeadline.close()
         synchronized(videoStateLock) {
             dataStreams.clear()
             videoStatusStreamId = null
@@ -504,14 +507,17 @@ class AirPlaySession(
         return try {
             val bytes = cipher.encrypt(head.toByteArray(Charsets.US_ASCII) + body)
             val output = RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream())
-            output.write(bytes)
-            output.flush()
+            eventWriteDeadline.write(socket) {
+                output.write(bytes)
+                output.flush()
+            }
             if (borrowed != null) recordCommandResults(commandResults.written(generation, cseq))
             true
         } catch (error: Exception) {
             if (borrowed != null) recordCommandResults(commandResults.failed(generation, cseq))
             Log.w(TAG, "airplay event command failed type=${command["type"]}", error)
-            close(CarPlayConnectionCloseReason.EVENT_SEND_FAILED)
+            if (eventSocket === socket && eventGeneration == generation)
+                close(CarPlayConnectionCloseReason.EVENT_SEND_FAILED)
             false
         }
     }
@@ -1347,8 +1353,10 @@ class AirPlaySession(
                         )
                         trace("airplay event tx wireHex=${response.toHex()}")
                         synchronized(eventWriteLock) {
-                            output.write(cipher.encrypt(response))
-                            output.flush()
+                            eventWriteDeadline.write(socket) {
+                                output.write(cipher.encrypt(response))
+                                output.flush()
+                            }
                         }
                     }
                 }

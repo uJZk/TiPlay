@@ -19,6 +19,7 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Audio tempo](Audio-tempo.md): live audio buffering, decoder priority, AVPlayer URL playback ownership and verification limits.
 - [Browser WASM](Browser-wasm.md): execution boundaries, module ownership, complete upstream libraries and performance verification.
 - [Settings](Settings.md): drafts, immediate apply and connection recovery.
+- [Robustness](Robustness.md): ownership, cancellation, bounded recovery and audit remediation.
 - [Geolocation](Geolocation.md): browser coordinate evidence, Android conversion and detection and iPhone forwarding.
 - [Testing](Testing.md) and [Todo](Todo.md): automated checks and pending physical acceptance.
 - [CarPlay DataChannel contract](CarPlay-DataChannel.md): reliable WebRTC transport, SRP-authenticated SDP binding, framing/credit and independent timing.

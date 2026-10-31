@@ -22,8 +22,8 @@ import androidx.core.content.ContextCompat
 /** Retains ownership across Activity recreation; never acts on a retired CarPlay session. */
 internal object CarBluetoothConnection {
     enum class Attempt { NONE, REQUESTED, UNSUPPORTED, FAILED }
-    @Volatile var attempt = Attempt.NONE
-        private set
+    val attempt: Attempt
+        @Synchronized get() = sessions.currentAttempt()
     private var application: Context? = null
     private var receiverRegistered = false
     private val permissionRecovery = CarBluetoothPermissionRecovery()
@@ -63,20 +63,20 @@ internal object CarBluetoothConnection {
         observeProfiles(context)
         permissionRecovery.update(permissionReady(context))
         val address = if (!BrowserCarPlayAudioSettings.disabled(context)) CarBluetoothPreference.address(context) else null
-        attempt = sessions.active(session, address)
+        sessions.active(session, address)
     }
 
     @Synchronized fun sessionEnded(context: Context, session: Any) {
-        attempt = sessions.ended(session)
+        sessions.ended(session)
     }
 
-    @Synchronized fun selectionChanged(context: Context) {
+    @Synchronized fun selectionChanged(context: Context, forceRetry: Boolean = false) {
         application = context.applicationContext
         observeProfiles(context)
         permissionRecovery.update(permissionReady(context))
         sessions.userAction()
         val next = if (!BrowserCarPlayAudioSettings.disabled(context)) CarBluetoothPreference.address(context) else null
-        attempt = sessions.select(next)
+        sessions.select(next, forceRetry)
         // Changing selection itself is explicit user action, including the stop of the old target.
         sessions.userAction()
     }
@@ -87,10 +87,10 @@ internal object CarBluetoothConnection {
         observeProfiles(context)
         val ready = permissionReady(context)
         val recovered = permissionRecovery.update(ready)
-        if (!ready) { attempt = sessions.unavailable(); return }
+        if (!ready) { sessions.unavailable(); return }
         if (!recovered) return
         val next = if (!BrowserCarPlayAudioSettings.disabled(context)) CarBluetoothPreference.address(context) else null
-        attempt = sessions.select(next)
+        sessions.select(next)
     }
 
     @SuppressLint("MissingPermission")
@@ -159,28 +159,49 @@ internal class CarBluetoothSessionController(
     private var owner: Any? = null
     private var selected: String? = null
     private var last = CarBluetoothConnection.Attempt.NONE
+    // A missing profile broadcast is not an indefinitely pending connection.
+    // Keep accepted ownership separate: a timed-out request can still finish late.
+    private var acceptedConnect = false
+    private var confirmationDeadline = Long.MAX_VALUE
     private data class Compensation(val address: String, val deadline: Long)
     private var compensation: Compensation? = null
     private val compensationMillis = 5_000L
+    private val confirmationMillis = 30_000L
     private fun key(address: String) = address.uppercase(java.util.Locale.ROOT)
+    fun currentAttempt(): CarBluetoothConnection.Attempt {
+        if (last == CarBluetoothConnection.Attempt.REQUESTED && now() >= confirmationDeadline) {
+            last = CarBluetoothConnection.Attempt.FAILED
+            confirmationDeadline = Long.MAX_VALUE
+        }
+        return last
+    }
+    private fun connect(address: String?): CarBluetoothConnection.Attempt {
+        last = request(address, true)
+        val accepted = last == CarBluetoothConnection.Attempt.REQUESTED
+        // A failed explicit retry cannot cancel an older accepted platform request.
+        acceptedConnect = acceptedConnect || accepted
+        confirmationDeadline = if (accepted) now() + confirmationMillis else Long.MAX_VALUE
+        return last
+    }
     private fun stop(address: String?) {
         if (address != null) {
             // A profile already connected does not prove another profile cannot finish later.
-            compensation = if (last == CarBluetoothConnection.Attempt.REQUESTED)
+            compensation = if (acceptedConnect)
                 Compensation(key(address), now() + compensationMillis) else null
             request(address, false)
         }
+        acceptedConnect = false
+        confirmationDeadline = Long.MAX_VALUE
     }
     fun active(session: Any, address: String?): CarBluetoothConnection.Attempt {
         if (owner === session) return select(address)
         val replacing = owner != null
         owner = session
         if (address != null && compensation?.address == key(address)) compensation = null
-        if (replacing && address.equals(selected, true)) return last
+        if (replacing && address.equals(selected, true)) return currentAttempt()
         if (replacing && selected != null) stop(selected)
         selected = address
-        last = request(address, true)
-        return last
+        return connect(address)
     }
     fun ended(session: Any): CarBluetoothConnection.Attempt {
         if (owner !== session) return last
@@ -190,28 +211,32 @@ internal class CarBluetoothSessionController(
         last = CarBluetoothConnection.Attempt.NONE
         return last
     }
-    fun select(address: String?): CarBluetoothConnection.Attempt {
+    fun select(address: String?, forceRetry: Boolean = false): CarBluetoothConnection.Attempt {
         if (owner == null) return last
         if (address.equals(selected, true)) {
-            if (address != null && last != CarBluetoothConnection.Attempt.REQUESTED)
-                last = request(address, true)
-            return last
+            if (address != null && (forceRetry || currentAttempt() != CarBluetoothConnection.Attempt.REQUESTED))
+                return connect(address)
+            return currentAttempt()
         }
         stop(selected)
         selected = address
         if (address != null && compensation?.address == key(address)) compensation = null
-        last = request(address, true)
-        return last
+        return connect(address)
     }
     fun unavailable(): CarBluetoothConnection.Attempt {
         if (owner != null && selected != null && last == CarBluetoothConnection.Attempt.REQUESTED)
             last = CarBluetoothConnection.Attempt.FAILED
+        confirmationDeadline = Long.MAX_VALUE
         return last
     }
     fun profileConnected(address: String) {
         val normalized = key(address)
         if (owner != null && selected.equals(address, true)) {
             if (compensation?.address == normalized) compensation = null
+            if (acceptedConnect) {
+                confirmationDeadline = Long.MAX_VALUE
+                last = CarBluetoothConnection.Attempt.REQUESTED
+            }
             return
         }
         val current = compensation ?: return

@@ -22,4 +22,5 @@
     <string name="settings_report_open_folder">開啟資料夾</string>
     <string name="settings_report_path_copied">路徑已複製。</string>
     <string name="settings_report_open_folder_failed">無法開啟此資料夾。</string>
+    <string name="settings_logs_storage_unavailable">無法準備報告。請釋放儲存空間或重新連接外部儲存裝置後重試。</string>
 </resources>

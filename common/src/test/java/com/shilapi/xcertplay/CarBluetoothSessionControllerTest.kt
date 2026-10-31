@@ -4,6 +4,77 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CarBluetoothSessionControllerTest {
+    @Test fun explicitlyReselectingThePendingCarRetriesWithoutAutomaticProfileReconnects() {
+        val calls = mutableListOf<Pair<String?, Boolean>>()
+        val sessions = CarBluetoothSessionController { address, connect ->
+            calls += address to connect
+            CarBluetoothConnection.Attempt.REQUESTED
+        }
+        val session = Any()
+        sessions.active(session, "AA")
+        sessions.select("AA")
+        sessions.profileDisconnected("AA")
+        assertEquals(listOf("AA" to true), calls)
+        sessions.select("aa", forceRetry = true)
+        sessions.select("AA")
+        assertEquals(listOf("AA" to true, "aa" to true), calls)
+    }
+
+    @Test fun anUnconfirmedRequestExpiresWithoutReconnectingAndExplicitRetryGetsANewDeadline() {
+        var time = 0L
+        var requests = 0
+        val sessions = CarBluetoothSessionController(now = { time }) { _, _ ->
+            requests++
+            CarBluetoothConnection.Attempt.REQUESTED
+        }
+        sessions.active(Any(), "AA")
+        time = 29_999
+        assertEquals(CarBluetoothConnection.Attempt.REQUESTED, sessions.currentAttempt())
+        time++
+        assertEquals(CarBluetoothConnection.Attempt.FAILED, sessions.currentAttempt())
+        assertEquals(1, requests)
+        sessions.select("AA", forceRetry = true)
+        time = 59_999
+        assertEquals(CarBluetoothConnection.Attempt.REQUESTED, sessions.currentAttempt())
+        time++
+        assertEquals(CarBluetoothConnection.Attempt.FAILED, sessions.currentAttempt())
+        assertEquals(2, requests)
+    }
+
+    @Test fun timeoutAndFailedRetryRetainTheOlderAcceptedRequestsLateDisconnectCompensation() {
+        var time = 0L
+        var connects = 0
+        val calls = mutableListOf<Pair<String?, Boolean>>()
+        val sessions = CarBluetoothSessionController(now = { time }) { address, connect ->
+            calls += address to connect
+            if (connect && ++connects > 1) CarBluetoothConnection.Attempt.FAILED else CarBluetoothConnection.Attempt.REQUESTED
+        }
+        val session = Any()
+        sessions.active(session, "AA")
+        time = 30_000
+        assertEquals(CarBluetoothConnection.Attempt.FAILED, sessions.currentAttempt())
+        sessions.select("AA", forceRetry = true)
+        sessions.ended(session)
+        val stopped = calls.size
+        sessions.profileConnected("AA")
+        assertEquals(stopped + 1, calls.size)
+        assertEquals("AA" to false, calls.last())
+        sessions.profileConnected("AA")
+        assertEquals(stopped + 1, calls.size)
+    }
+
+    @Test fun matchingProfileConfirmationClosesTheRequestDeadlineWithoutAffectingOtherTargets() {
+        var time = 0L
+        val sessions = CarBluetoothSessionController(now = { time }) { _, _ -> CarBluetoothConnection.Attempt.REQUESTED }
+        sessions.active(Any(), "AA")
+        sessions.profileConnected("BB")
+        time = 30_000
+        assertEquals(CarBluetoothConnection.Attempt.FAILED, sessions.currentAttempt())
+        sessions.profileConnected("aa")
+        time += 90_000
+        assertEquals(CarBluetoothConnection.Attempt.REQUESTED, sessions.currentAttempt())
+    }
+
     @Test fun staleSessionEndCannotDisconnectReplacementAndSelectionIsSpecific() {
         val calls = mutableListOf<Pair<String?, Boolean>>()
         val sessions = CarBluetoothSessionController { address, connect ->

@@ -49,6 +49,15 @@ Verify a rebuilt AAR and its actual APK packaging before replacing the committed
 artifact. Source configuration checks do not establish a successful native build
 or physical phone/browser playback.
 
+The local vendor modules must resolve exclusively from their pinned Ivy source;
+checking an unused local AAR is insufficient. Release packaging also verifies
+the final APK against the pinned native artifact. Future native producers retain
+line information before stripping and index matching symbol files by ABI, Build
+ID and digest. Symbol-only durable archives remain private draft Releases, so
+they do not replace driver APK releases in the public download list. Historical
+missing symbols cannot be reconstructed by applying a new build's addresses.
+See [Robustness](Robustness.md) for the recovery and verification boundaries.
+
 ## Preserve merge compatibility
 
 - Updates flow from DiPlay into TiPlay only: no upstream patches/PRs; disable upstream pushes and tag fetching.

@@ -9,6 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -20,6 +22,45 @@ class DiagnosticLogsTest {
         DiagnosticLogs.resetForTest()
     }
     @After fun cleanup() { DiagnosticLogs.resetForTest() }
+
+    @Test fun aKilledExportIsCleanedFromEveryPrivateCacheRootWithoutDeletingOtherFiles() {
+        val roots = DiagnosticTemporaryFiles.roots(context)
+        val owned = roots.flatMap { root ->
+            root.mkdirs()
+            listOf("diagnostic-export-stale.zip", "traffic-export-stale", "native-crash-export-stale").map {
+                File(root, it).apply { mkdirs(); resolve("evidence").writeText("stale") }
+            }
+        }
+        val unrelated = roots.map { File(it, "unrelated-audit-cache").apply { writeText("keep") } }
+        try {
+            DiagnosticLogs.initialize(context, DiagnosticLogLevel.STANDARD)
+            assertTrue(owned.none(File::exists))
+            assertTrue(unrelated.all { it.readText() == "keep" })
+        } finally { (owned + unrelated).forEach { it.deleteRecursively() } }
+    }
+
+    @Test fun exportStopsWaitingForTheStorageLockAndLaterSnapshotsStillWork() {
+        DiagnosticLogs.initialize(context, DiagnosticLogLevel.STANDARD)
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder = Thread {
+            SessionLogFile.storageLock.lock()
+            try { held.countDown(); release.await(3, TimeUnit.SECONDS) }
+            finally { SessionLogFile.storageLock.unlock() }
+        }.apply { start() }
+        try {
+            assertTrue(held.await(1, TimeUnit.SECONDS))
+            val report = StringBuilder()
+            val started = System.nanoTime()
+            DiagnosticLogSnapshot.appendTo(report, File(context.filesDir, "logs"), timeoutMillis = 25)
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 1_000)
+            assertTrue(report.toString(), report.contains("historySkipped=true"))
+            assertTrue(report.contains("coverage=partial"))
+        } finally { release.countDown(); holder.join(1_000) }
+        val recovered = StringBuilder()
+        DiagnosticLogSnapshot.appendTo(recovered, File(context.filesDir, "logs"))
+        assertFalse(recovered.contains("historySkipped=true"))
+    }
 
     @Test fun multipleOwnersKeepOneProcessLogAndChangingDetailPreservesEarlierEvidence() {
         val first = DiagnosticLogs.initialize(context, DiagnosticLogLevel.STANDARD)

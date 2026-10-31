@@ -4,6 +4,7 @@ import com.github.luben.zstd.ZstdOutputStreamNoFinalizer
 import java.io.File
 import java.io.FilterOutputStream
 import java.io.OutputStream
+import java.io.InputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -14,13 +15,26 @@ internal object CompressedTrafficArchive {
               attachments: Map<String, File> = emptyMap()) {
         val extraEntries = archiveAttachmentEntries(attachments,
             listOf("$logName.zst", "capture.txt.zst") + snapshots.map { "captures/${it.name}" })
-        val directory = java.nio.file.Files.createTempDirectory(root.toPath(), "traffic-export-").toFile()
+        val directory = archiveStagingDirectory(root)
         try {
-            val entries = mutableListOf<Pair<String, File>>()
+            data class Entry(val name: String, val length: Long, val checksum: Long, val open: () -> InputStream)
+            val entries = mutableListOf<Entry>()
+            fun add(name: String, length: Long, open: () -> InputStream) {
+                val crc = CRC32()
+                open().buffered().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        crc.update(buffer, 0, count)
+                    }
+                }
+                entries.add(Entry(name, length, crc.value, open))
+            }
             fun text(name: String, value: String) {
                 val target = File(directory, "text-${entries.size}.zst")
-                ZstdOutputStreamNoFinalizer(target.outputStream(), RawTraffic.COMPRESSION_LEVEL).use { it.write(value.toByteArray(Charsets.UTF_8)) }
-                entries.add("$name.zst" to target)
+                ZstdOutputStreamNoFinalizer(archiveStagingOutput(target), RawTraffic.COMPRESSION_LEVEL).use { it.write(value.toByteArray(Charsets.UTF_8)) }
+                add("$name.zst", target.length()) { archiveStagingInput(target) }
             }
             text(logName, report)
             text("capture.txt", snapshots.firstOrNull()?.status.orEmpty() + "\n" +
@@ -30,36 +44,26 @@ internal object CompressedTrafficArchive {
                 "capture/start identifies a session. Each process has a separate file; read in file order.\n" +
                 "A crash may interrupt the last frame of a process file; earlier completed frames remain recoverable.\n" +
                 "Current-process integrity does not establish previous-process completeness. No redaction.\n")
-            snapshots.forEachIndexed { index, snapshot ->
-                val copy = File(directory, "capture-$index.zst")
-                copy.outputStream().buffered().use { destination -> snapshot.open().use { it.copyTo(destination) } }
-                entries.add("captures/${snapshot.name}" to copy)
+            snapshots.forEach { snapshot ->
+                // Two bounded reads of the same descriptor replace an entire journal copy.
+                add("captures/${snapshot.name}", snapshot.length, snapshot::open)
             }
             extraEntries.forEachIndexed { index, (name, source) ->
                 val copy = File(directory, "attachment-$index.zst")
-                ZstdOutputStreamNoFinalizer(copy.outputStream(), RawTraffic.COMPRESSION_LEVEL).use { compressed ->
+                ZstdOutputStreamNoFinalizer(archiveStagingOutput(copy), RawTraffic.COMPRESSION_LEVEL).use { compressed ->
                     source.inputStream().use { it.copyTo(compressed) }
                 }
-                entries.add(name to copy)
+                add(name, copy.length()) { archiveStagingInput(copy) }
             }
             ZipOutputStream(object : FilterOutputStream(output) {
                 override fun close() = flush()
                 override fun write(bytes: ByteArray, offset: Int, length: Int) = out.write(bytes, offset, length)
             }).use { zip ->
-                entries.forEach { (name, file) ->
-                    val crc = CRC32()
-                    file.inputStream().buffered().use { input ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            crc.update(buffer, 0, count)
-                        }
-                    }
-                    zip.putNextEntry(ZipEntry(name).apply {
-                        method = ZipEntry.STORED; size = file.length(); compressedSize = size; this.crc = crc.value
+                entries.forEach { entry ->
+                    zip.putNextEntry(ZipEntry(entry.name).apply {
+                        method = ZipEntry.STORED; size = entry.length; compressedSize = size; crc = entry.checksum
                     })
-                    file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
+                    entry.open().use { it.copyTo(zip) }; zip.closeEntry()
                 }
             }
         } finally { directory.deleteRecursively() }

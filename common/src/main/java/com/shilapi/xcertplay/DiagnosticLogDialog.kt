@@ -40,7 +40,7 @@ internal class DiagnosticLogDialog(
             val seconds = ((System.currentTimeMillis() - RawTraffic.startedAtMillis) / 1000).coerceAtLeast(0)
             status.text = activity.getString(R.string.settings_capture_progress, seconds / 60, seconds % 60,
                 RawTraffic.compressedBytes / 1024) + "\n" +
-                activity.getString(if (RawTraffic.integrity()["complete"] == true)
+                activity.getString(if ((RawTraffic.integrity()["failures"] as? Number)?.toLong() == 0L)
                     R.string.settings_capture_background_hint else R.string.settings_capture_storage_failed)
             handler.postDelayed(this, 1000)
         }

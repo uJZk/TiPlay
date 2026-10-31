@@ -16,6 +16,9 @@ import sys
 import tempfile
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import native_symbols
+
 REVISION = "73cb8180f7258ee292878d6edd05177f41883962"
 DEPOT_REVISION = "7083aadfb53f3de2e20b72058c7f510da8f8218a"
 REPOSITORY = "https://github.com/webrtc-sdk/webrtc.git"
@@ -25,6 +28,8 @@ ANDROID_PATCHES = (
     "add_license_dav1d.patch", "android_webrtc_version.patch", "fix_mocks.patch",
 )
 SOURCE_RATE_TEST_FILTER = "PacingControllerTest.SourceRate*:RtpTransportControllerSendTest.SourceRate*:VideoStreamEncoderTest.SourceRate*"
+# Future producers retain line tables beside the stripped AAR, not inside it.
+NATIVE_SYMBOL_GN_ARGS = ("symbol_level=1", "use_debug_fission=false")
 MODEL_FILES = (
     "call/call.cc", "call/rtp_transport_controller_send.cc",
     "call/rtp_transport_controller_send.h", "call/rtp_transport_controller_send_interface.h",
@@ -126,7 +131,8 @@ def compatibility_patches(publisher):
 
 def prepared_state(patch, publisher):
     return {"revision": REVISION, "patch_sha256": hashlib.sha256(patch.read_bytes()).hexdigest(),
-            "publisher_build": publisher["record"]}
+            "publisher_build": publisher["record"],
+            "native_symbol_gn_args": list(NATIVE_SYMBOL_GN_ARGS)}
 
 
 def state_digest(state):
@@ -255,7 +261,7 @@ def focused_tests(source, root, env, state):
     build_dir = root / "native-tests"
     gn_args = ("is_debug=false rtc_include_tests=true rtc_enable_protobuf=true "
                "rtc_use_h264=false use_rtti=true rtc_build_examples=false "
-               "rtc_build_tools=false rtc_use_pipewire=false")
+               "rtc_build_tools=false rtc_use_pipewire=false " + " ".join(NATIVE_SYMBOL_GN_ARGS))
     run(["gn", "gen", str(build_dir), "--args=" + gn_args], source, env)
     run(["autoninja", "-C", str(build_dir), "-j2",
          "modules/pacing:tiplay_source_rate_tests"], source, env)
@@ -276,8 +282,27 @@ def build_aar(source, output, architectures, env, publisher):
     run([sys.executable, "tools_webrtc/android/build_aar.py", "--output", str(output),
          "--build-dir", str(source / "out_tiplay_aar"), "--arch", *architectures,
          "--extra-gn-args", "is_debug=false", *publisher["record"]["android_gn_args"],
-         *publisher["record"]["common_gn_args"],
+         *publisher["record"]["common_gn_args"], *NATIVE_SYMBOL_GN_ARGS,
          "--extra-ninja-switches=-local_jobs=2"], source, env)
+
+
+def collect_symbols(source, output, architectures, producer):
+    """The pinned upstream builder keeps unstripped ELFs outside the AAR."""
+    directory = output.parent / "native-symbols"
+    import zipfile
+    with zipfile.ZipFile(output) as aar, tempfile.TemporaryDirectory(prefix="tiplay-webrtc-symbols-") as temporary:
+        for abi in architectures:
+            library = "libjingle_peerconnection_so.so"
+            packaged = Path(temporary) / (abi + ".so")
+            with aar.open(f"jni/{abi}/{library}") as incoming, packaged.open("wb") as target:
+                shutil.copyfileobj(incoming, target)
+            unstripped = source / "out_tiplay_aar" / abi / "lib.unstripped" / library
+            native_symbols.record(directory, abi, library, unstripped, packaged, producer)
+    native_symbols.verify(directory)
+    return {"format": native_symbols.FORMAT,
+            "index_sha256": native_symbols.sha(directory / "index.json"),
+            "archive_tag": native_symbols.archive_tag(directory),
+            "archive_visibility": "authenticated-draft-only"}
 
 
 def main():
@@ -325,6 +350,12 @@ def main():
             or test_result.get("prepared_state_sha256") != state_digest(prepared_state(patch, publisher))):
         raise RuntimeError("Run focused native tests for these prepared build inputs before building the AAR")
     build_aar(source, output, args.arch, env, publisher)
+    symbols = collect_symbols(source, output, args.arch, native_symbols.producer_context(
+        "webrtc", source_revision=REVISION, patch_sha256=patch_hash,
+        aar_sha256=native_symbols.sha(output), publisher_revision=PUBLISHER_BUILD_REFERENCE,
+        prepared_state_sha256=state_digest(prepared_state(patch, publisher)),
+        gn_args=["is_debug=false", *publisher["record"]["android_gn_args"],
+                 *publisher["record"]["common_gn_args"], *NATIVE_SYMBOL_GN_ARGS]))
     record = {"repository": REPOSITORY, "revision": REVISION,
               "depot_tools_revision": subprocess.check_output(
                   ["git", "rev-parse", "HEAD"], cwd=args.depot_tools, text=True).strip(),
@@ -336,6 +367,7 @@ def main():
               "publisher_compat_role": "legacy equivalence reference; not applied by this build",
               "publisher_compat_is_original_publisher_artifact": False,
               "focused_tests": test_result,
+              "native_symbols": symbols,
               "aar_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
               "architectures": args.arch}
     output.with_suffix(".provenance.json").write_text(json.dumps(record, indent=2) + "\n")

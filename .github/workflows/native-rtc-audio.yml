@@ -1,0 +1,67 @@
+name: Native encoded audio transport
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-rtc-audio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check native symbol pairing and draft-only archive contracts
+        run: python3 -m unittest discover -s tests -p 'test_native_symbols.py'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ndk;28.2.13676358 cmake;3.31.6
+      - name: Build the pinned transport and retain matching line symbols
+        run: |
+          python3 scripts/rtc-audio/build.py \
+            --ndk "$ANDROID_HOME/ndk/28.2.13676358" \
+            --cmake "$ANDROID_HOME/cmake/3.31.6/bin/cmake" \
+            --ninja "$ANDROID_HOME/cmake/3.31.6/bin/ninja" \
+            --work-dir "$RUNNER_TEMP/tiplay-rtc-audio" \
+            --symbols-dir "$RUNNER_TEMP/tiplay-audio-symbols"
+          python3 scripts/rtc-audio/build.py --verify
+          python3 scripts/native_symbols.py verify "$RUNNER_TEMP/tiplay-audio-symbols"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiplay-audio-symbols
+          path: ${{ runner.temp }}/tiplay-audio-symbols/
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiplay-encoded-audio
+          path: |
+            shared/src/main/jni/rtc-audio/prebuilt/
+            shared/src/main/jni/rtc-audio/artifacts.json
+            shared/src/main/jni/rtc-audio/sources.lock.json
+          if-no-files-found: error
+          retention-days: 90
+
+  symbols:
+    # Forks/non-main refs retain artifacts only, never durable releases in TiPlay.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'uJZk/TiPlay' }}
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: tiplay-audio-symbols
+          path: native-symbols
+      - name: Retain immutable symbols in an authenticated draft only
+        run: python3 scripts/archive_native_symbols.py native-symbols
