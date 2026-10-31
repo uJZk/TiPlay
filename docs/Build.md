@@ -568,42 +568,46 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Published [beta.36](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.36),
-code **78**, browser **v111**, at **2026-10-31 09:17:40 UTC** from
-`c1ad4b3259dbdcf7c11929a45285d143c71d02e4`. It adds bounded Debug native-crash
-traces and named-bind-address Bonjour initialization with phase timing. Trace
-collection/interpretation remains unverified on hardware; SIGSEGV is unresolved.
-The observed 26.532-second wait's cause and vehicle improvement remain unverified.
-Audio trimming stays paused; the AAR, RTP video, native Opus audio and Bluetooth/SCO
-paths are unchanged. Browser/cache v111 refreshes application version metadata only.
+Published [beta.37](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.37),
+code **79**, browser/cache **v112**, at **2026-10-31 15:36:52 UTC** from
+`d038685c623112407b656ab78995bd8bd8facdfd`. The [robustness remediation](Robustness.md)
+adds owner-safe cancellation, bounded recovery, diagnostic/storage isolation and
+conservative browser updates. RTP video, native Opus, Bluetooth/SCO and paused
+audio trimming remain. Historical SIGSEGV attribution and vehicle acceptance are open.
 
-Full Android CI was skipped at the user's request. Passed: 86 focused Android,
-67 focused browser, nine release-draft, two site-deployment and public-tree/cache
-checks, plus mobile Debug lint/assembly.
-[Signed run 41187302760](https://github.com/uJZk/TiPlay/actions/runs/41187302760)
-and [Pages run 41188103364](https://github.com/uJZk/TiPlay/actions/runs/41188103364)
-succeeded from that commit. Independent checks verify non-debug packaging,
-signer continuity, both runtime identity files and all 51 native libraries
-unchanged from beta.35, 25 ELF64 libraries and 51 native ZIP entries aligned to
-16 KiB, pinned AAR provenance and byte-exact committed source archive.
-All three attachments were publicly re-downloaded and match these hashes;
-the tag points to the build commit.
+Local checks pass: 4,535 Android, 690 browser and 52 Python cases; required Debug
+lint/assemblies and Chromium SW/Canvas probes pass. Full remote CI was skipped at
+the user's request. [Signed run 41214807077](https://github.com/uJZk/TiPlay/actions/runs/41214807077)
+succeeded for that commit. Independent checks confirm non-debug packaging,
+signer/runtime continuity, all 51 native libraries unchanged from beta.36,
+25 ELF64 and 51 JNI ZIP entries aligned to 16 KiB, pinned AAR provenance and an
+exact committed source archive.
+
+The private symbol archive was byte-verified: 24 JNI ELF files plus Build ID index
+for this commit; index SHA-256
+`7f048112d61d6cdb5a7285bef5cd1aa73f9553d51997fec53f5aca274a14af77`.
+Twenty-seven historical prebuilt libraries still lack matching symbols; eight
+have no Build ID. Future WebRTC/audio producer rebuilds remain unverified.
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.36.apk` | 114,413,791 | `75b9e71a8e575bc61721e46ffb14bc1bfa6ee6d17e38ab1bb9bcb32dfe542687` |
-| `TiPlay-0.2.20-beta.36-source.zip` | 70,098,873 | `83d6c86c7e4955e609ed09c2f39b782a215ebea070b1eb92b6c30cdff92c1a4f` |
-| `SHA256SUMS.txt` | 191 | `d656d3a13335667b41f7d0ba5a604076461bb51e9b6c5e548b9bd1aebec4fc8e` |
+| `TiPlay-0.2.20-beta.37.apk` | 114,513,731 | `b84e39293713e3f08e376d7bdada59ef90bb765e6d46ed349ab144e8d88f57ef` |
+| `TiPlay-0.2.20-beta.37-source.zip` | 70,173,225 | `41214c131cee126ff64fefc97d8125d5214f5cf6f668916770708099b56fcd15` |
+| `SHA256SUMS.txt` | 191 | `d9b36d3e295b4e250c1596a7c3f366ab9e313cd5b4088f316a3074da37ec9c46` |
 
-All 226 [public page](https://ujzk.github.io/TiPlay/) files (37,805,124 bytes) match
-the assembly. All 156 MIME checks, v111/beta.36 metadata, eight download languages and legacy
-`/webrtc/` 404 checks pass. Later documentation-only commits do not change these
-release inputs. Physical vehicle acceptance remains open.
+All three public attachments were independently re-downloaded and match the table;
+the Release tag resolves to the build commit.
+[Pages run 41215698173](https://github.com/uJZk/TiPlay/actions/runs/41215698173) succeeded
+from the same commit. All 226 public files (37,807,638 bytes), 156 MIME checks,
+eight download languages and v112/beta.37 metadata match the assembly, with legacy
+`/webrtc/` paths returning 404.
+Later documentation-only commits do not change release inputs.
 
-The previous [beta.35/code77](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.35),
-browser v110, was published at 2026-10-31 05:57:48 UTC. Its complete build,
-workflow, hash and independent verification evidence remains in the
-[frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
+The preceding beta.36/code78/v111 build `c1ad4b32` has its complete publication,
+workflow and hash evidence in the
+[frozen beta.36 record](https://github.com/uJZk/TiPlay/blob/42db8dcaea38f4038ebee130312a3e5077227793/docs/Build.md#current-browser-deployment).
+The [frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment)
+retains its earlier evidence.
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

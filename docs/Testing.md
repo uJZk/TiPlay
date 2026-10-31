@@ -5,68 +5,52 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 Release-specific test counts and public artifact checks are evidence for their
 recorded source, not interchangeable coverage counts for later engines.
 
-## Beta.37 release preparation
+## Current release source
 
-The [19-item remediation](Robustness.md) follows audit baseline `42db8dca`.
-It is being prepared for beta.37/code79 with browser/cache v112; beta.36/code78
-and public browser v111 remain the last verified published product. Signed
-packaging, Pages deployment and independent public-artifact checks for beta.37
-are pending. Original-codec RTP video, native Opus, fallback audio,
-Bluetooth microphones and SCO silence keepalive remain. Audio trimming is paused;
-committed native binaries and AARs are unchanged.
+**Beta.37/code79, browser/cache v112, is published** from
+`d038685c623112407b656ab78995bd8bd8facdfd`. The [19-item remediation](Robustness.md)
+follows audit baseline `42db8dca` and strengthens ownership, cancellation,
+stream recovery, platform callbacks, storage and worker updates. Original-codec
+RTP video, native Opus, fallback audio, Bluetooth microphones and SCO silence
+keepalive remain. Audio trimming is paused; committed native binaries and AARs
+are unchanged.
 
 The full local Android workflow command passes 4,535 unit cases: 2,613 shared,
 1,916 common and six home. Mobile, home and maphost Debug lint and assembly pass.
 Node 22 passes all 690 web cases. The 52 Python checks comprise 16 native-symbol,
 17 WebRTC build-driver, eight final-APK verifier, nine release-draft and two
-site-deployment cases. The new mobile Debug APK passes the pinned AAR identity,
-provenance, four-ABI ELF and ZIP-alignment check. This source-only Debug package
-is not the standalone signed CarPlay release.
+site-deployment cases. The new mobile Debug APK passes pinned AAR identity,
+provenance, four-ABI ELF and ZIP-alignment checks; this source-only package is
+separate from the signed CarPlay release.
 
-Actual `:shared:externalNativeBuildRelease :shared:stripReleaseDebugSymbols`
-passes. All 24 real Release JNI pairs across six modules and four ABIs have
-matching Build IDs, with line tables and symbol tables in the unstripped ELF;
-AGP models confirm `NDK_DEBUG=0`. This validates the JNI symbol input, separately
-from a signed Release APK, FULL metadata ZIP fallback and durable archive upload.
+Actual Release JNI compilation and stripping pass for all 24 module/ABI pairs:
+Build IDs match the stripped output, unstripped ELF retains line/symbol tables,
+and AGP confirms `NDK_DEBUG=0`. The signed workflow subsequently passed its
+release, symbols and draft jobs and privately archived 24 matching JNI ELF files
+plus their Build ID index. Both private archive assets were independently
+re-downloaded byte-identical. Twenty-seven historical prebuilt libraries still
+lack matching symbols, and eight have no Build ID; future full WebRTC/audio
+producer rebuilds have not been run for this revision.
+
+Independent candidate checks confirm non-debug packaging, signer/runtime
+continuity, all 51 native libraries unchanged from beta.36, 25 ELF64 and 51 JNI
+ZIP entries aligned to 16 KiB, pinned AAR provenance and exact committed source.
+The three public Release attachments were independently re-downloaded and match
+their hashes; the tag resolves to the build commit. Pages succeeded from that
+commit, and all 226 public files (37,807,638 bytes), 156 MIME checks, eight download
+languages, version metadata and legacy `/webrtc/` 404 checks pass.
+[Build](Build.md#current-browser-deployment) records workflows, hashes and the
+private symbol-index identity. Later documentation-only commits do not change
+these release inputs.
 
 Actual Chromium 151 checks pass for the two-page legacy service-worker update
-and main/Worker Processor-to-Canvas local-track paths. Public-tree/cache checks,
-workflow syntax, diff whitespace and documentation limits pass. Full remote CI
-is skipped for this release at the user's request; its existing signed-packaging
-and Pages workflows remain separate required delivery steps. Full future WebRTC/audio producer builds and
-durable symbol upload remain separate workflow validation. Historical SIGSEGV
-attribution, vehicle reconnect behavior, SCO/focus recovery and graphics/device
-failures still need matching hardware evidence.
-
-## Current release source
-
-**Beta.36/code78, browser v111, is published** from
-`c1ad4b3259dbdcf7c11929a45285d143c71d02e4`. It adds
-system native-crash trace collection in explicit Debug ZIPs and avoids an
-address hostname lookup during Bonjour creation while recording each startup
-phase. Trace bytes are retained without protobuf-format validation; a historical
-ANR trace must not be attributed to the native crash. SIGSEGV remains unresolved,
-and the proposed workaround for the observed 26.532-second Bonjour wait has not
-been confirmed on the vehicle. Native-crash trace collection and interpretation
-have not been verified on hardware.
-
-Full Android CI is skipped at the user's explicit request. Fresh focused Android
-checks pass all 86 cases: 32 shared and 54 common, covering 20 Bonjour and 66
-diagnostics cases. All 67 focused browser checks pass: 31 page, 26 browser-diagnostic
-and 10 video-diagnostic cases. Nine release-draft checks, two site-deployment checks
-and public-tree/cache checks pass. Local mobile Debug lint/assembly passed.
-Signed Release packaging and Pages succeeded from the build commit. Independent
-checks confirm signer/runtime continuity, all 51 native libraries unchanged from
-beta.35, 16 KiB alignment, pinned AAR provenance and the exact committed source
-archive. All three public attachments were independently re-downloaded and match
-their hashes; the tag points to the build commit. All 226 public files
-(37,805,124 bytes), 156 MIME checks, eight language pages, version metadata and
-legacy `/webrtc/` 404 checks pass.
-Browser/cache v111 only refreshes application version metadata. Audio trimming
-remains paused; the AAR, native libraries, RTP video, native Opus audio and
-Bluetooth/SCO paths are unchanged. [Build](Build.md#current-browser-deployment)
-records workflows and hashes separately from vehicle evidence. Later documentation-only
-commits do not change release inputs.
+and main/Worker Processor-to-Canvas local-track paths. They do not establish a
+vehicle RTP path or hardware decoding. Public-tree/cache checks, workflow syntax,
+diff whitespace and documentation limits pass. Full remote CI was skipped at
+the user's request; required local source checks, signed packaging and Pages ran.
+Historical SIGSEGV attribution, vehicle reconnect behavior, SCO/focus recovery,
+slow storage, native trace retrieval and graphics/device failures still need
+matching hardware evidence.
 
 Use the [Android workflow](../.github/workflows/android.yml) for the source revision
 under test. Synthetic caption and player tests
@@ -77,6 +61,13 @@ continuity separately. Missing audio transport keys are diagnosed without assumi
 a plaintext stream.
 
 ## Previous release source
+
+Beta.36/code78, browser v111, was published from `c1ad4b32` with system native
+trace collection and a Bonjour hostname-lookup workaround. Its 86 focused
+Android, 67 focused browser checks and independent signed artifact/public-page
+verification remain recorded in the
+[frozen beta.36 record](https://github.com/uJZk/TiPlay/blob/42db8dcaea38f4038ebee130312a3e5077227793/docs/Build.md#current-browser-deployment).
+Those results do not establish its historical SIGSEGV cause or vehicle startup improvement.
 
 Beta.35/code77, browser v110, passed 675 web tests, 76 build/native Python checks,
 nine release-draft checks, two site-deployment checks and public-tree/cache/AAR/audio

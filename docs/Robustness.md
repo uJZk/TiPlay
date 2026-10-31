@@ -38,11 +38,10 @@ to prevent taking another application's call route.
 
 ## Remediation map
 
-The following 19 items have source fixes on top of beta.36 and pass the required
-source regression checks. They are being prepared as beta.37/code79 with
-browser/cache v112. Signed packaging, Pages deployment and public-artifact
-verification remain pending; beta.36 is still the last verified published
-release. This source-work record does not establish vehicle acceptance.
+The following 19 items shipped in beta.37/code79 with browser/cache v112 from
+`d038685c623112407b656ab78995bd8bd8facdfd`. Required source regressions, signed
+packaging, Pages and independent public-artifact checks pass; [Build](Build.md#current-browser-deployment)
+records their exact scope and hashes. These results do not establish vehicle acceptance.
 
 | Audit | Boundary | Required behavior |
 | --- | --- | --- |
@@ -110,7 +109,11 @@ passes the pinned WebRTC identity/provenance, four-ABI ELF and ZIP-alignment gat
 Public-tree, cache, workflow syntax and documentation word-limit checks pass.
 Actual AGP Release JNI compilation and stripping also pass: all 24 module/ABI
 pairs have matching Build IDs and retained line tables/symbol tables, backed by
-`NDK_DEBUG=0` configurations. This does not qualify a signed Release APK or upload.
+`NDK_DEBUG=0` configurations. The signed beta.37 workflow subsequently verified
+the APK and privately archived its 24 matching JNI symbol files plus Build ID
+index; independent downloads matched both archive assets byte for byte. This
+does not supply symbols for the 27 historical prebuilt libraries, eight of which
+have no Build ID.
 
 Real Chromium checks cover legacy-to-waiting service-worker updates with two
 pages and Processor/Canvas main/Worker paths using a local capture track. They
@@ -118,11 +121,13 @@ do not establish a vehicle RTP path or hardware decoding. New owner, failure,
 deadline and storage tests exercise the blocked operation or actual transition.
 See [Testing](Testing.md) for reproducible source checks and their limits.
 
-Future WebRTC/audio producer rebuilds and authenticated durable symbol archives
-have not been executed for this source revision. No committed AAR or native
-prebuilt binary was replaced. Beta.37 signed packaging, symbol-artifact delivery
-and Pages/public-byte verification are separate pending release checks. Full
-remote CI is skipped for this release at the user's request.
+Full future WebRTC/audio producer rebuilds have not been executed for this source
+revision; actual mobile JNI symbol archival has passed separately. No committed
+AAR or native prebuilt binary was replaced, and all 51 packaged native libraries
+match beta.36. The three public Release attachments and tag, 226 page files and
+156 MIME checks pass independent verification. Full remote CI was skipped for
+this release at the user's request; required local source checks, signed
+packaging and Pages all ran.
 
 The previous native SIGSEGV still lacks its matching native backtrace. These
 changes do not establish its cause or prove ARM64 vehicle continuity. Hardware
