@@ -33,6 +33,13 @@ Wi-Fi observations distinguish no Wi-Fi, unreadable SSID and a readable mismatch
 
 `BrowserConnectionDraft` retains incomplete edits through window recreation and Advanced settings navigation. Valid text saves after 400 ms without typing; leaving Main settings applies valid pending edits. Choices apply immediately. Invalid fields remain editable without replacing saved connection parameters. Drafts contain connection parameters only, so they cannot overwrite independently saved video settings. Existing-Wi-Fi credentials and security are separate from hotspot credentials; legacy external-network selections restore to Existing Wi-Fi.
 
+Car Bluetooth selection is stored independently and accepts only devices already
+paired in Android, excluding the selected iPhone. Selecting a car saves it directly;
+it does not start pairing or require companion-device authorization. First pairing
+starts from the car, as described in [Connection setup](Connection-setup.md#android-car-bluetooth).
+Automatic reconnection authorization and actual audio/microphone routing remain
+separate from the saved selection and from the CarPlay video startup gate.
+
 Settings requiring new negotiation notify the host through `BrowserSettingsChanges`. The host reloads current preferences and reconnects while leaving the settings page open; edits during recovery must reach the next attempt. Back performs navigation. There are no manual Connect, Reconnect or Save and reconnect actions on the product page. Debug mode applies immediately without reconnecting; its policy is in [Diagnostics](Diagnostics.md). Address and port edits follow the separate [hotspot endpoint contract](Hotspot-address.md).
 
 ## Connection policy

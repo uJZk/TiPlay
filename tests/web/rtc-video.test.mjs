@@ -31,10 +31,34 @@ const config = (epoch, videoTransport = RTC_VIDEO_TRANSPORT, videoGeneration = 1
 
 test('capability discovery gates RTP offers for old phones and only admits passthrough codecs', async () => {
   assert.equal(await phoneSupportsRtcVideo(async () => ({ ok: true, json: async () => ({ app: 'TiPlay', protocol: 1 }) })), false);
+  assert.equal(await phoneSupportsRtcVideo(async () => ({ ok: true, json: async () => ({ app: 'TiPlay', protocol: 1, videoTransport: 'unavailable' }) })), false);
   assert.equal(await phoneSupportsRtcVideo(async () => ({ ok: true, json: async () => ({ app: 'TiPlay', protocol: 1, videoTransport: RTC_VIDEO_TRANSPORT }) })), true);
-  assert.equal(await phoneSupportsRtcVideo(async () => { throw Error('offline'); }), false);
   assert.deepEqual(rtcVideoCodecs({ getCapabilities: () => ({ codecs: [{ mimeType: 'video/VP8' }, { mimeType: 'video/H264' }, { mimeType: 'video/H265' }] }) }),
     [{ mimeType: 'video/H264' }, { mimeType: 'video/H265' }]);
+});
+
+test('failed capability requests reject instead of negotiating a permanent data-only peer', async () => {
+  const offline = new TypeError('private network detail');
+  await assert.rejects(phoneSupportsRtcVideo(async () => { throw offline; }), error => error === offline && error.rtcReason === 'fetch');
+  await assert.rejects(phoneSupportsRtcVideo(async () => ({ ok: false, status: 503,
+    json: () => { throw Error('Do not read a refusal body'); } })), error => error.status === 503 && !error.message.includes('private'));
+  for (const json of [async () => { throw new SyntaxError('private response'); }, ...[null, [], {},
+    { app: 'other', protocol: 1 }, { app: 'TiPlay', protocol: 2 }, { app: 'TiPlay', protocol: 1, videoTransport: 'unexpected' }].map(value => async () => value)]) {
+    await assert.rejects(phoneSupportsRtcVideo(async () => ({ ok: true, json })),
+      error => error.rtcReason === 'bad-response' && !error.message.includes('private'));
+  }
+});
+
+test('capability discovery preserves fetch and response-body cancellation', async () => {
+  for (const fromBody of [false, true]) {
+    const abort = new AbortController(), error = new DOMException('Stopped', 'AbortError');
+    const fetchPhone = async (_route, options) => {
+      assert.equal(options.signal, abort.signal);
+      if (!fromBody) { abort.abort(); throw error; }
+      return { ok: true, json: async () => { abort.abort(); throw error; } };
+    };
+    await assert.rejects(phoneSupportsRtcVideo(fetchPhone, abort.signal), value => value === error && value.rtcReason === undefined);
+  }
 });
 
 test('track reader requests a one-frame queue, releases reader and closes a frame that races cancellation', async () => {

@@ -20,7 +20,7 @@ def verify(run, artifacts, tree, archive, output, *, run_id, head_sha, aar_sha, 
         raise ValueError("Expected native commit and AAR hashes must be lowercase hex")
     if (run.get("id") != int(run_id) or run.get("head_sha") != head_sha
             or run.get("event") != "workflow_dispatch" or run.get("conclusion") != "success"
-            or run.get("path", "").split("@")[0] != ".github/workflows/android-release.yml"):
+            or run.get("path", "").split("@")[0] != ".github/workflows/native-source-rate.yml"):
         raise ValueError("Native run identity, workflow, or success does not match")
     verify_tree(tree, **({"root": root} if root is not None else {}))
     matching = [a for a in artifacts.get("artifacts", [])

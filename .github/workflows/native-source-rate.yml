@@ -32,9 +32,21 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Check out the upstream Android build environment
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: webrtc-sdk/webrtc-build
+          ref: 06e3410d8f67d08202e26f55225705596b60778e
+          path: upstream-webrtc-builder
+          persist-credentials: false
+      - name: Verify the pinned upstream configuration
+        run: |
+          python3 scripts/webrtc/build.py check-publisher \
+            --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
+            --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder"
       - name: Check build-driver pin and reuse contracts
         run: python3 scripts/webrtc/test_build.py
-      - name: Prepare isolated runner disk and tools
+      - name: Prepare runner disk and the upstream Android tool environment
         shell: bash
         run: |
           set -euo pipefail
@@ -47,12 +59,11 @@ jobs:
             echo 'At least 50 GiB free runner disk is required.' >&2
             exit 1
           fi
-          sudo apt-get update -qq
+          # Reuse the package setup from the pinned upstream Android Dockerfile.
+          sudo env DEBIAN_FRONTEND=noninteractive bash \
+            "$GITHUB_WORKSPACE/upstream-webrtc-builder/build/scripts/apt_install_x86_64.sh"
           sudo apt-get install -y --no-install-recommends \
-            build-essential ninja-build pkg-config python3 curl unzip bzip2 xz-utils \
-            libglib2.0-dev libnss3-dev libasound2-dev libpulse-dev libudev-dev \
-            libx11-dev libxcomposite-dev libxdamage-dev libxext-dev libxfixes-dev \
-            libxrandr-dev libxtst-dev libdrm-dev libgbm-dev libgtk-3-dev
+            openjdk-11-jdk build-essential
       - name: Fetch immutable depot_tools
         shell: bash
         run: |
@@ -69,9 +80,10 @@ jobs:
         run: |
           python3 scripts/webrtc/build.py prepare \
             --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
-            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools" \
+            --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder"
           git -C "$RUNNER_TEMP/tiplay-webrtc/src" diff --check
-      - name: Check decoder factory with warnings treated as errors
+      - name: Check unchanged Java against the legacy patched bytecode
         shell: bash
         run: |
           set -euo pipefail
@@ -79,30 +91,14 @@ jobs:
             HEAD:sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java \
             > "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
           python3 scripts/webrtc/test_compat_javac.py \
-            --pristine "$RUNNER_TEMP/WrappedVideoDecoderFactory.java"
-      - name: Check pinned Siso concurrency flag syntax
-        shell: bash
-        run: |
-          set -euo pipefail
-          siso="$RUNNER_TEMP/tiplay-webrtc/src/third_party/siso/cipd/siso"
-          # A help request proves parsing without starting a build. The invalid
-          # compact Ninja form must remain rejected by this exact Siso binary.
-          "$siso" ninja -local_jobs=2 -h > "$RUNNER_TEMP/siso-valid-help" 2>&1 || true
-          grep -q -- '-local_jobs' "$RUNNER_TEMP/siso-valid-help"
-          if grep -q 'flag provided but not defined' "$RUNNER_TEMP/siso-valid-help"; then
-            cat "$RUNNER_TEMP/siso-valid-help" >&2
-            exit 1
-          fi
-          if "$siso" ninja -j2 -h > "$RUNNER_TEMP/siso-invalid-help" 2>&1; then
-            echo 'Unexpected acceptance of unsupported -j2' >&2
-            exit 1
-          fi
-          grep -q 'flag provided but not defined: -j2' "$RUNNER_TEMP/siso-invalid-help"
+            --pristine "$RUNNER_TEMP/WrappedVideoDecoderFactory.java" \
+            --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder"
       - name: Run focused native source-rate tests
         run: |
           python3 scripts/webrtc/build.py test \
             --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
-            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools"
+            --depot-tools "$RUNNER_TEMP/tiplay-depot-tools" \
+            --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder"
       - name: Build custom AAR
         shell: bash
         env:
@@ -117,6 +113,7 @@ jobs:
           python3 scripts/webrtc/build.py build \
             --work-dir "$RUNNER_TEMP/tiplay-webrtc" \
             --depot-tools "$RUNNER_TEMP/tiplay-depot-tools" \
+            --publisher-build "$GITHUB_WORKSPACE/upstream-webrtc-builder" \
             --arch "${architectures[@]}" \
             --output "$RUNNER_TEMP/tiplay-webrtc-artifacts/tiplay-source-rate.aar"
           cd "$RUNNER_TEMP/tiplay-webrtc-artifacts"

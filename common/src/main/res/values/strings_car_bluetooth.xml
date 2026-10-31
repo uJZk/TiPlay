@@ -3,14 +3,12 @@
     <string name="settings_car_bluetooth_choose">Car Bluetooth</string>
     <string name="settings_car_bluetooth_none">Not selected</string>
     <string name="settings_car_bluetooth_clear">Clear selection</string>
-    <string name="settings_car_bluetooth_find">Find and pair a car</string>
+    <string name="settings_car_bluetooth_pair_first">On the car Bluetooth screen, add this phone. Confirm pairing on Android, then return to select the paired car.</string>
     <string name="settings_car_bluetooth_not_selected">Select the car Bluetooth device to use car audio.</string>
     <string name="settings_car_bluetooth_disconnected">Selected car Bluetooth is not connected; proximity is unknown.</string>
-    <string name="settings_car_bluetooth_manual">Selected car Bluetooth is not connected. This Android version cannot connect it automatically; connect it in Bluetooth settings.</string>
+    <string name="settings_car_bluetooth_manual">Selected car Bluetooth is not connected. TiPlay cannot connect it automatically right now; connect it from the car or Android Bluetooth settings.</string>
     <string name="settings_car_bluetooth_connect_failed">Automatic car Bluetooth connection failed; check Bluetooth settings.</string>
     <string name="settings_car_bluetooth_permission">Allow nearby devices permission to select car Bluetooth.</string>
-    <string name="settings_car_bluetooth_unsupported_pairing">This Android device does not support companion device pairing.</string>
-    <string name="settings_car_bluetooth_pair_failed">Car Bluetooth association or pairing failed; try again.</string>
     <string name="settings_car_bluetooth_not_iphone">The selected iPhone cannot also be the car Bluetooth device.</string>
     <string name="settings_car_bluetooth_enable">Turn on Bluetooth to select the car device.</string>
     <string name="settings_car_bluetooth_route_unknown">The car Bluetooth is connected, but Android cannot confirm the selected car microphone route.</string>

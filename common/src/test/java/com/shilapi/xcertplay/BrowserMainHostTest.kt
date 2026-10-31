@@ -158,15 +158,24 @@ class BrowserMainHostTest {
         assertFalse(AirPlayPersistence.loadHevcEnabled(activity))
     }
 
-    @Test fun returningFromSettingsRechecksPendingCarBluetoothPermission() {
+    @Test fun choosingAPairedCarUsesTheSelectionCallbackWithoutRestartingCarPlay() {
         val controller = attachController()
         `when`(controller.phoneBrowserMode()).thenReturn(true)
+        val adapter = activity.getSystemService(android.bluetooth.BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        val device = adapter.getRemoteDevice("AA:BB:CC:DD:EE:FF")
+        shadowOf(device).setBondState(android.bluetooth.BluetoothDevice.BOND_BONDED)
+        shadowOf(device).setName("Car")
+        shadowOf(adapter).setBondedDevices(setOf(device))
+        val main = field("browserMainPage") as BrowserMainSettingsMenu
         mockConstruction(CarBluetoothSelection::class.java).use { selections ->
-            invoke("onResume")
-            invoke("onResume")
+            main.view.findViewWithTag<android.widget.Button>("car_bluetooth_button").performClick()
+            shadowOf(requireNotNull(org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog())).clickOnItem(0)
             assertEquals(1, selections.constructed().size)
-            verify(selections.constructed().single(), org.mockito.Mockito.times(2)).permissionsChanged()
+            verify(selections.constructed().single()).select(device.address)
         }
+        assertSame(controller, field("controller"))
+        verify(controller, never()).close()
     }
 
     @Test fun wirelessWaitingConnectingAndListeningHaveDistinctTitles() {

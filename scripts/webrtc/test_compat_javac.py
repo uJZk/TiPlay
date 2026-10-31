@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Compile the exact pinned decoder factory with and without our patch."""
+"""Verify the publisher warning policy preserves the legacy decoder bytecode."""
 import argparse
 from pathlib import Path
 import subprocess
 import tempfile
+from build import publisher_inputs
 
 RELATIVE = Path("sdk/android/api/org/webrtc/WrappedVideoDecoderFactory.java")
 PATCH = Path(__file__).resolve().with_name("publisher-compat.patch")
@@ -16,7 +17,7 @@ def write(root, name, content):
     return target
 
 
-def compile_factory(root, factory, output):
+def compile_factory(root, factory, output, *, warnings_as_errors=True):
     media = write(root, "android/media/MediaCodecInfo.java",
                   "package android.media; public class MediaCodecInfo {}\n")
     annotation = write(root, "androidx/annotation/Nullable.java",
@@ -45,7 +46,7 @@ class VideoDecoderFallback implements VideoDecoder {
 }
 """)
     output.mkdir()
-    return subprocess.run(["javac", "-Xlint:unchecked", "-Werror", "-d", str(output),
+    return subprocess.run(["javac", "-Xlint:unchecked", *(["-Werror"] if warnings_as_errors else []), "-d", str(output),
                            str(media), str(annotation), str(stubs), str(factory)],
                           text=True, capture_output=True)
 
@@ -54,21 +55,28 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pristine", type=Path, required=True,
                         help="The exact pinned source file before compatibility patches")
+    parser.add_argument("--publisher-build", type=Path, required=True)
     args = parser.parse_args()
+    publisher = publisher_inputs(args.publisher_build)
+    warnings_as_errors = "treat_warnings_as_errors=true" in publisher["record"]["android_gn_args"]
     with tempfile.TemporaryDirectory(prefix="tiplay-javac-compat-") as directory:
         root = Path(directory)
         factory = root / RELATIVE
         factory.parent.mkdir(parents=True)
         factory.write_bytes(args.pristine.read_bytes())
-        unpatched = compile_factory(root, factory, root / "before")
-        if unpatched.returncode == 0 or "unchecked" not in unpatched.stderr:
-            raise RuntimeError("Expected the original unchecked warning to fail javac")
+        unpatched = compile_factory(root, factory, root / "before", warnings_as_errors=warnings_as_errors)
+        if unpatched.returncode != 0 or "unchecked" not in unpatched.stderr:
+            raise RuntimeError("Publisher warning policy did not compile the original unchecked source:\n" + unpatched.stderr)
         subprocess.run(["git", "apply", "--include=" + str(RELATIVE), str(PATCH)],
                        cwd=root, check=True)
         patched = compile_factory(root, factory, root / "after")
         if patched.returncode != 0:
             raise RuntimeError("Patched decoder factory failed javac:\n" + patched.stderr)
-        print("Pinned decoder factory: unchecked warning rejected before patch; patched compilation passed")
+        before = {path.relative_to(root / "before"): path.read_bytes() for path in (root / "before").rglob("*.class")}
+        after = {path.relative_to(root / "after"): path.read_bytes() for path in (root / "after").rglob("*.class")}
+        if not before or before != after:
+            raise RuntimeError("Publisher warning policy changed generated class bytes")
+        print(f"Publisher warning policy and legacy generic fix produce identical bytes for all {len(before)} class files")
 
 
 if __name__ == "__main__":

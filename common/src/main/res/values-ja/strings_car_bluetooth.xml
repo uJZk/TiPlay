@@ -3,14 +3,12 @@
     <string name="settings_car_bluetooth_choose">車の Bluetooth</string>
     <string name="settings_car_bluetooth_none">未選択</string>
     <string name="settings_car_bluetooth_clear">選択を解除</string>
-    <string name="settings_car_bluetooth_find">車を検索してペア設定</string>
+    <string name="settings_car_bluetooth_pair_first">車の Bluetooth 画面でこのスマートフォンを追加し、Android でペア設定を確認してから、戻ってペア設定済みの車を選択してください。</string>
     <string name="settings_car_bluetooth_not_selected">車の音声を使うには車の Bluetooth を選択してください。</string>
     <string name="settings_car_bluetooth_disconnected">選択した車の Bluetooth は未接続です。近くにあるかは確認できません。</string>
-    <string name="settings_car_bluetooth_manual">車の Bluetooth は未接続です。この Android では自動接続できません。Bluetooth 設定で接続してください。</string>
+    <string name="settings_car_bluetooth_manual">選択した車の Bluetooth は未接続です。現在 TiPlay から自動接続できません。車側または Android の Bluetooth 設定で接続してください。</string>
     <string name="settings_car_bluetooth_connect_failed">車の Bluetooth への自動接続に失敗しました。Bluetooth 設定を確認してください。</string>
     <string name="settings_car_bluetooth_permission">車の Bluetooth を選ぶには付近のデバイスの権限を許可してください。</string>
-    <string name="settings_car_bluetooth_unsupported_pairing">この Android 端末はコンパニオンデバイスのペア設定に対応していません。</string>
-    <string name="settings_car_bluetooth_pair_failed">車の Bluetooth の関連付けまたはペア設定に失敗しました。再試行してください。</string>
     <string name="settings_car_bluetooth_not_iphone">選択した iPhone を車の Bluetooth として選ぶことはできません。</string>
     <string name="settings_car_bluetooth_enable">車を選ぶには Bluetooth をオンにしてください。</string>
     <string name="settings_car_bluetooth_route_unknown">車の Bluetooth は接続されていますが、Android は選択した車のマイク経路を確認できません。</string>

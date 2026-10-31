@@ -1,11 +1,14 @@
 package com.shilapi.xcertplay
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.net.wifi.WifiManager
 import android.content.Intent
 import android.os.Bundle
 import android.os.Looper
+import android.provider.Settings
 import java.time.Duration
 import android.view.View
 import android.view.ViewGroup
@@ -90,6 +93,65 @@ class BrowserMainPageTest {
         BrowserCarPlayAudioSettings.saveDisabled(activity, false)
         page.refresh()
         assertEquals(View.VISIBLE, car.visibility)
+    }
+
+    @Test fun carPickerOnlyOffersPairedDevicesAndExcludesTheSelectedIphone() {
+        val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        fun device(address: String, name: String, state: Int) = adapter.getRemoteDevice(address).also {
+            shadowOf(it).setName(name)
+            shadowOf(it).setBondState(state)
+        }
+        val car = device("AA:BB:CC:DD:EE:FF", "Car", BluetoothDevice.BOND_BONDED)
+        val iphone = device("02:00:00:00:00:01", "iPhone", BluetoothDevice.BOND_BONDED)
+        val removed = device("02:00:00:00:00:02", "Removed", BluetoothDevice.BOND_NONE)
+        shadowOf(adapter).setBondedDevices(setOf(car, iphone, removed))
+        page.draft.phoneAddress = iphone.address
+        var selected: String? = null
+        val draft = page.draft
+        page.dispose()
+        page = BrowserMainSettingsMenu(activity, draft, {}, {}, {}, chooseCarDevice = { selected = it })
+        activity.setContentView(page.view)
+
+        page.view.findViewWithTag<Button>("car_bluetooth_button").performClick()
+        val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
+        val items = shadowOf(dialog).items
+        assertEquals(2, items.size) // The car and the system Bluetooth settings entry.
+        assertTrue(items[0].toString().startsWith("Car"))
+        assertEquals(activity.getString(R.string.settings_car_bluetooth_open_settings), items[1].toString())
+        assertEquals(View.GONE, dialog.getButton(AlertDialog.BUTTON_NEUTRAL).visibility)
+        shadowOf(dialog).clickOnItem(0)
+        assertEquals(car.address, selected)
+        assertFalse(adapter.isDiscovering)
+    }
+
+    @Test fun anEmptyCarListExplainsCarInitiatedPairingAndOpensSystemSettings() {
+        val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        shadowOf(adapter).setBondedDevices(emptySet())
+        page.view.findViewWithTag<Button>("car_bluetooth_button").performClick()
+        val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
+        assertEquals(activity.getString(R.string.settings_car_bluetooth_pair_first),
+            dialog.findViewById<TextView>(android.R.id.message).text.toString())
+        assertEquals(View.GONE, dialog.getButton(AlertDialog.BUTTON_NEUTRAL).visibility)
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(Settings.ACTION_BLUETOOTH_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+        assertFalse(adapter.isDiscovering)
+    }
+
+    @Test fun anUnavailableSelectedCarCanStillBeClearedFromTheEmptyList() {
+        val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        shadowOf(adapter).setBondedDevices(emptySet())
+        CarBluetoothPreference.save(activity, "AA:BB:CC:DD:EE:FF", "Old car")
+        page.view.findViewWithTag<Button>("car_bluetooth_button").performClick()
+        val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
+        assertEquals(activity.getString(R.string.settings_car_bluetooth_clear),
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).text.toString())
+        dialog.getButton(AlertDialog.BUTTON_NEUTRAL).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(CarBluetoothPreference.address(activity))
     }
 
     @Test fun castingPrioritizesAirPlayAndDefersOnlyTheBackgroundCarPlayFailure() {

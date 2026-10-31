@@ -5795,6 +5795,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")
         appendLine("Session: ${if (CarPlayBackgroundSession.active) "active" else if (CarPlayBackgroundSession.hasSession()) "connecting" else "stopped"}")
         appendLine("Saved browser car Bluetooth audio: ${CarBluetoothAudio.load(appContext)}")
+        appendLine("--- Previous Java crash ---")
+        appendLine(CrashRecord.report(appContext))
+        appendLine("--- Recent process exits ---")
+        appendLine(ProcessExitDiagnostics.report(appContext))
         appendLine("--- Android and browser events ---")
         DiagnosticLogSnapshot.appendTo(this, File(appContext.filesDir, "logs"),
             level = if (debug) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)

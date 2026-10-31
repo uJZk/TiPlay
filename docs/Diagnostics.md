@@ -76,6 +76,15 @@ appears only inside Debug logs. A new process restores enabled capture and its d
 Rolling metadata remains redacted. Standard exports redact older Debug history too;
 full Debug text lives in `android/log`. Legacy static device dumps are omitted.
 
+Both Standard TXT and Debug ZIP reports include the last retained Java crash record
+and, on Android 11+, up to three recent exits for TiPlay's own package. Exit entries
+contain numeric reason/status, age, importance and memory values; descriptions,
+traces and process-state blobs are not read. Older Android versions and unavailable
+exit history are marked explicitly. These records may predate the current session;
+compare their age with the connection timeline before attributing a failure to a
+crash, memory pressure or a user-requested stop. Crash text uses the existing
+redaction policy even in Debug reports. Collection runs during background export.
+
 Raw capture covers iPhone TCP control/encrypted protocol, video, audio, timing, events
 and iAP; RFCOMM; browser HTTP headers/query/body before parsing, including rejected
 requests; USB discovery/permissions,

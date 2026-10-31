@@ -9,7 +9,7 @@ import subprocess
 
 REPO = Path(__file__).resolve().parents[2]
 PRODUCER_BLOBS = {
-    ".github/workflows/android-release.yml": ".github/workflows/native-source-rate.yml",
+    ".github/workflows/native-source-rate.yml": ".github/workflows/native-source-rate.yml",
     "scripts/webrtc/build.py": "scripts/webrtc/build.py",
     "scripts/webrtc/test_build.py": "scripts/webrtc/test_build.py",
     "scripts/webrtc/test_compat_javac.py": "scripts/webrtc/test_compat_javac.py",

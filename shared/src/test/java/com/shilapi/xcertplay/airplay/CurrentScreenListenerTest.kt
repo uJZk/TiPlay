@@ -245,10 +245,12 @@ class CurrentScreenListenerTest {
             assertTrue(session.isClosed)
             assertEquals(1, ended)
             assertTrue(streamsOf(engine).isEmpty())
-            Socket().use { socket ->
-                assertThrows(java.io.IOException::class.java) {
-                    socket.connect(java.net.InetSocketAddress("::1", port), 1000)
-                }
+            // Rebinding checks that the listener released its port. A connecting
+            // client can reuse that ephemeral port and successfully connect to
+            // itself on Linux, even when no listener remains.
+            java.net.ServerSocket().use { listener ->
+                listener.reuseAddress = true
+                listener.bind(java.net.InetSocketAddress("::", port))
             }
             session.close()
             assertEquals(1, ended)

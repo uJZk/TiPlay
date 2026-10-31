@@ -7,8 +7,24 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-Use the [Android workflow](../.github/workflows/android.yml) and the recorded
-workflow run for the source revision under test. Synthetic caption and player tests
+**Beta.35/code77, browser v110, is the current release candidate.** It covers
+paired-only car Bluetooth selection with car-initiated first pairing, phone
+capability-discovery retry and redacted crash/process-exit exports. Existing
+authorized Bluetooth reconnection remains available. The pinned upstream WebRTC
+build environment, compatibility patches and warning policy apply to future
+rebuilds; the committed AAR, native Opus/RTP audio, RTP video and Bluetooth/SCO
+microphone route remain unchanged.
+
+Full Android CI is skipped at the user's explicit request. The local complete
+Android run was stopped at that request. The candidate passes 675 web tests,
+76 build/native Python checks (24 + 52), nine release-draft checks, two
+site-deployment checks, public-tree/cache checks and AAR/RTP-audio verification.
+Signed packaging, Pages deployment and independent published-byte verification
+remain pending. [Build](Build.md#current-browser-deployment) records the candidate
+and will identify its final commit, workflow runs and artifacts.
+
+Use the [Android workflow](../.github/workflows/android.yml) for the source revision
+under test. Synthetic caption and player tests
 do not establish physical subtitle availability, vehicle rendering, or source
 compatibility. Validate the matching APK and browser page on the target vehicle;
 observe YouTube subtitle delivery, repeated consent, AirPlay mirroring and video

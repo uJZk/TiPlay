@@ -7,6 +7,8 @@ import { APP_VERSION } from '../../site/play/app-version.js';
 import { DEFAULT_HOST, abortable, isCode, normalizeHost } from '../../site/play/link.js';
 import { browserDiagnosticEvents, PAGE_VERSION } from '../../site/play/browser-diagnostics.js';
 import { createBrowserDiagnosticLog } from '../../site/play/browser-diagnostic-log.js';
+import { phoneSupportsRtcVideo } from '../../site/play/rtc-video.js';
+import { createRtcMediaTransport, RTC_TRANSPORT, RTC_FRAGMENT_BYTES } from '../../site/play/webrtc-transport.js';
 import { decoderStatsMatch } from '../../site/play/video-diagnostics.js';
 import { rtcFailureSummary } from '../../site/play/rtc-diagnostics.js';
 import { airPlayContext, airPlayFailed, createReceiverNoticeTracker, videoProblemFor, videoReadyFor, videoSourceFor } from '../../site/play/receiver-presentation.js';
@@ -159,6 +161,74 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
   }
   assert.ok(index('outbox') > index('authenticated') && index('control-heartbeat') > index('outbox'));
   assert.deepEqual(events.find(([type]) => type === 'audio-attach')[1], { app: 'TiPlay', protocol: 1, audio: true, transport: 'webrtc-datachannel-v1' });
+});
+
+test('a failed phone capability request retries before pairing and the next attempt includes video', async () => {
+  const connect = /async function connectVideo\(\) \{([\s\S]*?)\n\}/.exec(read('app.js'))[0];
+  class Channel {
+    constructor() { this.readyState = 'connecting'; this.bufferedAmount = 0; }
+    send(text) {
+      const message = JSON.parse(text);
+      if (message.k === 'auth') queueMicrotask(() => this.onmessage({ data: JSON.stringify({
+        q: message.q, app: 'TiPlay', protocol: 1, transport: RTC_TRANSPORT,
+        audio: true, clockMs: 100, resourceToken: 'r'.repeat(43),
+      }) }));
+    }
+    close() { this.readyState = 'closed'; }
+  }
+  class Peer extends EventTarget {
+    constructor() { super(); this.channels = []; this.video = false; this.iceGatheringState = 'complete'; }
+    createDataChannel() { const channel = new Channel(); this.channels.push(channel); return channel; }
+    addTransceiver() { this.video = true; return { setCodecPreferences() {} }; }
+    async createOffer() { return { type: 'offer', sdp: 'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n' +
+      (this.video ? 'm=video 9 UDP/TLS/RTP/SAVPF 102\r\na=recvonly\r\n' : '') +
+      'a=candidate:1 1 udp 1 192.0.2.1 5000 typ host\r\n' }; }
+    async setLocalDescription(value) { this.localDescription = value; }
+    async setRemoteDescription(value) {
+      this.remoteDescription = value;
+      for (const channel of this.channels) { channel.readyState = 'open'; channel.onopen(); }
+    }
+    close() {}
+  }
+  const offers = [];
+  const run = new Function('phoneSupportsRtcVideo', 'abortable', 'transportFactory', 'offers', `
+    let streamId = 0, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastViewport, rtcMedia;
+    let lastError, videoError, videoRestart, currentVideoGeneration = 1, rtcProgress, resourceToken, controlClock;
+    let outbox = null, heartbeatTimer, mediaTiming, attempt = 0, requests = 0, retries = 0;
+    const noop = () => {}, faultDiagnostics = { reset: noop }, controlWaiters = new Set();
+    const link = { code: '1234' }, session = 'fixture', videoPath = { rtcTrack: true }, codecsReady = Promise.resolve('avc1');
+    const phoneFetch = async () => {
+      if (++requests === 1) throw new TypeError('Temporary phone startup failure');
+      return { ok: true, json: async () => ({ app: 'TiPlay', protocol: 1, videoTransport: 'webrtc-track-v1' }) };
+    };
+    const authenticateRtcOffer = async ({ offer }) => {
+      offers.push(offer);
+      return { type: 'answer', sdp: 'v=0\\r\\na=candidate:1 1 udp 1 192.0.2.2 5001 typ host\\r\\n',
+        epoch: 7, fragmentBytes: ${RTC_FRAGMENT_BYTES}, transport: '${RTC_TRANSPORT}' };
+    };
+    const createRtcMediaTransport = transportFactory;
+    const sink = { clock: noop, stop: noop, open: noop }, browserAudio = { attach: noop, clock: noop };
+    const mediaTimings = new Map([['carplay', { reset: noop, mode: noop }]]), timingFor = () => null;
+    const render = noop, resetReceiverPresentation = noop, reportAppearance = noop, scheduleViewport = noop, reportDiagnostics = noop;
+    const setInterval = () => 0, clearInterval = noop, setTimeout = () => 0, clearTimeout = noop;
+    const stop = reason => { throw Error('Unexpected stop: ' + reason); }, scheduleRetry = () => retries++;
+    const createClockEstimator = () => ({ observe: () => null });
+    const postControl = noop, applyStatus = noop, controlFailed = noop, slots = { contacts: () => [] };
+    const createControlOutbox = () => ({ heartbeat: noop }), backoffDelay = () => 1000;
+    ${connect}
+    return { connectVideo, retries: () => retries, error: () => lastError, close: () => rtcMedia?.close() };
+  `)(phoneSupportsRtcVideo, abortable, options => createRtcMediaTransport({ ...options, PeerConnection: Peer,
+    videoCodecs: [{ mimeType: 'video/H264', clockRate: 90000 }], probeVideoReceiveLevels: async () => null }), offers);
+  try {
+    await run.connectVideo();
+    assert.equal(run.retries(), 1);
+    assert.equal(run.error().rtcReason, 'fetch');
+    assert.deepEqual(offers, [], 'failed discovery must not authenticate a data-only offer');
+    await run.connectVideo();
+    assert.equal(run.retries(), 1);
+    assert.equal(offers.length, 1);
+    assert.match(offers[0], /\r\nm=video /);
+  } finally { run.close(); }
 });
 
 function retryPage(lastError) {

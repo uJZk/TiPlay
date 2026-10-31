@@ -186,6 +186,12 @@ https://ujzk.github.io/TiPlay/. Preserve dated historical destinations. Keep lin
 
 ## Upstream
 
+Minimize changes to third-party source and reuse maintained upstream build
+configuration, scripts and Actions. For WebRTC, preserve the current source-rate
+video behavior while reducing local build patches; follow
+[WebRTC build maintenance](docs/Upstream.md#webrtc-build-maintenance). Require a
+concrete product need for each remaining native patch and prefer existing APIs.
+
 Follow [docs/Upstream.md](docs/Upstream.md) for preserved identifiers, dependency
 provenance and the one-way merge procedure. Current project links use TiPlay;
 numbered upstream references and historical names keep their original destinations.

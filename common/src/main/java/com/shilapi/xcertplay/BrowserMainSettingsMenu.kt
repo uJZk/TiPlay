@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.app.Activity
 import android.app.AlertDialog
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothDevice
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -31,7 +32,7 @@ internal class BrowserMainSettingsMenu(
     about: () -> Unit,
     private val settingsChanged: () -> Unit = {},
     private val setupOnly: Boolean = false,
-    private val chooseCarAssociation: (String?) -> Unit = {},
+    private val chooseCarDevice: (String) -> Unit = {},
 ) {
     private val ui = TiPlayNativeUi(activity)
     private val spacing = BrowserNativeSettingsUi(activity)
@@ -172,19 +173,28 @@ internal class BrowserMainSettingsMenu(
         if (runCatching { adapter?.isEnabled }.getOrNull() != true) {
             Toast.makeText(activity, R.string.settings_car_bluetooth_enable, Toast.LENGTH_LONG).show(); return
         }
-        val devices = runCatching { adapter?.bondedDevices?.filterNot { it.address.equals(draft.phoneAddress, true) }?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
+        val devices = runCatching { adapter?.bondedDevices?.filter { it.bondState == BluetoothDevice.BOND_BONDED && !it.address.equals(draft.phoneAddress, true) }?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
         val hasSelection = CarBluetoothPreference.address(activity) != null
         val labels = devices.map { "${it.name ?: activity.getString(R.string.paired_device)} · ${it.address.takeLast(5)}" } +
             (if (hasSelection) listOf(activity.getString(R.string.settings_car_bluetooth_clear)) else emptyList()) +
             activity.getString(R.string.settings_car_bluetooth_open_settings)
-        AlertDialog.Builder(activity).setTitle(R.string.settings_car_bluetooth_choose)
-            .setItems(labels.toTypedArray()) { _, index ->
-                if (index < devices.size) chooseCarAssociation(devices[index].address)
+        val dialog = AlertDialog.Builder(activity).setTitle(R.string.settings_car_bluetooth_choose)
+        if (devices.isEmpty()) {
+            dialog.setMessage(R.string.settings_car_bluetooth_pair_first)
+                .setPositiveButton(R.string.settings_car_bluetooth_open_settings) { _, _ ->
+                    activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                }
+            if (hasSelection) dialog.setNeutralButton(R.string.settings_car_bluetooth_clear) { _, _ ->
+                CarBluetoothPreference.save(activity, null, null); refresh()
+            }
+        } else {
+            dialog.setItems(labels.toTypedArray()) { _, index ->
+                if (index < devices.size) chooseCarDevice(devices[index].address)
                 else if (hasSelection && index == devices.size) { CarBluetoothPreference.save(activity, null, null); refresh() }
                 else activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
             }
-            .setNeutralButton(R.string.settings_car_bluetooth_find) { _, _ -> chooseCarAssociation(null) }
-            .setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
+        }
+        dialog.setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
     }
     private fun choosePhone() {
         if (Build.VERSION.SDK_INT >= 31 && activity.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -375,7 +385,7 @@ internal class BrowserMainSettingsMenu(
             CarBluetoothStatus.State.NOT_SELECTED -> R.string.settings_car_bluetooth_not_selected
             CarBluetoothStatus.State.ROUTE_UNVERIFIED -> R.string.settings_car_bluetooth_route_unknown
             CarBluetoothStatus.State.DISCONNECTED -> if (CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.FAILED)
-                R.string.settings_car_bluetooth_connect_failed else if (Build.VERSION.SDK_INT < 37 || CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.UNSUPPORTED)
+                R.string.settings_car_bluetooth_connect_failed else if (!CarBluetoothConnection.supportsAutomaticConnection(activity, CarBluetoothPreference.address(activity)))
                 R.string.settings_car_bluetooth_manual else R.string.settings_car_bluetooth_disconnected
             CarBluetoothStatus.State.UNKNOWN -> if (CarBluetoothConnection.attempt == CarBluetoothConnection.Attempt.FAILED)
                 R.string.settings_car_bluetooth_connect_failed else R.string.settings_hint_car_bluetooth_unknown

@@ -42,13 +42,19 @@ test('diagnostic log retains safe connection stage and failure reasons in Englis
     log.observe({ phase: 'retry', failure: rtcFailureSummary({ rtcReason: 'timeout' }).reason });
     const text = log.lines().join('\n');
     assert.match(text, language === 'zh' ? /正在检查安卓端连接/ : /Checking Android connection/);
-    assert.match(text, /timeout/);
+    assert.match(text, language === 'zh' ? /连接超时/ : /connection timed out/);
     assert.doesNotMatch(text, /169\.254|secret|9876/);
-    for (const error of [{ status: 404 }, { status: 503 }, { rtcReason: 'fetch' }, { rtcReason: 'pairing' }]) {
+    const failures = [
+      [{ status: 404 }, /browser API unavailable/, /浏览器接口不可用/],
+      [{ status: 503 }, /Android signaling failed/, /安卓端信令失败/],
+      [{ rtcReason: 'fetch' }, /cannot reach Android/, /无法访问安卓端/],
+      [{ rtcReason: 'pairing' }, /pairing verification failed/, /配对验证失败/],
+    ];
+    for (const [error, english, chinese] of failures) {
       log.observe({ phase: 'connecting' });
       const reason = rtcFailureSummary(error).reason;
       log.observe({ phase: 'retry', failure: reason });
-      assert.ok(log.lines()[0].includes(reason));
+      assert.match(log.lines()[0], language === 'zh' ? chinese : english);
     }
   }
 });

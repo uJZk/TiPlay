@@ -6,12 +6,25 @@ export const RTC_VIDEO_TRANSPORT = 'webrtc-track-v1';
 
 /** Discovery is only a capability hint; SRP still authenticates the complete SDP. */
 export async function phoneSupportsRtcVideo(fetchPhone, signal) {
+  let response;
   try {
-    const response = await fetchPhone('/hello', { signal });
-    if (!response.ok) return false;
-    const hello = await response.json();
-    return hello?.app === 'TiPlay' && hello.protocol === 1 && hello.videoTransport === RTC_VIDEO_TRANSPORT;
-  } catch (error) { if (signal?.aborted) throw error; return false; }
+    response = await fetchPhone('/hello', { signal });
+  } catch (error) {
+    if (!signal?.aborted && error?.name !== 'AbortError') error.rtcReason = 'fetch';
+    throw error;
+  }
+  if (!response.ok) throw Object.assign(new Error('Phone capability request refused.'), { status: response.status });
+  let hello;
+  try { hello = await response.json(); }
+  catch (error) {
+    if (signal?.aborted || error?.name === 'AbortError') throw error;
+    throw Object.assign(new Error('Invalid phone capability response.'), { rtcReason: 'bad-response' });
+  }
+  if (hello?.app !== 'TiPlay' || hello.protocol !== 1 ||
+    (hello.videoTransport !== undefined && ![RTC_VIDEO_TRANSPORT, 'unavailable'].includes(hello.videoTransport))) {
+    throw Object.assign(new Error('Invalid phone capability response.'), { rtcReason: 'bad-response' });
+  }
+  return hello.videoTransport === RTC_VIDEO_TRANSPORT;
 }
 
 /** Only codecs whose original access units the phone can forward without transcoding. */

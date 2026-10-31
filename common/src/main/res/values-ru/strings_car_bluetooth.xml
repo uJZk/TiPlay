@@ -3,14 +3,12 @@
     <string name="settings_car_bluetooth_choose">Bluetooth автомобиля</string>
     <string name="settings_car_bluetooth_none">Не выбрано</string>
     <string name="settings_car_bluetooth_clear">Очистить выбор</string>
-    <string name="settings_car_bluetooth_find">Найти и сопрячь автомобиль</string>
+    <string name="settings_car_bluetooth_pair_first">Добавьте этот телефон на экране Bluetooth автомобиля. Подтвердите сопряжение на Android, затем вернитесь и выберите сопряжённый автомобиль.</string>
     <string name="settings_car_bluetooth_not_selected">Выберите Bluetooth автомобиля для воспроизведения звука.</string>
     <string name="settings_car_bluetooth_disconnected">Выбранный Bluetooth автомобиля не подключён; близость устройства неизвестна.</string>
-    <string name="settings_car_bluetooth_manual">Bluetooth автомобиля не подключён. Эта версия Android не поддерживает автоматическое подключение; подключите его в настройках Bluetooth.</string>
+    <string name="settings_car_bluetooth_manual">Выбранный Bluetooth автомобиля не подключён. Сейчас TiPlay не может подключить его автоматически; выполните подключение со стороны автомобиля или в настройках Bluetooth Android.</string>
     <string name="settings_car_bluetooth_connect_failed">Не удалось автоматически подключить Bluetooth автомобиля; проверьте настройки Bluetooth.</string>
     <string name="settings_car_bluetooth_permission">Разрешите доступ к устройствам поблизости для выбора Bluetooth автомобиля.</string>
-    <string name="settings_car_bluetooth_unsupported_pairing">Это устройство Android не поддерживает сопряжение через диспетчер устройств-компаньонов.</string>
-    <string name="settings_car_bluetooth_pair_failed">Не удалось связать или сопрячь Bluetooth автомобиля; повторите попытку.</string>
     <string name="settings_car_bluetooth_not_iphone">Выбранный iPhone не может быть Bluetooth автомобиля.</string>
     <string name="settings_car_bluetooth_enable">Включите Bluetooth, чтобы выбрать автомобиль.</string>
     <string name="settings_car_bluetooth_route_unknown">Bluetooth автомобиля подключён, но Android не может подтвердить маршрут выбранного микрофона автомобиля.</string>

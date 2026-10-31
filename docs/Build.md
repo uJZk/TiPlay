@@ -568,10 +568,21 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-The [public page](https://ujzk.github.io/TiPlay/) is deployed by the
-[Pages workflow](../.github/workflows/pages.yml). Check its workflow run and the
-[releases page](https://github.com/uJZk/TiPlay/releases) for deployment and APK
-provenance; source checks and published artifacts do not establish real-car acceptance.
+**Beta.35/code77, browser v110, is a release candidate; signed packaging, Pages
+deployment and independent publication checks are pending.** It adds capability-discovery
+retry, paired-only car Bluetooth selection and redacted crash/bounded process-exit
+exports. First pairing starts on the car; selection needs no companion-device
+authorization. Existing authorized automatic connection/disconnection remains.
+
+The current AAR, RTP video, native Opus audio and Bluetooth/SCO paths remain
+unchanged. Pinned upstream environment, compatibility-patch and warning-policy
+reuse applies to future AAR builds.
+
+At the user's explicit request, full Android CI is skipped and the local complete
+Android run was stopped. Passed source checks: 675 web tests,
+76 build/native Python checks, nine release-draft checks, two site-deployment checks,
+public-tree/cache checks and AAR/RTP-audio verification.
+Source checks and published artifacts do not establish real-car acceptance.
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

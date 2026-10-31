@@ -27,7 +27,7 @@ class ProofArtifactTest(unittest.TestCase):
         self.sha = hashlib.sha256(self.aar).hexdigest()
         self.commit = "a" * 40
         self.run = {"id": 5, "head_sha": self.commit, "event": "workflow_dispatch", "conclusion": "success",
-                    "path": ".github/workflows/android-release.yml@refs/heads/temporary"}
+                    "path": ".github/workflows/native-source-rate.yml@refs/heads/temporary"}
         self.artifacts = {"artifacts": [{"id": 6, "name": "tiplay-source-rate-x86_64", "expired": False}]}
         self.record = {"aar_sha256": self.sha, "revision": proof.REVISION, "patch_sha256": self.patch_sha,
                        "architectures": ["x86_64"], "focused_tests": {"passed": True, "patch_sha256": self.patch_sha}}
@@ -57,7 +57,8 @@ class ProofArtifactTest(unittest.TestCase):
         self.assertEqual((self.root / "out" / proof.EXPECTED[0]).read_bytes(), self.aar)
 
     def test_bad_run_hash_or_patch_is_rejected(self):
-        for change in ({"head_sha": "b" * 40}, {"conclusion": "failure"}, {"event": "push"}, {"id": 7}):
+        for change in ({"head_sha": "b" * 40}, {"conclusion": "failure"}, {"event": "push"}, {"id": 7},
+                       {"path": ".github/workflows/android-release.yml@refs/heads/temporary"}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 self.check(run=self.run | change)
         with self.assertRaises(ValueError):

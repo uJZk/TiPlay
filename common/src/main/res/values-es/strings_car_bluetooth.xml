@@ -3,14 +3,12 @@
     <string name="settings_car_bluetooth_choose">Bluetooth del coche</string>
     <string name="settings_car_bluetooth_none">Sin seleccionar</string>
     <string name="settings_car_bluetooth_clear">Borrar selección</string>
-    <string name="settings_car_bluetooth_find">Buscar y vincular coche</string>
+    <string name="settings_car_bluetooth_pair_first">Añade este teléfono desde la pantalla Bluetooth del coche. Confirma la vinculación en Android y vuelve para seleccionar el coche vinculado.</string>
     <string name="settings_car_bluetooth_not_selected">Selecciona el Bluetooth del coche para usar su audio.</string>
     <string name="settings_car_bluetooth_disconnected">El Bluetooth seleccionado no está conectado; se desconoce si está cerca.</string>
-    <string name="settings_car_bluetooth_manual">El Bluetooth del coche no está conectado. Esta versión de Android no puede conectarlo automáticamente; conéctalo en Ajustes de Bluetooth.</string>
+    <string name="settings_car_bluetooth_manual">El Bluetooth seleccionado no está conectado. TiPlay no puede conectarlo automáticamente en este momento; conéctalo desde el coche o los ajustes de Bluetooth de Android.</string>
     <string name="settings_car_bluetooth_connect_failed">Falló la conexión automática con el coche; revisa los ajustes de Bluetooth.</string>
     <string name="settings_car_bluetooth_permission">Permite el acceso a dispositivos cercanos para elegir el Bluetooth del coche.</string>
-    <string name="settings_car_bluetooth_unsupported_pairing">Este dispositivo Android no admite la vinculación de dispositivos asociados.</string>
-    <string name="settings_car_bluetooth_pair_failed">Falló la asociación o vinculación del coche; inténtalo de nuevo.</string>
     <string name="settings_car_bluetooth_not_iphone">El iPhone seleccionado no puede ser también el Bluetooth del coche.</string>
     <string name="settings_car_bluetooth_enable">Activa Bluetooth para seleccionar el coche.</string>
     <string name="settings_car_bluetooth_route_unknown">El Bluetooth del coche está conectado, pero Android no puede confirmar la ruta del micrófono seleccionado.</string>

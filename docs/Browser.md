@@ -59,6 +59,10 @@ current code. Another paired browser can take over, and the displaced page can u
 Connect to reclaim the display. Wrong-code [lockout](../shared/src/main/java/com/shilapi/xcertplay/web/BrowserPairingGate.kt)
 also blocks correct requests during that interval. Network errors are not code errors;
 local-network denial needs browser settings, not more retries.
+The phone capability request follows the same recovery path: a network error,
+HTTP refusal or malformed response retries the connection instead of silently
+creating a peer without video. Only a valid TiPlay response that lacks RTP video
+support selects the compatibility path without a video track.
 
 Android copies `?t=address:port#c=code`, including defaults. The fragment keeps the
 code out of static-host requests. Import stores the pair and removes the fragment;
@@ -206,11 +210,17 @@ Busy routes and ambiguous headsets are refused; there is no handset/browser micr
 fallback. Permission/focus/route loss stops devices and reports failure. Android's
 Bluetooth stack owns mSBC/CVSD; TiPlay supplies PCM.
 
-The car selection uses Android's companion-device association and system bonding;
-association, bonding and an active audio profile are separate states. A paired
-device is not evidence that it is nearby. Public profile connect and disconnect
-requests require Android API 37, Bluetooth permission and an association; older
-systems retain a manual connection path. Connection requests are asynchronous.
+Car selection lists only devices already paired in Android, excluding the selected
+iPhone. Start the first pairing from the car Bluetooth screen and confirm it on
+Android, then return to TiPlay to select the paired car. TiPlay does not scan for
+unpaired cars or initiate pairing. Saving the selection does not require a
+companion-device association or an active audio connection.
+Pairing, companion-device authorization and an active audio profile are separate
+states; a paired device is not evidence that it is nearby. Public profile connect
+and disconnect requests require Android API 37, Bluetooth permission and an
+existing companion-device association. A paired device remains selectable without
+that authorization; connect it from the car or Android Bluetooth settings when
+automatic connection is unavailable. Connection requests are asynchronous.
 When CarPlay ends, TiPlay requests disconnect once even if its connection request
 failed or was unsupported. When the system accepted its connection request, a late
 connected event can trigger one further disconnect during a non-extendable

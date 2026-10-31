@@ -16,6 +16,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.core.content.ContextCompat
 
 /** Retains ownership across Activity recreation; never acts on a retired CarPlay session. */
@@ -99,23 +100,35 @@ internal object CarBluetoothConnection {
         adapterEnabled = runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true }.getOrDefault(false),
     )
 
+    /** Selection never requires this authorization; it only enables platform auto-connect. */
+    @ChecksSdkIntAtLeast(api = 37)
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
-    private fun request(context: Context, address: String?, connect: Boolean): Attempt {
-        if (address.isNullOrBlank()) return Attempt.NONE
+    fun supportsAutomaticConnection(context: Context, address: String?): Boolean {
+        if (address.isNullOrBlank()) return false
         if (Build.VERSION.SDK_INT < 37 || context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-            return Attempt.UNSUPPORTED
-        val associated = runCatching {
+            return false
+        return runCatching {
             context.getSystemService(CompanionDeviceManager::class.java)?.associations?.any { it.equals(address, true) } == true
         }.getOrDefault(false)
-        if (!associated) return Attempt.UNSUPPORTED
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun request(context: Context, address: String?, connect: Boolean): Attempt {
+        if (address.isNullOrBlank()) return Attempt.NONE
+        if (!supportsAutomaticConnection(context, address)) return Attempt.UNSUPPORTED
         val perform: () -> Attempt = { runCatching {
             val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null || !adapter.isEnabled || !BluetoothDeviceCheck.valid(address)) Attempt.FAILED
             else {
                 val device = adapter.getRemoteDevice(address)
-                val result = if (connect) device.connect() else device.disconnect()
-                if (result == BluetoothStatusCodes.SUCCESS) Attempt.REQUESTED else Attempt.FAILED
+                // A saved device may have been unpaired since selection. Never
+                // let a profile request become a new phone-initiated pairing.
+                if (device.bondState != BluetoothDevice.BOND_BONDED) Attempt.FAILED
+                else {
+                    val result = if (connect) device.connect() else device.disconnect()
+                    if (result == BluetoothStatusCodes.SUCCESS) Attempt.REQUESTED else Attempt.FAILED
+                }
             }
         }.getOrDefault(Attempt.FAILED) }
         // A failed registration leaves no way to undo an asynchronously completed connection.

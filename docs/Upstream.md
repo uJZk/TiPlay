@@ -15,6 +15,40 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 
 Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
 
+## WebRTC build maintenance
+
+Minimize changes to dependency source and reuse maintained upstream configuration,
+build scripts and GitHub Actions where available. Keep the current original-codec,
+source-rate video behavior while reducing the build maintenance surface. Replacing
+the AAR must not silently restore adaptive video rate control or introduce encoding.
+
+The Android distribution repository publishes AARs; its native producer is
+[webrtc-sdk/webrtc-build](https://github.com/webrtc-sdk/webrtc-build).
+TiPlay's build wrapper uses its fixed M150-compatible revision
+`06e3410d8f67d08202e26f55225705596b60778e`: the Android environment setup,
+common GN arguments, Android warning policy and three upstream compatibility
+patches. Only the source-rate patch is applied on top. The old
+combined `publisher-compat.patch` remains an input fingerprint for the committed
+AAR; it is not the compatibility patch source for new builds. Upstream sets
+`treat_warnings_as_errors=false` for Android, so its unchanged Java compiles
+without a local generic-type patch. The original and legacy-patched factory
+produce identical Java class bytes; this does not establish an identical AAR.
+The upstream policy also leaves production native compiler warnings nonfatal;
+focused host tests retain their existing strict configuration.
+
+The upstream workflow uses a dedicated runner and has no `workflow_call` entry.
+TiPlay therefore keeps a small Android-only workflow on `ubuntu-24.04`, reusing
+the upstream setup and WebRTC's `build_aar.py`. Preserve the existing bounded
+checkout, build concurrency, focused native tests and artifact provenance; the
+upstream full build also produces static libraries that TiPlay does not need.
+See the [AAR build entry](../shared/libs/webrtc-source-rate/README.md).
+
+Every remaining native patch needs a concrete product requirement or reproduced
+fault. Prefer existing APIs and configuration before adding another native API.
+Verify a rebuilt AAR and its actual APK packaging before replacing the committed
+artifact. Source configuration checks do not establish a successful native build
+or physical phone/browser playback.
+
 ## Preserve merge compatibility
 
 - Updates flow from DiPlay into TiPlay only: no upstream patches/PRs; disable upstream pushes and tag fetching.

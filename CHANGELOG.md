@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.35
+
+Version code 77 and browser revision v110. Release checks and publication are
+tracked in [Build](docs/Build.md#current-browser-deployment).
+
+- Retry failed phone capability discovery instead of authenticating a permanently video-less browser connection.
+- Select car Bluetooth from already paired devices. First pairing starts on the car; saving a selection does not require Companion Device authorization. Preserve supported automatic connection and disconnection for existing authorized devices.
+- Include redacted crash records and bounded historical process-exit metadata in diagnostic exports.
+- Reuse the pinned upstream WebRTC build environment, compatibility patches and Android warning policy. Keep the current AAR, RTP video, native Opus audio, Bluetooth microphone and SCO keepalive unchanged.
+
 ## 0.2.20-beta.24
 
 Version code 66 and browser revision v97. Release evidence is tracked in

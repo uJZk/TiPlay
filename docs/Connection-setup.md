@@ -24,6 +24,24 @@ Valid changes save automatically and can reconnect CarPlay without closing setti
 
 If setup stalls, reproduce once and save a [diagnostic report](Diagnostics.md). Record Android/iPhone versions, exact APK, transport, visible symptom, time and last completed connection step. Automated tests or older native-head-unit reports do not establish compatibility with this phone, iPhone and car browser.
 
-## Android car Bluetooth connection hint
+## Android car Bluetooth
 
-The Android main settings page observes the live A2DP and HEADSET/HFP profiles and their connection broadcasts, excluding the selected iPhone. Pairing and the iPhone RFCOMM link do not establish a car audio connection. A connected device advertising the car-audio Bluetooth class clears the hint; an unclassified audio device asks the driver to confirm it is the car. Two successfully queried empty profiles show the missing-connection hint. Missing permission, unavailable profiles or failed reads show an unknown-state hint. This observation cannot establish the separate iPhone-to-car connection or prove that audio is audible.
+On the car Bluetooth screen, add the Android phone and confirm pairing on Android.
+Then choose **Car Bluetooth** in TiPlay Main settings and select the paired car.
+The list contains only devices already paired in Android and excludes the selected
+iPhone. If the car is missing, complete pairing from the car first, then reopen
+the list. Android Bluetooth settings can make the phone discoverable and show the
+pairing confirmation; TiPlay does not initiate pairing or scan for unpaired cars.
+
+Saving a selection does not require an active connection or companion-device
+authorization. Automatic reconnection remains available where Android and the
+existing authorization allow it; otherwise connect from the car or Android
+Bluetooth settings. See [audio and microphone](Browser.md#audio-and-microphone)
+for the platform requirements.
+
+Main settings observes the selected device's live A2DP and HEADSET/HFP profiles and
+their broadcasts. A selected or paired device is not proof of an audio connection;
+an audio connection does not prove the selected car microphone route is available.
+Missing permission, unavailable profiles or failed reads show an unknown state.
+These audio observations do not block CarPlay video startup and cannot establish
+the separate iPhone-to-car connection or prove that audio is audible.

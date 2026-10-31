@@ -97,7 +97,7 @@ jobs:
           assert run['id'] == int(os.environ['PROOF_RUN_ID'])
           assert run['head_sha'] == os.environ['PROOF_HEAD_SHA']
           assert run['event'] == 'workflow_dispatch' and run['conclusion'] == 'success'
-          assert run['path'].split('@')[0] == '.github/workflows/android-release.yml'
+          assert run['path'].split('@')[0] == '.github/workflows/native-source-rate.yml'
           matching = [a for a in items if a['name'] == 'tiplay-source-rate-x86_64' and not a['expired']]
           assert len(matching) == 1 and isinstance(matching[0]['id'], int)
           print(matching[0]['id'])
