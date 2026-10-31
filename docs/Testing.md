@@ -7,26 +7,24 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.35/code77, browser v110, is published.** Its build commit is
-`e1c09135fc57b461c561a9e8b1043ce3899d33f6`. It covers
-paired-only car Bluetooth selection with car-initiated first pairing, phone
-capability-discovery retry and redacted crash/process-exit exports. Existing
-authorized Bluetooth reconnection remains available. The pinned upstream WebRTC
-build environment, compatibility patches and warning policy apply to future
-rebuilds; the committed AAR, native Opus/RTP audio, RTP video and Bluetooth/SCO
-microphone route remain unchanged.
+**Beta.36/code78, browser v111, is the current release candidate.** It adds
+system native-crash trace collection in explicit Debug ZIPs and avoids an
+address hostname lookup during Bonjour creation while recording each startup
+phase. Trace bytes are retained without protobuf-format validation; a historical
+ANR trace must not be attributed to the native crash. SIGSEGV remains unresolved,
+and the proposed workaround for the observed 26.532-second Bonjour wait has not
+been confirmed on the vehicle.
 
-Full Android CI was skipped at the user's explicit request. The local complete
-Android run was stopped at that request. The release source passes 675 web tests,
-76 build/native Python checks (24 + 52), nine release-draft checks, two
-site-deployment checks, public-tree/cache checks and AAR/RTP-audio verification.
-Signed Release packaging and Pages deployment succeeded from that build commit.
-Independent candidate checks verify signer/runtime continuity, unchanged native
-libraries, 16 KiB alignment and the exact committed source archive. All 226 public
-page files and 156 MIME checks pass. All three published attachments were independently
-re-downloaded and match their hashes. [Build](Build.md#current-browser-deployment) records
-the workflows, artifact identities and published-byte scope. Later documentation-only
-commits do not change those release inputs.
+Full Android CI is skipped at the user's explicit request. Fresh focused Android
+checks pass all 86 cases: 32 shared and 54 common, covering 20 Bonjour and 66
+diagnostics cases. All 67 focused browser checks pass: 31 page, 26 browser-diagnostic
+and 10 video-diagnostic cases. Nine release-draft checks, two site-deployment checks
+and public-tree/cache checks pass. Local mobile Debug lint/assembly, signed
+packaging, Pages and independent published-byte verification remain pending.
+Browser/cache v111 only refreshes application version metadata. Audio trimming
+remains paused; the AAR, native libraries, RTP video, native Opus audio and
+Bluetooth/SCO paths are unchanged. [Build](Build.md#current-browser-deployment)
+records candidate progress separately from published artifacts and vehicle evidence.
 
 Use the [Android workflow](../.github/workflows/android.yml) for the source revision
 under test. Synthetic caption and player tests
@@ -37,6 +35,13 @@ continuity separately. Missing audio transport keys are diagnosed without assumi
 a plaintext stream.
 
 ## Previous release source
+
+Beta.35/code77, browser v110, passed 675 web tests, 76 build/native Python checks,
+nine release-draft checks, two site-deployment checks and public-tree/cache/AAR/audio
+verification. Full Android CI was skipped and the local complete Android run
+stopped at the user's request. Signed packaging, Pages and independent attachment
+and public-page checks succeeded; [the frozen record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment)
+retains build identity and verification scope. These are beta.35 results.
 
 Beta.31/code73, browser v106, adds worker resource-request bridging, native audio
 peer recovery, sender identity compatibility and additional diagnostics. The
@@ -277,6 +282,18 @@ See [WASM boundaries](Browser-wasm.md) and [browser harnesses](../tests/web-e2e/
 ## Automated checks
 
 The [Android workflow](../.github/workflows/android.yml) defines required tool versions and commands: browser unit tests, public-source credential checks, release-draft tests, Android unit tests, lint and debug builds. Its retained upstream sample checks do not establish a second supported product.
+
+Native-crash export tests cover own-package/main-process selection, the three-exit
+window, the exact 8 MiB boundary, absent/failed traces, resource cleanup, Standard
+exclusion and byte-exact Debug attachment round trips through STORED/Zstandard
+archives. These JVM/Robolectric checks do not establish that a device retains a
+usable tombstone. On Android 12+, verify a real native crash, restart and explicit
+Debug export; decode `native-crash/trace.bin.zst` with Android's tombstone
+protobuf schema, verify PID/time against the selected exit and match module Build
+IDs to the APK that crashed. A retained ANR trace must not be attributed to the
+native crash. An absent
+trace must remain an explicit availability result, not a successful diagnosis.
+
 `gradle/tiplay-product-tests.gradle.kts` excludes legacy native Home/Vehicle/permission
 screens and finite-retry stop UI. Upstream fixtures remain available for merging;
 TiPlay's phone checklist, browser host, continuous recovery, shared permission logic

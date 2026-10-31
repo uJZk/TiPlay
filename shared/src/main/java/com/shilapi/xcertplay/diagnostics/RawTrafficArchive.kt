@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.diagnostics
 
+import com.github.luben.zstd.ZstdOutputStreamNoFinalizer
 import java.io.File
 import java.io.OutputStream
 import java.util.Base64
@@ -8,7 +9,8 @@ import java.util.zip.ZipOutputStream
 
 /** Splits an immutable raw snapshot on disk; neither payloads nor the event index accumulate in RAM. */
 internal object RawTrafficArchive {
-    fun write(output: OutputStream, logName: String, report: String, snapshot: RawTraffic.Snapshot, temporaryRoot: File) {
+    fun write(output: OutputStream, logName: String, report: String, snapshot: RawTraffic.Snapshot, temporaryRoot: File,
+              attachments: Map<String, File> = emptyMap()) {
         val directory = java.nio.file.Files.createTempDirectory(temporaryRoot.toPath(), "traffic-export-").toFile()
         data class Stream(val channel: String, val name: String, val file: File, var length: Long = 0)
         val streams = linkedMapOf<String, Stream>()
@@ -75,6 +77,8 @@ internal object RawTrafficArchive {
             }
             outputs.values.forEach { it.close() }
             outputs.clear()
+            val extraEntries = archiveAttachmentEntries(attachments,
+                listOf(logName, "capture.txt", "sessions.tsv", "unparsed.tsv", "events.tsv", "streams.tsv") + streams.values.map { it.name })
             // Free the compressor without closing the caller's destination stream.
             ZipOutputStream(object : java.io.FilterOutputStream(output) {
                 override fun close() = flush()
@@ -130,10 +134,28 @@ internal object RawTrafficArchive {
                     }
                 }
                 streams.values.forEach { stream -> entry(stream.name) { sink -> stream.file.inputStream().use { it.copyTo(sink) } } }
+                extraEntries.forEach { (name, source) -> entry(name) { sink ->
+                    ZstdOutputStreamNoFinalizer(sink, RawTraffic.COMPRESSION_LEVEL).use { compressed ->
+                        source.inputStream().use { it.copyTo(compressed) }
+                    }
+                } }
             }
         } finally {
             outputs.values.forEach { runCatching { it.close() } }
             directory.deleteRecursively()
         }
+    }
+}
+
+/** Attachment names are ZIP-relative paths; files remain owned by the caller. */
+internal fun archiveAttachmentEntries(attachments: Map<String, File>, reservedNames: Collection<String>): List<Pair<String, File>> {
+    val names = reservedNames.toMutableSet()
+    return attachments.map { (name, file) ->
+        require(name.split('/').all { it != "." && it != ".." && it.matches(Regex("[A-Za-z0-9._-]+")) }) {
+            "Invalid archive attachment name"
+        }
+        val entryName = "$name.zst"
+        require(names.add(entryName)) { "Archive attachment name collides with an existing entry" }
+        entryName to file
     }
 }

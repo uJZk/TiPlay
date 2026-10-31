@@ -78,12 +78,35 @@ full Debug text lives in `android/log`. Legacy static device dumps are omitted.
 
 Both Standard TXT and Debug ZIP reports include the last retained Java crash record
 and, on Android 11+, up to three recent exits for TiPlay's own package. Exit entries
-contain numeric reason/status, age, importance and memory values; descriptions,
-traces and process-state blobs are not read. Older Android versions and unavailable
+contain numeric reason/status, age, importance and memory values; descriptions
+and process-state blobs are not read. Older Android versions and unavailable
 exit history are marked explicitly. These records may predate the current session;
 compare their age with the connection timeline before attributing a failure to a
 crash, memory pressure or a user-requested stop. Crash text uses the existing
 redaction policy even in Debug reports. Collection runs during background export.
+
+<a id="native-crash-traces"></a>
+
+On Android 12+, explicit Debug exports also request the system-retained native
+tombstone for the newest native crash of TiPlay's main process among those three
+exits. This uses `ApplicationExitInfo.getTraceInputStream()` without root or ADB.
+The system may have evicted the trace or the device may not provide it; export
+records that outcome rather than treating an absent trace as proof of no crash.
+The expected native tombstone format is a binary protobuf. Android can instead
+return an earlier retained ANR trace; export preserves the bytes without format
+validation. Decode and match the PID/time to the selected exit before treating
+it as this crash's stack. Native thread backtraces, module offsets and Build IDs
+help identify the faulting library;
+source line resolution may additionally require the matching unstripped build.
+Historical tombstones can predate the installed APK, so match Build IDs rather
+than assuming they describe the current binaries.
+
+Only a complete trace up to 8 MiB is included; empty, oversized or unreadable
+traces are omitted with a status. This bounded collection happens off-thread at
+export, adds no native crash handler and does not change media transport. The
+trace can contain memory, registers, paths and device details and is unredacted;
+it is included only in explicit Debug ZIPs. Standard TXT does not read it. Temporary
+collection files are removed after archive preparation, including failed exports.
 
 Raw capture covers iPhone TCP control/encrypted protocol, video, audio, timing, events
 and iAP; RFCOMM; browser HTTP headers/query/body before parsing, including rejected
@@ -189,6 +212,9 @@ as a **STORED-only container**; all compressed content uses Zstandard:
   compressed at Zstandard level 3.
 - `capture.txt.zst`: format instructions and current-process capture integrity,
   compressed at Zstandard level 3.
+- `native-crash/info.txt.zst`: native trace availability and numeric exit identity.
+- `native-crash/trace.bin.zst`: complete system-provided trace bytes when available
+  and within the size limit; native tombstone protobuf is expected but not validated.
 - `captures/raw-traffic-<process-id>.tsv.zst`: current and retained process journals,
   copied unchanged, without splitting/decompressing/recompressing media.
 
@@ -646,11 +672,23 @@ throughput or browser consumption.
 | `authenticated`, `wifiConfigs`, `startRequests` | Bluetooth authentication and sent configuration/start messages; sending does not prove iPhone acceptance. |
 | `wireless endpoint`, address-family flags | Selected interface family, listener port, channel and security; address literals are omitted. |
 | `bonjourAdded`, `bonjourResolved`, `bonjourAddressMismatch` | Observed control-service discovery/resolution. Zero does not prove that no multicast packets arrived. |
+| `wireless bonjour: mdns startup`, `family`, `stage`, `state`, `elapsedMs` | Local Bonjour creation, listener and registration progress; completed phases report elapsed time, not iPhone discovery or acceptance. |
 | `control probe stage`, `lastProbe` | TCP connect, request sent and response outcome; failures retain the last stage and exception class. |
 | `airplay TCP accepted`, safe request/response milestones | Incoming TCP and protocol progress; TCP alone proves neither selected-iPhone identity nor successful CarPlay. |
 | `sessionActive`, `waitingFor` | Established session and the next missing milestone; session establishment alone does not prove rendered video. |
 
 With authentication/start sent but no discovery or incoming TCP, check Wi-Fi association, multicast and matching address-family reachability. A connect failure points to TCP reachability; a timeout after `REQUEST_SENT` means the endpoint accepted TCP but returned no usable response in time. An iPhone Wi-Fi checkmark is not required for normal wireless CarPlay. Android hotspot client APIs cannot conclusively establish legacy-client association; logs preserve unknown/not-exposed rather than guessing.
+
+Bonjour supplies JmDNS with the existing numeric bind address and cached
+`carplay-...` hostname, retaining IPv6 scope. This avoids the address hostname
+lookup during JmDNS creation; listener and registration lifecycle remain
+synchronous. Startup records use `stage=create|listener|register` and
+`state=starting|ready|failed`; completed or failed stages report `elapsedMs`, and
+failures retain only the exception class. Standard logs retain these records.
+The observed 26.532-second wait was not divided into these stages, so the
+hostname change is a candidate reverse-DNS workaround rather than an established
+cause or a verified vehicle improvement. These startup observations do not
+identify the native SIGSEGV fault.
 
 After Bluetooth handoff, the 45-second watchdog requires a rendered frame before retaining a session without tunneled iAP2. `STEP handoff/fallback` retains Bluetooth control after proven video; `STEP handoff/complete` releases it once the tunnel is ready. Fallback alone does not establish authenticated-tunnel saved-history proof.
 

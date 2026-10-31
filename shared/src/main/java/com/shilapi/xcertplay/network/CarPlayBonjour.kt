@@ -129,11 +129,43 @@ object CarPlayBonjourProtocol {
     }
 }
 
+/** JmDNS 3.6.3 calls getHostName() even when its instance name is supplied. */
+internal fun namedMdnsAddress(address: InetAddress, hostname: String): InetAddress =
+    if (address is Inet6Address) {
+        address.scopedInterface?.let { Inet6Address.getByAddress(hostname, address.address, it) }
+            ?: Inet6Address.getByAddress(hostname, address.address, address.scopeId)
+    } else {
+        InetAddress.getByAddress(hostname, address.address)
+    }
+
+/** Startup diagnostics are best effort and never change the operation or its exception. */
+internal fun <T> mdnsStartupPhase(
+    address: InetAddress,
+    stage: String,
+    diagnostic: (String) -> Unit,
+    operation: () -> T,
+): T {
+    val prefix = "mdns startup family=${if (address is Inet4Address) "IPv4" else "IPv6"} stage=$stage"
+    fun record(detail: String) { runCatching { diagnostic("$prefix $detail") } }
+    record("state=starting")
+    val startedAt = System.nanoTime()
+    try {
+        val result = operation()
+        record("state=ready elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)}")
+        return result
+    } catch (error: Exception) {
+        record("state=failed elapsedMs=${TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)} " +
+            "failureClass=${error.javaClass.simpleName}")
+        throw error
+    }
+}
+
 /**
  * Publishes the accessory AirPlay service and discovers the iPhone's CarPlay control service.
  *
  * The NSD callbacks only enqueue work. Resolution, probing, and [onEvent] all run on the worker
  * started by [start], so a blocking consumer callback never runs on the caller or main thread.
+ * [onStartupDiagnostic] runs synchronously during interface mDNS startup and must not block.
  */
 class CarPlayBonjour(
     context: Context,
@@ -143,6 +175,7 @@ class CarPlayBonjour(
     private val useInterfaceMdns: Boolean = false,
     private val onEvent: (CarPlayBonjourEvent) -> Unit = {},
     additionalAddresses: List<InetAddress> = emptyList(),
+    private val onStartupDiagnostic: (String) -> Unit = {},
 ) : Closeable {
     // Interface-bound mDNS does not need Android's NSD service, which may be absent on some head units.
     private val nsdManager: NsdManager by lazy {
@@ -280,14 +313,21 @@ class CarPlayBonjour(
                         "Interface mDNS requires a local advertised address"
                     }
                     // A JmDNS instance joins only its address family's multicast group.
+                    val hostname = "carplay-${config.deviceId.replace(":", "")}"
                     for (address in advertisedAddresses) {
-                        val dns = JmDNS.create(address, "carplay-${config.deviceId.replace(":", "")}")
+                        val dns = mdnsStartupPhase(address, "create", onStartupDiagnostic) {
+                            JmDNS.create(namedMdnsAddress(address, hostname), hostname)
+                        }
                         interfaceMdns.add(dns)
-                        dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
-                        dns.registerService(ServiceInfo.create(
-                            "$AIRPLAY_SERVICE_TYPE.local.", config.deviceName, config.port,
-                            0, 0, CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
-                        ))
+                        mdnsStartupPhase(address, "listener", onStartupDiagnostic) {
+                            dns.addServiceListener("$CARPLAY_CONTROL_SERVICE_TYPE.local.", interfaceListener)
+                        }
+                        mdnsStartupPhase(address, "register", onStartupDiagnostic) {
+                            dns.registerService(ServiceInfo.create(
+                                "$AIRPLAY_SERVICE_TYPE.local.", config.deviceName, config.port,
+                                0, 0, CarPlayBonjourProtocol.airPlayTxtRecords(config, identity),
+                            ))
+                        }
                     }
                     publishedFamilies = advertisedAddresses.joinToString(",") {
                         if (it is Inet4Address) "IPv4" else "IPv6"

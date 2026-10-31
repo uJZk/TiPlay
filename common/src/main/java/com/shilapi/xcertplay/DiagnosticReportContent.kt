@@ -25,13 +25,20 @@ internal class DiagnosticReportContent(
         fun prepare(context: Context, fileName: String, text: String, debug: Boolean): DiagnosticReportContent {
             if (!debug) return DiagnosticReportContent(fileName, text)
             val archive = File.createTempFile("diagnostic-export-", ".zip", context.cacheDir)
+            var nativeCrash: NativeCrashDiagnostics.Capture? = null
             try {
+                val capture = NativeCrashDiagnostics.collect(context)
+                nativeCrash = capture
+                val report = text + "\n--- Native crash trace ---\n" + capture.summary + "\n"
                 archive.outputStream().buffered().use {
-                    RawTraffic.writeArchive(it, fileName.removeSuffix(".zip") + ".txt", text, context.cacheDir)
+                    RawTraffic.writeArchive(it, fileName.removeSuffix(".zip") + ".txt", report, context.cacheDir,
+                        capture.attachments)
                 }
                 return DiagnosticReportContent(fileName, text, archive)
             } catch (error: Exception) {
                 archive.delete(); throw error
+            } finally {
+                nativeCrash?.close()
             }
         }
     }

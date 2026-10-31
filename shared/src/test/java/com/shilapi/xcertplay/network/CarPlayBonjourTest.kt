@@ -3,11 +3,85 @@ package com.shilapi.xcertplay.network
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
+import java.io.IOException
+import java.net.Inet4Address
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.NetworkInterface
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNotNull
 import org.junit.Test
 
 class CarPlayBonjourTest {
+    @Test fun namedMdnsAddressesCacheTheInstanceNameAndPreserveBindingBytesAndNumericScope() {
+        val hostname = "carplay-020000000002"
+        val ipv4 = InetAddress.getByAddress("previous-name", byteArrayOf(192.toByte(), 0, 2, 10))
+        val named4 = namedMdnsAddress(ipv4, hostname)
+        assertTrue(named4 is Inet4Address)
+        assertArrayEquals(ipv4.address, named4.address)
+        assertEquals(hostname, named4.hostName)
+        assertEquals("previous-name", ipv4.hostName)
+
+        val ipv6 = Inet6Address.getByAddress("previous-name", InetAddress.getByName("fe80::1234").address, 7)
+        val named6 = namedMdnsAddress(ipv6, hostname) as Inet6Address
+        assertArrayEquals(ipv6.address, named6.address)
+        assertEquals(ipv6.scopeId, named6.scopeId)
+        assertEquals(ipv6.scopedInterface, named6.scopedInterface)
+        assertEquals(hostname, named6.hostName)
+        assertEquals("previous-name", ipv6.hostName)
+    }
+
+    @Test fun namedMdnsIpv6AddressPreservesTheScopedInterface() {
+        val loopback = InetAddress.getByName("::1")
+        val network = NetworkInterface.getByInetAddress(loopback)
+        assumeNotNull(network)
+        val scoped = Inet6Address.getByAddress(null, loopback.address, network)
+        val named = namedMdnsAddress(scoped, "carplay-020000000002") as Inet6Address
+        assertArrayEquals(scoped.address, named.address)
+        assertEquals(scoped.scopeId, named.scopeId)
+        assertEquals(scoped.scopedInterface, named.scopedInterface)
+        assertEquals("carplay-020000000002", named.hostName)
+    }
+
+    @Test fun startupPhaseRecordsBeforeTheOperationAndReportsOnlyFamilyStageAndElapsedTime() {
+        val records = mutableListOf<String>()
+        val result = mdnsStartupPhase(InetAddress.getByName("192.0.2.10"), "create", records::add) {
+            assertEquals(listOf("mdns startup family=IPv4 stage=create state=starting"), records)
+            "created"
+        }
+        assertEquals("created", result)
+        assertEquals(2, records.size)
+        assertTrue(records.last().matches(Regex("mdns startup family=IPv4 stage=create state=ready elapsedMs=\\d+")))
+    }
+
+    @Test fun failedStartupPhasePreservesTheFailureAndOmitsItsSensitiveMessage() {
+        val records = mutableListOf<String>()
+        val failure = IOException("Private phone fe80::1234")
+        val thrown = assertThrows(IOException::class.java) {
+            mdnsStartupPhase(InetAddress.getByName("fe80::1234"), "register", records::add) { throw failure }
+        }
+        assertSame(failure, thrown)
+        assertEquals("mdns startup family=IPv6 stage=register state=starting", records.first())
+        assertTrue(records.last().matches(Regex("mdns startup family=IPv6 stage=register state=failed elapsedMs=\\d+ failureClass=IOException")))
+        assertFalse(records.any { "Private phone" in it || "fe80" in it })
+    }
+
+    @Test fun startupDiagnosticFailureCannotChangeTheOperationResultOrOriginalFailure() {
+        val address = InetAddress.getByName("192.0.2.10")
+        val diagnostic: (String) -> Unit = { throw IllegalStateException("log unavailable") }
+        assertEquals("registered", mdnsStartupPhase(address, "listener", diagnostic) { "registered" })
+        val failure = IOException("register failed")
+        val thrown = assertThrows(IOException::class.java) {
+            mdnsStartupPhase(address, "register", diagnostic) { throw failure }
+        }
+        assertSame(failure, thrown)
+    }
+
     @Test fun discoveryDiagnosticsKeepOutcomeWithoutPhoneIdentifiers() {
         val endpoint = CarPlayBonjourEndpoint("Private phone", "192.168.43.25", 7000, "AA:BB:CC:DD:EE:FF")
         assertEquals("control resolved family=IPv4 port=7000", CarPlayBonjourEvent.Resolved(endpoint).diagnosticSummary())

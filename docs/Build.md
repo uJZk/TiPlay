@@ -568,38 +568,28 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Published [beta.35](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.35),
-code **77**, browser **v110**, at **2026-10-31 05:57:48 UTC** from
-`e1c09135fc57b461c561a9e8b1043ce3899d33f6`. It adds capability-discovery retry,
-paired-only car Bluetooth selection and redacted crash/bounded process-exit exports.
-First pairing starts on the car; selection needs no companion-device authorization.
-Existing authorized automatic connection/disconnection remains.
+**Beta.36/code78, browser v111, is a release candidate; signing, publication and
+independent artifact checks are pending.** It adds bounded system native-crash
+trace collection to explicit Debug ZIP exports and a named-bind-address Bonjour
+startup workaround with creation/listener/registration timings. Trace bytes are
+preserved without format validation; expected tombstone protobuf and retained
+ANR traces must be distinguished before identifying a fault. SIGSEGV remains
+unresolved. The observed 26.532-second Bonjour wait has no phase breakdown;
+reverse-DNS causation and vehicle improvement remain unverified.
 
-The current AAR, RTP video, native Opus audio and Bluetooth/SCO paths are unchanged;
-upstream environment, compatibility-patch and warning-policy reuse applies to future
-AAR builds. Full Android CI was skipped and the local complete Android run stopped
-at the user's explicit request. Passed: 675 web tests, 76 build/native Python checks,
-nine release-draft checks, two site-deployment checks, public-tree/cache checks and
-AAR/RTP-audio verification.
+Browser/cache v111 refreshes application version metadata only. Audio trimming
+remains paused; the AAR, native libraries, RTP video, native Opus audio and
+Bluetooth/SCO paths are unchanged. At the user's request, full Android CI is
+skipped. Fresh focused checks pass: 86 Android (32 shared + 54 common), 67 browser,
+nine release-draft, two site-deployment and public-tree/cache checks. Local mobile
+Debug lint/assembly, signed Release, Pages and independent artifact checks are pending.
 
-[Signed run 41173911049](https://github.com/uJZk/TiPlay/actions/runs/41173911049)
-and [Pages run 41173913240](https://github.com/uJZk/TiPlay/actions/runs/41173913240)
-succeeded from that commit. Independent candidate checks confirm non-debug
-`com.ujzk.tiplay`, signer continuity, both runtime identity files and all 51 native
-libraries byte-identical to beta.34, 25 ELF64 libraries and APK ZIP aligned to 16 KiB,
-and source ZIP byte-identical to the committed archive.
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.35.apk` | 114,397,407 | `d4e6f98c344dbbf31aacd556b1115e3ace67f4afbf508188bb97e1d2e7e20b44` |
-| `TiPlay-0.2.20-beta.35-source.zip` | 70,083,884 | `66546181c0b354ef95706452d0897a390ca8811c08dc7c5fd93d0c410570a00d` |
-| `SHA256SUMS.txt` | 191 | `80d1ee0e8fd4485ffd9e35524954d7c5b69c4594068e62ca1d464f82518182ed` |
-
-All 226 [public page](https://ujzk.github.io/TiPlay/) files (37,805,124 bytes) match the assembly; 156 MIME checks pass,
-without redirects, with v110/beta.35 metadata and `/webrtc/` returning 404.
-All three Release assets were independently re-downloaded through unauthenticated
-URLs and match the hashes above; the tag resolves to the build commit. Later documentation-only
-commits do not change release provenance. Physical vehicle acceptance remains open.
+The preceding [beta.35/code77](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.35),
+browser v110, was published at 2026-10-31 05:57:48 UTC from
+`e1c09135fc57b461c561a9e8b1043ce3899d33f6`. Its three attachments and 226 public
+files were independently verified. Full commit, workflow, hash, alignment and
+runtime evidence remains in the [frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
+Physical vehicle acceptance remains open.
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

@@ -1659,6 +1659,7 @@ class CarPlayController(
                 useInterfaceMdns = true,
                 onEvent = { event -> debugLog("wireless bonjour: ${event.diagnosticSummary()}") },
                 additionalAddresses = hotspotInfo.hostAddresses.filter { it != hostAddress },
+                onStartupDiagnostic = { message -> debugLog("wireless bonjour: $message") },
             )
             synchronized(wirelessResourceLock) {
                 if (isStaleWirelessRun(generation)) return

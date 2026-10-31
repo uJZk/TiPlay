@@ -15,6 +15,14 @@ its log dialog. Minimize hides the dialog while recording continues. Advanced
 settings provides a Debug switch and View logs button. Enabling does not open the
 dialog. Both modes share the same bottom button bar.
 
+On Android 12+, Debug exports also request the newest retained native crash trace
+for TiPlay's main process among its three recent exits. The complete system
+trace, when available and no larger than 8 MiB, is included unredacted and may
+contain memory, registers, paths and device details. Collection uses Android's
+own-app exit API without root, ADB or a new crash handler. Standard TXT does not
+read this trace. Temporary collection files are deleted after ZIP preparation;
+the exported report remains until deleted. See [Diagnostics](Diagnostics.md).
+
 Ordinary logs offer Save/Share/Close. Debug offers End and export/End and share/Discard/
 Minimize. Ending, Discard or turning off the switch stops capture and clears raw journals.
 Export/share creates an independent file before cleanup; failed writes retain the

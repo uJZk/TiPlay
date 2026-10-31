@@ -10,7 +10,10 @@ import java.util.zip.ZipOutputStream
 
 /** Zstandard compresses during capture. ZIP is only a STORED packaging container. */
 internal object CompressedTrafficArchive {
-    fun write(output: OutputStream, logName: String, report: String, snapshots: List<RawTraffic.Snapshot>, root: File) {
+    fun write(output: OutputStream, logName: String, report: String, snapshots: List<RawTraffic.Snapshot>, root: File,
+              attachments: Map<String, File> = emptyMap()) {
+        val extraEntries = archiveAttachmentEntries(attachments,
+            listOf("$logName.zst", "capture.txt.zst") + snapshots.map { "captures/${it.name}" })
         val directory = java.nio.file.Files.createTempDirectory(root.toPath(), "traffic-export-").toFile()
         try {
             val entries = mutableListOf<Pair<String, File>>()
@@ -31,6 +34,13 @@ internal object CompressedTrafficArchive {
                 val copy = File(directory, "capture-$index.zst")
                 copy.outputStream().buffered().use { destination -> snapshot.open().use { it.copyTo(destination) } }
                 entries.add("captures/${snapshot.name}" to copy)
+            }
+            extraEntries.forEachIndexed { index, (name, source) ->
+                val copy = File(directory, "attachment-$index.zst")
+                ZstdOutputStreamNoFinalizer(copy.outputStream(), RawTraffic.COMPRESSION_LEVEL).use { compressed ->
+                    source.inputStream().use { it.copyTo(compressed) }
+                }
+                entries.add(name to copy)
             }
             ZipOutputStream(object : FilterOutputStream(output) {
                 override fun close() = flush()

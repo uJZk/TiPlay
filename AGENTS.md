@@ -38,6 +38,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment).
+Beta.36 adds [native-crash evidence](docs/Diagnostics.md#native-crash-traces) and
+[Bonjour startup timing](docs/Diagnostics.md#reading-wireless-startup-evidence);
+neither establishes a SIGSEGV fix or verified vehicle startup improvement.
 Keep source checks, published artifact
 identity and vehicle evidence separate. Preserve strict source/profile/level/mode
 admission, original compressed frames, bounded selection and per-instance callback

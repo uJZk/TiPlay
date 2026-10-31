@@ -325,7 +325,8 @@ object RawTraffic {
                 "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n", compressed, target?.name ?: "raw-traffic.tsv.zst")
     }
 
-    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File) {
+    fun writeArchive(output: OutputStream, logName: String, report: String, temporaryRoot: File,
+                     attachments: Map<String, File> = emptyMap()) {
         val (compressedExport, snapshots) = synchronized(lock) {
             val selected = if (!compressed) listOf(snapshot()) else {
                 val retained = file?.parentFile?.listFiles()?.filter {
@@ -341,8 +342,8 @@ object RawTraffic {
         }
         try {
             if (compressedExport) {
-                CompressedTrafficArchive.write(output, logName, report, snapshots, temporaryRoot)
-            } else snapshots.firstOrNull()?.let { RawTrafficArchive.write(output, logName, report, it, temporaryRoot) }
+                CompressedTrafficArchive.write(output, logName, report, snapshots, temporaryRoot, attachments)
+            } else snapshots.firstOrNull()?.let { RawTrafficArchive.write(output, logName, report, it, temporaryRoot, attachments) }
         } finally { snapshots.forEach { it.close() } }
     }
 }

@@ -25,8 +25,11 @@ class CompressedTrafficTest {
             assertArrayEquals(payload, captured)
             assertFalse(live.contains("android-audio"))
             val before = raw.readBytes()
+            val attachmentBytes = byteArrayOf(0, 1, 2, -1, 0, 99)
+            val attachment = root.resolve("tombstone.pb").apply { writeBytes(attachmentBytes) }
             val archive = ByteArrayOutputStream()
-            RawTraffic.writeArchive(archive, "report.txt", "Android and webpage logs", root)
+            RawTraffic.writeArchive(archive, "report.txt", "Android and webpage logs", root,
+                mapOf("native-crash/tombstone.pb" to attachment))
             ZipInputStream(archive.toByteArray().inputStream()).use { zip ->
                 var count = 0
                 while (true) {
@@ -34,11 +37,15 @@ class CompressedTrafficTest {
                     assertEquals(ZipEntry.STORED, entry.method)
                     val bytes = zip.readBytes()
                     if (entry.name.startsWith("captures/")) assertArrayEquals(before, bytes)
+                    else if (entry.name == "native-crash/tombstone.pb.zst") {
+                        assertArrayEquals(attachmentBytes, ZstdInputStream(bytes.inputStream()).use { it.readBytes() })
+                    }
                     else assertTrue(ZstdInputStream(bytes.inputStream()).use { it.readBytes() }.isNotEmpty())
                     count++
                 }
-                assertEquals(3, count)
+                assertEquals(4, count)
             }
+            assertArrayEquals(attachmentBytes, attachment.readBytes())
             assertTrue(RawTraffic.enabled)
         } finally { RawTraffic.configure(raw, false); root.deleteRecursively() }
     }

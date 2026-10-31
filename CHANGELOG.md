@@ -4,10 +4,23 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.36
+
+Version code 78 and browser revision v111. Release checks and publication are
+tracked in [Build](docs/Build.md#current-browser-deployment).
+
+- Include the system-retained native-crash trace in explicit Debug ZIP exports on Android 12+, when available. Preserve complete bytes up to 8 MiB and report unavailable/oversized traces; Standard TXT does not read them. The expected tombstone protobuf format is not validated, and a retained ANR trace must be identified before attributing it to a native crash.
+- Avoid a reverse-DNS lookup during Bonjour startup by naming the existing bind address explicitly. Record creation, listener setup and registration timings to isolate remaining startup waits.
+- Refresh browser/cache revision v111 for the application version metadata. Keep playback behavior, native libraries, RTP video, native Opus audio, Bluetooth microphone and SCO keepalive unchanged. Audio trimming remains paused.
+
+SIGSEGV is not fixed by this diagnostic change. The Bonjour change is a candidate
+workaround for the observed 26.532-second startup wait and still needs vehicle
+verification. Full Android CI is skipped at the user's request.
+
 ## 0.2.20-beta.35
 
-Version code 77 and browser revision v110. Release checks and publication are
-tracked in [Build](docs/Build.md#current-browser-deployment).
+Version code 77 and browser revision v110. Published evidence is retained in
+[the beta.35 build record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
 
 - Retry failed phone capability discovery instead of authenticating a permanently video-less browser connection.
 - Select car Bluetooth from already paired devices. First pairing starts on the car; saving a selection does not require Companion Device authorization. Preserve supported automatic connection and disconnection for existing authorized devices.

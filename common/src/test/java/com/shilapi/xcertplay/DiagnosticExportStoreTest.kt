@@ -77,7 +77,9 @@ class DiagnosticExportStoreTest {
                 java.util.zip.ZipInputStream(first.inputStream()).use { zip ->
                     while (true) { val entry = zip.nextEntry ?: break; entries[entry.name] = zip.readBytes() }
                 }
-                assertEquals("summary\n", entries.getValue("TiPlay-test.txt").toString(Charsets.UTF_8))
+                val report = entries.getValue("TiPlay-test.txt").toString(Charsets.UTF_8)
+                assertTrue(report.startsWith("summary\n"))
+                assertTrue(report.contains("Native crash trace status=unsupported"))
                 assertArrayEquals(byteArrayOf(0, 1, 2, -1), entries.values.single { it.contentEquals(byteArrayOf(0, 1, 2, -1)) })
                 assertArrayEquals(byteArrayOf(0, 10, 11, 12), entries.entries.single { it.key.endsWith(".pcm") }.value)
                 assertFalse(entries.getValue("streams.tsv").toString(Charsets.UTF_8).contains(java.util.Base64.getEncoder().encodeToString("later".toByteArray())))

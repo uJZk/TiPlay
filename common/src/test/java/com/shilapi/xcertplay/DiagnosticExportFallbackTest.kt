@@ -78,7 +78,9 @@ class DiagnosticExportFallbackTest {
             assertArrayEquals(bytes, context.contentResolver.openInputStream(second.uri)!!.use { it.readBytes() })
             java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
                 assertEquals("TiPlay-test.txt", zip.nextEntry.name)
-                assertEquals("summary", zip.readBytes().toString(Charsets.UTF_8))
+                val report = zip.readBytes().toString(Charsets.UTF_8)
+                assertTrue(report.startsWith("summary\n"))
+                assertTrue(report.contains("Native crash trace status=unsupported"))
             }
         }
     }
