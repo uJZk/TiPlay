@@ -568,28 +568,42 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-**Beta.36/code78, browser v111, is a release candidate; signing, publication and
-independent artifact checks are pending.** It adds bounded system native-crash
-trace collection to explicit Debug ZIP exports and a named-bind-address Bonjour
-startup workaround with creation/listener/registration timings. Trace bytes are
-preserved without format validation; expected tombstone protobuf and retained
-ANR traces must be distinguished before identifying a fault. SIGSEGV remains
-unresolved. The observed 26.532-second Bonjour wait has no phase breakdown;
-reverse-DNS causation and vehicle improvement remain unverified.
+Published [beta.36](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.36),
+code **78**, browser **v111**, at **2026-10-31 09:17:40 UTC** from
+`c1ad4b3259dbdcf7c11929a45285d143c71d02e4`. It adds bounded Debug native-crash
+traces and named-bind-address Bonjour initialization with phase timing. Trace
+collection/interpretation remains unverified on hardware; SIGSEGV is unresolved.
+The observed 26.532-second wait's cause and vehicle improvement remain unverified.
+Audio trimming stays paused; the AAR, RTP video, native Opus audio and Bluetooth/SCO
+paths are unchanged. Browser/cache v111 refreshes application version metadata only.
 
-Browser/cache v111 refreshes application version metadata only. Audio trimming
-remains paused; the AAR, native libraries, RTP video, native Opus audio and
-Bluetooth/SCO paths are unchanged. At the user's request, full Android CI is
-skipped. Fresh focused checks pass: 86 Android (32 shared + 54 common), 67 browser,
-nine release-draft, two site-deployment and public-tree/cache checks. Local mobile
-Debug lint/assembly, signed Release, Pages and independent artifact checks are pending.
+Full Android CI was skipped at the user's request. Passed: 86 focused Android,
+67 focused browser, nine release-draft, two site-deployment and public-tree/cache
+checks, plus mobile Debug lint/assembly.
+[Signed run 41187302760](https://github.com/uJZk/TiPlay/actions/runs/41187302760)
+and [Pages run 41188103364](https://github.com/uJZk/TiPlay/actions/runs/41188103364)
+succeeded from that commit. Independent checks verify non-debug packaging,
+signer continuity, both runtime identity files and all 51 native libraries
+unchanged from beta.35, 25 ELF64 libraries and 51 native ZIP entries aligned to
+16 KiB, pinned AAR provenance and byte-exact committed source archive.
+All three attachments were publicly re-downloaded and match these hashes;
+the tag points to the build commit.
 
-The preceding [beta.35/code77](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.35),
-browser v110, was published at 2026-10-31 05:57:48 UTC from
-`e1c09135fc57b461c561a9e8b1043ce3899d33f6`. Its three attachments and 226 public
-files were independently verified. Full commit, workflow, hash, alignment and
-runtime evidence remains in the [frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
-Physical vehicle acceptance remains open.
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.36.apk` | 114,413,791 | `75b9e71a8e575bc61721e46ffb14bc1bfa6ee6d17e38ab1bb9bcb32dfe542687` |
+| `TiPlay-0.2.20-beta.36-source.zip` | 70,098,873 | `83d6c86c7e4955e609ed09c2f39b782a215ebea070b1eb92b6c30cdff92c1a4f` |
+| `SHA256SUMS.txt` | 191 | `d656d3a13335667b41f7d0ba5a604076461bb51e9b6c5e548b9bd1aebec4fc8e` |
+
+All 226 [public page](https://ujzk.github.io/TiPlay/) files (37,805,124 bytes) match
+the assembly. All 156 MIME checks, v111/beta.36 metadata, eight download languages and legacy
+`/webrtc/` 404 checks pass. Later documentation-only commits do not change these
+release inputs. Physical vehicle acceptance remains open.
+
+The previous [beta.35/code77](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.35),
+browser v110, was published at 2026-10-31 05:57:48 UTC. Its complete build,
+workflow, hash and independent verification evidence remains in the
+[frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

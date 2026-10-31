@@ -7,24 +7,33 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.36/code78, browser v111, is the current release candidate.** It adds
+**Beta.36/code78, browser v111, is published** from
+`c1ad4b3259dbdcf7c11929a45285d143c71d02e4`. It adds
 system native-crash trace collection in explicit Debug ZIPs and avoids an
 address hostname lookup during Bonjour creation while recording each startup
 phase. Trace bytes are retained without protobuf-format validation; a historical
 ANR trace must not be attributed to the native crash. SIGSEGV remains unresolved,
 and the proposed workaround for the observed 26.532-second Bonjour wait has not
-been confirmed on the vehicle.
+been confirmed on the vehicle. Native-crash trace collection and interpretation
+have not been verified on hardware.
 
 Full Android CI is skipped at the user's explicit request. Fresh focused Android
 checks pass all 86 cases: 32 shared and 54 common, covering 20 Bonjour and 66
 diagnostics cases. All 67 focused browser checks pass: 31 page, 26 browser-diagnostic
 and 10 video-diagnostic cases. Nine release-draft checks, two site-deployment checks
-and public-tree/cache checks pass. Local mobile Debug lint/assembly, signed
-packaging, Pages and independent published-byte verification remain pending.
+and public-tree/cache checks pass. Local mobile Debug lint/assembly passed.
+Signed Release packaging and Pages succeeded from the build commit. Independent
+checks confirm signer/runtime continuity, all 51 native libraries unchanged from
+beta.35, 16 KiB alignment, pinned AAR provenance and the exact committed source
+archive. All three public attachments were independently re-downloaded and match
+their hashes; the tag points to the build commit. All 226 public files
+(37,805,124 bytes), 156 MIME checks, eight language pages, version metadata and
+legacy `/webrtc/` 404 checks pass.
 Browser/cache v111 only refreshes application version metadata. Audio trimming
 remains paused; the AAR, native libraries, RTP video, native Opus audio and
 Bluetooth/SCO paths are unchanged. [Build](Build.md#current-browser-deployment)
-records candidate progress separately from published artifacts and vehicle evidence.
+records workflows and hashes separately from vehicle evidence. Later documentation-only
+commits do not change release inputs.
 
 Use the [Android workflow](../.github/workflows/android.yml) for the source revision
 under test. Synthetic caption and player tests
