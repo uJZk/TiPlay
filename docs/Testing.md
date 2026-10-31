@@ -5,11 +5,13 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 Release-specific test counts and public artifact checks are evidence for their
 recorded source, not interchangeable coverage counts for later engines.
 
-## Unreleased robustness fixes
+## Beta.37 release preparation
 
 The [19-item remediation](Robustness.md) follows audit baseline `42db8dca`.
-Browser/cache v112 is prepared; beta.36/code78 and public browser v111 remain the
-published product. Original-codec RTP video, native Opus, fallback audio,
+It is being prepared for beta.37/code79 with browser/cache v112; beta.36/code78
+and public browser v111 remain the last verified published product. Signed
+packaging, Pages deployment and independent public-artifact checks for beta.37
+are pending. Original-codec RTP video, native Opus, fallback audio,
 Bluetooth microphones and SCO silence keepalive remain. Audio trimming is paused;
 committed native binaries and AARs are unchanged.
 
@@ -29,8 +31,9 @@ from a signed Release APK, FULL metadata ZIP fallback and durable archive upload
 
 Actual Chromium 151 checks pass for the two-page legacy service-worker update
 and main/Worker Processor-to-Canvas local-track paths. Public-tree/cache checks,
-workflow syntax, diff whitespace and documentation limits pass. Remote CI and
-publication were not dispatched. Full future WebRTC/audio producer builds and
+workflow syntax, diff whitespace and documentation limits pass. Full remote CI
+is skipped for this release at the user's request; its existing signed-packaging
+and Pages workflows remain separate required delivery steps. Full future WebRTC/audio producer builds and
 durable symbol upload remain separate workflow validation. Historical SIGSEGV
 attribution, vehicle reconnect behavior, SCO/focus recovery and graphics/device
 failures still need matching hardware evidence.

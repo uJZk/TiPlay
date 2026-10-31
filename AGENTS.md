@@ -40,6 +40,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 Resume current release work at [Build](docs/Build.md#current-browser-deployment).
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
+Beta.37/code79 with browser/cache v112 is in release preparation; local source
+checks have passed, while signed packaging, deployment and published-byte checks
+must be recorded in Build before treating that candidate as shipped.
 Beta.36 adds [native-crash evidence](docs/Diagnostics.md#native-crash-traces) and
 [Bonjour startup timing](docs/Diagnostics.md#reading-wireless-startup-evidence);
 neither establishes a SIGSEGV fix or verified vehicle startup improvement.

@@ -39,8 +39,10 @@ to prevent taking another application's call route.
 ## Remediation map
 
 The following 19 items have source fixes on top of beta.36 and pass the required
-source regression checks. Browser/cache v112 is prepared but not published. This
-is a source-work record, not a release or a claim of vehicle acceptance.
+source regression checks. They are being prepared as beta.37/code79 with
+browser/cache v112. Signed packaging, Pages deployment and public-artifact
+verification remain pending; beta.36 is still the last verified published
+release. This source-work record does not establish vehicle acceptance.
 
 | Audit | Boundary | Required behavior |
 | --- | --- | --- |
@@ -118,7 +120,9 @@ See [Testing](Testing.md) for reproducible source checks and their limits.
 
 Future WebRTC/audio producer rebuilds and authenticated durable symbol archives
 have not been executed for this source revision. No committed AAR or native
-binary was replaced, and no new APK, Pages deployment or remote CI was published.
+prebuilt binary was replaced. Beta.37 signed packaging, symbol-artifact delivery
+and Pages/public-byte verification are separate pending release checks. Full
+remote CI is skipped for this release at the user's request.
 
 The previous native SIGSEGV still lacks its matching native backtrace. These
 changes do not establish its cause or prove ARM64 vehicle continuity. Hardware
