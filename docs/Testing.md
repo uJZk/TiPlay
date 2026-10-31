@@ -7,7 +7,8 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.35/code77, browser v110, is the current release candidate.** It covers
+**Beta.35/code77, browser v110, is published.** Its build commit is
+`e1c09135fc57b461c561a9e8b1043ce3899d33f6`. It covers
 paired-only car Bluetooth selection with car-initiated first pairing, phone
 capability-discovery retry and redacted crash/process-exit exports. Existing
 authorized Bluetooth reconnection remains available. The pinned upstream WebRTC
@@ -15,13 +16,17 @@ build environment, compatibility patches and warning policy apply to future
 rebuilds; the committed AAR, native Opus/RTP audio, RTP video and Bluetooth/SCO
 microphone route remain unchanged.
 
-Full Android CI is skipped at the user's explicit request. The local complete
-Android run was stopped at that request. The candidate passes 675 web tests,
+Full Android CI was skipped at the user's explicit request. The local complete
+Android run was stopped at that request. The release source passes 675 web tests,
 76 build/native Python checks (24 + 52), nine release-draft checks, two
 site-deployment checks, public-tree/cache checks and AAR/RTP-audio verification.
-Signed packaging, Pages deployment and independent published-byte verification
-remain pending. [Build](Build.md#current-browser-deployment) records the candidate
-and will identify its final commit, workflow runs and artifacts.
+Signed Release packaging and Pages deployment succeeded from that build commit.
+Independent candidate checks verify signer/runtime continuity, unchanged native
+libraries, 16 KiB alignment and the exact committed source archive. All 226 public
+page files and 156 MIME checks pass. All three published attachments were independently
+re-downloaded and match their hashes. [Build](Build.md#current-browser-deployment) records
+the workflows, artifact identities and published-byte scope. Later documentation-only
+commits do not change those release inputs.
 
 Use the [Android workflow](../.github/workflows/android.yml) for the source revision
 under test. Synthetic caption and player tests
