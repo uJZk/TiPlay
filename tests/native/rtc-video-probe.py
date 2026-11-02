@@ -156,7 +156,7 @@ def native_structural_activation(result, events, patch_hash):
     if not matching_native_provenance(result.get("build", {}), patch_hash):
         reasons.append("custom-aar-provenance-missing-or-mismatched")
     observations = result.get("generationProofs", [])
-    if result.get("mode") in ("bundle", "bundle-video-anchor") and len(observations) != 3:
+    if result.get("mode") in ("bundle", "bundle-video-anchor", "permanent-stop") and len(observations) != (1 if result.get("mode") == "permanent-stop" else 3):
         reasons.append("generation-observations-missing")
     senders = [item.get("senderStatsFinal", {}) for item in observations]
     senders.append(result.get("senderStats", result.get("sender", {})))
@@ -238,7 +238,7 @@ def control_phase_observations(samples):
 
 
 def validate_final_rate_observations(result, args):
-    phase = "generation-3-measured" if args.mode in ("bundle", "bundle-video-anchor") else "measured"
+    phase = ("generation-1-measured" if args.mode == "permanent-stop" else "generation-3-measured") if args.mode in ("bundle", "bundle-video-anchor", "permanent-stop") else "measured"
     windows = [window for window in result["rateWindows"] if window["phase"] == phase]
     if (not any(w.get("sourceFramesDelta", 0) > 0 and w.get("sourceBytesDelta", 0) > 0 and w.get("bytesSentDelta", 0) > 0 for w in windows)
             or sum(w.get("sourceFramesDelta", 0) for w in windows) != args.frames
@@ -307,10 +307,10 @@ def build(args):
     print(json.dumps(report))
 
 
-def verify_queue_epoch_proof(value):
+def verify_queue_epoch_proof(value, replacements=3):
     """Validate only SDP/sender epoch evidence, not recovery or picture quality."""
-    if not isinstance(value, list) or len(value) != 7:
-        raise ValueError("Queue epoch proof needs an initial sender and three replacements")
+    if not isinstance(value, list) or len(value) != 1 + 2 * replacements:
+        raise ValueError("Queue epoch proof needs an initial sender and all requested replacements")
     observed = set()
     previous = None
     for i, item in enumerate(value):
@@ -363,15 +363,15 @@ def execute(args):
     (work / (label + ".json")).write_text(json.dumps(result, indent=2) + "\n")
     for name in ("offer.sdp", "answer.sdp"):
         run(adb + ["pull", DEVICE_DIR + "/" + name, work / name])
-    if args.mode in ("bundle", "bundle-video-anchor"):
-        for name in (f"bundle-{kind}-{i}.sdp" for i in range(3) for kind in ("offer", "answer")):
+    if args.mode in ("bundle", "bundle-video-anchor", "permanent-stop"):
+        for name in (f"bundle-{kind}-{i}.sdp" for i in range(1 if args.mode == "permanent-stop" else 3) for kind in ("offer", "answer")):
             run(adb + ["pull", DEVICE_DIR + "/" + name, work / name])
-        if args.mode == "bundle":
+        if args.mode in ("bundle", "permanent-stop"):
             run(adb + ["pull", DEVICE_DIR + "/pending-data-offer.sdp", work / "pending-data-offer.sdp"])
     print(json.dumps(result, indent=2))
     if args.expect_queue_epoch:
         try:
-            verify_queue_epoch_proof(result.get("queueEpochProof"))
+            verify_queue_epoch_proof(result.get("queueEpochProof"), 1 if args.mode == "permanent-stop" else 3)
         except ValueError as error:
             raise SystemExit(f"Queue epoch evidence failed: {error}") from error
     if args.expect_native_activation and not result["nativeStructuralActivation"]["verified"]:
@@ -415,24 +415,32 @@ def execute(args):
                 and result.get("rateWindows")):
             raise SystemExit("Requested source-rate inputs/measurement assertions failed; native activation is not verified")
         final_phase = validate_final_rate_observations(result, args)
-        if args.mode in ("bundle", "bundle-video-anchor"):
+        if args.mode in ("bundle", "bundle-video-anchor", "permanent-stop"):
+            replacements = 1 if args.mode == "permanent-stop" else 3
             negotiations = result["bundleNegotiations"]
-            checks = (len(negotiations) == 4,
+            checks = (len(negotiations) == replacements + 1,
                       all(n["transportWideExtension"] and n["transportCcFeedback"] for n in negotiations),
                       result["dataChannelsOpen"],
                       result["controlEchoSendFailures"] == 0,
-                      len(result.get("generationProofs", [])) == 3,
+                      len(result.get("generationProofs", [])) == replacements,
                       all(p["offeredFrames"] == p["outputFrames"] == p["receivedFrames"] for p in result.get("generationProofs", [])),
                       all(p.get("offeredSha256") and p["offeredSha256"] == p.get("encoderOutputSha256") for p in result.get("generationProofs", [])),
                       result.get("controlHeartbeatSent", 0) > 0,
                       result.get("controlHeartbeatSent") == result.get("controlHeartbeatCompleted"),
                       result.get("controlHeartbeatFailure") is None,
-                      all(stage in result["controlRoundTrips"] for stage in ("initial", "replacement-0", "replacement-1", "replacement-2", "final")))
-            if args.mode == "bundle":
+                      all(stage in result["controlRoundTrips"] for stage in ("initial", "final", *(f"replacement-{i}" for i in range(replacements)))))
+            if args.mode in ("bundle", "permanent-stop"):
                 checks += (all(n["bundleTag"] == n["applicationMid"] for n in negotiations),)
             if not all(checks):
                 raise SystemExit("BUNDLE/control continuity assertions failed; inspect scenario JSON and logs")
-            for phase in ("generation-0", "generation-1", "generation-2", "replacement-0", "replacement-1", "replacement-2", final_phase):
+            if args.mode == "permanent-stop":
+                proof = result.get("permanentStopProof")
+                if (not isinstance(proof, list) or len(proof) != 1
+                        or proof[0] != {"senderTransceiverStopped": True, "offerRejectedOldVideo": True,
+                                        "answerRejectedOldVideo": True, "controlRoundTripAfterStop": True}
+                        or "permanent-stop-drained" not in result["controlRoundTrips"]):
+                    raise SystemExit("Permanent stop did not reject its old video MID and drain with SCTP alive")
+            for phase in (*(f"generation-{i}" for i in range(replacements)), *(f"replacement-{i}" for i in range(replacements)), final_phase):
                 if result["controlPhaseObservations"].get(phase, {}).get("echoes", 0) == 0:
                     raise SystemExit("No timeout-level control availability observation for " + phase)
             for proof in result["generationProofs"]:
@@ -454,11 +462,11 @@ def main():
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--adb-port", type=int, default=5037)
     parser.add_argument("--serial")
-    parser.add_argument("--mode", choices=("paced", "serial", "burst", "bootstrap", "bundle", "bundle-video-anchor"), default="serial")
+    parser.add_argument("--mode", choices=("paced", "serial", "burst", "bootstrap", "bundle", "bundle-video-anchor", "permanent-stop"), default="serial")
     parser.add_argument("--start-bitrate", type=int, help="Adaptive comparison startup prior; defaults to 32 Mbps, or zero with --source-rate")
     parser.add_argument("--source-rate", action="store_true", help="Request the TiPlay source-rate trial on the sending video factory only; forbids bitrate settings but does not prove native activation")
     parser.add_argument("--expect-native-activation", action="store_true", help="Require matching custom AAR provenance and correlated native branch events; does not prove all rate-control behavior")
-    parser.add_argument("--expect-queue-epoch", action="store_true", help="In source-rate bundle mode, verify JNI epoch before frames and sender replacement retirement")
+    parser.add_argument("--expect-queue-epoch", action="store_true", help="In source-rate bundle/permanent-stop mode, verify JNI epoch before frames and sender replacement retirement")
     parser.add_argument("--encoder-delay", type=int, default=0)
     parser.add_argument("--frames", type=int, default=180)
     expectations = parser.add_mutually_exclusive_group()
@@ -470,8 +478,8 @@ def main():
         args.start_bitrate = 0 if args.source_rate else 32000000
     if args.source_rate and args.start_bitrate != 0:
         parser.error("--source-rate requires --start-bitrate 0 or no startup argument")
-    if args.expect_queue_epoch and (not args.source_rate or args.mode != "bundle"):
-        parser.error("--expect-queue-epoch requires --source-rate and --mode bundle")
+    if args.expect_queue_epoch and (not args.source_rate or args.mode not in ("bundle", "permanent-stop")):
+        parser.error("--expect-queue-epoch requires --source-rate and --mode bundle or permanent-stop")
     if args.expect_native_activation and not args.source_rate:
         parser.error("--expect-native-activation requires --source-rate")
     if args.expect_bootstrap and args.mode != "bootstrap":

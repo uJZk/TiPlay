@@ -1,16 +1,23 @@
 TiPlay source-rate Android WebRTC transport
 
-The redistributed AAR is locally built from the pinned webrtc-sdk/webrtc revision,
-with the TiPlay source-rate patch and a local publisher-compatibility patch. It is
-not the unmodified publisher Maven binary. The exact source revision, patch hashes,
-build tool revision, four Android ABIs, focused native-test identity and AAR SHA-256
-are recorded in BUILD-PROVENANCE.json beside this file.
+The redistributed AAR is built from pinned webrtc-sdk/webrtc sources with the
+TiPlay source-rate patch, including its post-stop sending-update guard. The build
+reuses webrtc-sdk/webrtc-build@06e3410d8f67d08202e26f55225705596b60778e,
+its Android environment, GN configuration and three compatibility patches:
+add_license_dav1d.patch, android_webrtc_version.patch and fix_mocks.patch.
+The legacy publisher-compat.patch is an equivalence reference, not a build input.
+This is not the unmodified publisher Maven binary.
+
+BUILD-PROVENANCE.json records source/depot revisions, actual publisher inputs,
+patch hashes, four ABIs, focused test identity, AAR SHA-256 and matching symbol
+archive identity. The private symbol archive retains four matching unstripped
+WebRTC libraries with line tables; it does not supply symbols for old binaries.
 
 Source, build driver and patches: scripts/webrtc/
 Source: https://github.com/webrtc-sdk/webrtc
-Publisher build reference: https://github.com/webrtc-sdk/android
+Build configuration: https://github.com/webrtc-sdk/webrtc-build
 Build output: shared/libs/webrtc-source-rate/webrtc-source-rate.aar
-Build-run evidence: https://github.com/uJZk/TiPlay/actions/runs/41014874037
+Build-run evidence: https://github.com/uJZk/TiPlay/actions/runs/41382204134
 
 GENERATED-LICENSE.md contains notices generated for this build. LICENSE and
 WEBRTC.md preserve the publisher's unmodified MIT and WebRTC component notices;

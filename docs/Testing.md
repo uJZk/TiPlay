@@ -14,15 +14,40 @@ high-confidence post-stop source-rate update dereferencing a cleared cadence
 adapter. This is separate from earlier reports without a matching trace; see
 [Robustness](Robustness.md#matched-post-stop-native-crash) for what is established.
 
-The minimum fix must reject the late update on the encoder queue before changing
-gate state or accessing the adapter. Native regression must configure at least
-one stream, stop permanently, issue a late update and drain the queue; an empty
-encoder can miss the failing loop. Fresh encoder behavior must remain covered.
-The regression, full four-ABI AAR producer, matching private symbol archive,
-packaged-APK identity, signed release and public-page checks are pending for
-this revision. Prior release counts below do not verify this new fix. Repeated
-H.264/HEVC replacement and sustained phone/car-browser playback remain physical
-acceptance after installing the matching APK and page.
+The patch rejects the late update on the encoder queue before changing gate
+state or accessing the adapter. Producer source is
+`aef6c97a2402f4f5ef4a821a876a11941116d180`;
+[native run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134)
+completed the full four-ABI AAR build and 11 focused native tests. Actual RUN/OK
+logs include `VideoStreamEncoderTest.SourceRateSendingAfterStopIgnoresLateGateUpdates`,
+which configures a stream before stop and exercises late gate updates and queue
+drain. The adopted AAR SHA-256 is
+`d9b59a3160bffc1fcd3676cf5bd4d63046212d6847cc56e7122332d4dcf8fe98`.
+Independent checks bind its provenance, all four ELF libraries, Java class
+inventory and licenses; no Java API/class-entry change was introduced. Four
+matching WebRTC symbol ELF files and their Build ID index were independently
+verified against the durable private archive. This producer commit is not the
+still-unassigned final APK source commit.
+
+The fixed-AAR permanent-stop JNI probe exits successfully: 60 pre-stop access
+units match their encoder-output hash, old video MID 1 is stopped and rejected
+in both SDP descriptions without `bundle-only`, the queue epoch changes
+1→0→2, and replacement MID 2 resumes frames/RTP. All 72 control heartbeats and
+the post-stop round trip complete. This is a local counting-decoder/transport
+structural probe: receiver-content verification, codec decoding, physical
+performance and all rate-control paths are not established. It does not claim
+a deterministic reproduction of the old binary's crash or HEVC/vehicle acceptance.
+
+The v113 pre-adoption checks passed 690 web cases and 52 Python cases: 16
+native-symbol, 17 build-driver, eight APK-verifier, nine release-draft and two
+site-deployment. The 27-case native probe-driver suite also passes. The full
+required Android command passed against the adopted AAR in 14m 48s: 4,535 JUnit
+cases, zero failures/errors, all three lint and debug-build targets. Unchanged
+shared/home tests and home/maphost builds reused Gradle results. The actual
+mobile Debug APK passes the new-AAR/patch/provenance packaging verifier. Final
+signed-APK identity, release and public-page checks remain pending. The published beta.37 record below is unchanged. Repeated H.264/HEVC
+replacement and sustained phone/car-browser playback remain physical acceptance
+after installing the matching APK and page.
 
 ## Current release source
 

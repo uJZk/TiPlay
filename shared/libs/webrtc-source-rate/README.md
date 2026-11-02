@@ -1,36 +1,36 @@
 # TiPlay source-rate Android WebRTC
 
-This local Ivy artifact is built from the pinned M150 source and TiPlay patches,
-not the publisher Maven binary. It contains all four supported Android ABIs.
-The adjacent provenance JSON identifies the source, patches, test and AAR hash;
-the generated component notices are in `LICENSE.md` and are also included in the
-APK assets. The build driver and patches are in `scripts/webrtc/`.
+This local Ivy artifact is built from pinned M150 sources and TiPlay patches.
+It contains all four supported Android ABIs. The adjacent provenance JSON binds
+the exact source, patches, focused tests, AAR and matching private symbol archive;
+component notices are generated in `LICENSE.md` and also packaged in APK assets.
+The build driver and patches are in `scripts/webrtc/`.
 
 `python3 scripts/webrtc/verify_release_aar.py` checks the artifact hash, ABI
-inventory and 64-bit ELF 16 KiB load alignment. Final APK verification must also
-check its JNI inventory and zip alignment; an AAR check is not an APK check.
+inventory and 64-bit ELF 16 KiB load alignment. Final APK verification also checks
+the actual JNI payload, source patch/provenance and ZIP alignment.
 
-## Rebuilding
+## Producer and rebuilding
 
-Run the **Native source-rate WebRTC** workflow in GitHub Actions. It checks out
-`webrtc-sdk/webrtc-build@06e3410d8f67d08202e26f55225705596b60778e` and reuses
-the Android environment setup from its Dockerfile, common GN configuration and
-three compatibility patches. TiPlay adds only the unchanged source-rate patch
-and uses the upstream Android warning policy. The workflow builds an AAR only, retains the
-fixed source/depot revisions and bounded build concurrency, and runs the focused
-native tests before packaging.
+The adopted AAR was produced by [run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134)
+at source commit `aef6c97a2402f4f5ef4a821a876a11941116d180`. Its eleven focused
+native tests include a configured encoder receiving late sending-state updates
+after Stop. Four matching unstripped libraries and their Build ID index were
+verified against the AAR and retained in the authenticated symbol draft identified
+by provenance. Those symbols apply only to these new Build IDs.
+
+Run the **Native source-rate WebRTC** workflow. It reuses
+`webrtc-sdk/webrtc-build@06e3410d8f67d08202e26f55225705596b60778e`, its Android
+environment, common GN configuration and three compatibility patches. TiPlay adds
+the source-rate patch, including the post-stop guard, and retains upstream warning
+policy. The Java check compares unchanged and legacy-patched class bytes. The
+workflow fixes source/depot revisions, bounds concurrency and runs focused tests
+before packaging. `publisher-compat.patch` is only the historical equivalence
+reference; new builds apply the three pinned upstream patches directly.
 
 Select `x86_64` for an emulator candidate or `all` for a release candidate. The
-workflow uploads the AAR, licenses, checksums and provenance; it does not replace
-the committed artifact or publish an APK. Validate the rebuilt candidate through
-the [native probe](../../../tests/native/README.md), then verify all four ABIs,
-licenses, ELF alignment and the final APK before adopting it.
-
-The adjacent AAR and provenance still describe the previously verified producer.
-`scripts/webrtc/publisher-compat.patch` preserves that artifact's combined
-compatibility fingerprint. New builds take the three upstream patches directly
-from the pinned producer and compile Java unchanged using its Android warning
-policy. Provenance records the actual patches and GN arguments. The Java check
-compares unchanged and legacy-patched class bytes; production native warnings
-are also nonfatal, as in the upstream build. No Kotlin media behavior or native
-source-rate policy changes as part of this build refactoring.
+workflow uploads AAR, licenses, checksums, provenance and symbols, then retains
+symbols in an authenticated draft. It does not replace the committed AAR or
+publish an APK. Validate candidates with the [native probe](../../../tests/native/README.md),
+all-ABI checks and final APK verification before adoption. Native/source tests do
+not establish picture correctness, physical performance or vehicle stability.

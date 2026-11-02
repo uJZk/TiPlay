@@ -42,8 +42,15 @@ Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Beta.37/code79 with browser/cache v112 is published. Build records the exact
 source, signed packaging, private archive of 24 JNI symbol pairs and independent
-public-byte checks. Beta.38/code80 with browser/cache v113 is in preparation;
-its native build, matching symbol archive and release checks are pending.
+public-byte checks. Beta.38/code80 with browser/cache v113 is in preparation.
+Its adopted four-ABI AAR comes from native producer
+`aef6c97a2402f4f5ef4a821a876a11941116d180`,
+[run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134).
+All 11 focused native cases, matching durable WebRTC symbols, the fixed-AAR
+permanent-stop JNI probe and required Android command pass (4,535 JUnit cases,
+with unchanged modules cached). Final signed APK and Pages checks remain pending;
+the final APK source commit is not assigned. [Testing](docs/Testing.md#beta38-native-crash-release-preparation)
+separates native structural evidence from physical acceptance.
 The matched November 2 tombstone identifies a high-confidence post-stop
 source-rate encoder defect; see [the evidence boundary](docs/Robustness.md#matched-post-stop-native-crash).
 Earlier unmatched SIGSEGV reports and historical symbol gaps remain open.

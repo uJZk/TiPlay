@@ -252,6 +252,31 @@ initial request after 500 ms, that run has not reproduced the same starvation.
 The receiver still uses the counting test decoder, so this does not validate
 H.264 picture decoding or physical startup timing.
 
+## Permanent video stop
+
+`--mode permanent-stop` uses the fixture's actual High-profile capability to
+isolate lifecycle behavior from mixed-codec startup. It first verifies sixty
+original access units over RTP, stops the sending transceiver without detaching
+its track first, rejects the old video MID in real offer/answer negotiation, and
+checks SCTP control plus a successor video generation. Queue-epoch evidence must
+show the old sender retired and a different nonzero successor epoch.
+
+```sh
+python3 tests/native/rtc-video-probe.py build --work-dir /tmp/tiplay-stop-probe \
+  --webrtc-aar /path/to/verified-candidate.aar --fixture /path/to/actual-high.h264
+python3 tests/native/rtc-video-probe.py run --work-dir /tmp/tiplay-stop-probe \
+  --source-rate --mode permanent-stop --frames 60 \
+  --expect-continuous --expect-queue-epoch --expect-native-activation
+```
+
+Use a byte-verified High fixture with no B frames; verify its real SPS instead of
+relabeling it. A sparse synthetic fixture can isolate lifecycle assertions on a
+software emulator, but does not measure vehicle throughput. This public-API stop
+scenario does not establish the exact internal cleanup ordering or HEVC decode.
+The configured `VideoStreamEncoderTest.SourceRateSendingAfterStopIgnoresLateGateUpdates`
+regression separately covers an encoder already stopped before late gate updates.
+Compilation or a run ending before the stop marker is not a passing lifecycle test.
+
 ## Sustained BUNDLE feedback
 
 `--mode bundle` creates the control/video/audio DataChannels, sets a private

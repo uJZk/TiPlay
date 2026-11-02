@@ -2,19 +2,61 @@
   "repository": "https://github.com/webrtc-sdk/webrtc.git",
   "revision": "73cb8180f7258ee292878d6edd05177f41883962",
   "depot_tools_revision": "7083aadfb53f3de2e20b72058c7f510da8f8218a",
-  "patch_sha256": "f8fd25546df048db631a1cbc9062e3073a5cc5581b072d75375d15018d2db300",
+  "patch_sha256": "92e011a9d6a50cb3ab8e1d51d2df511039d6a01451cd54cb8c9dba33dab5254e",
   "publisher_build_configuration_reference": "06e3410d8f67d08202e26f55225705596b60778e",
   "publisher_reference_is_original_producer_provenance": false,
+  "publisher_build": {
+    "repository": "https://github.com/webrtc-sdk/webrtc-build.git",
+    "revision": "06e3410d8f67d08202e26f55225705596b60778e",
+    "inputs_sha256": {
+      "build/run.py": "bbe60069ab641e6a6eebf45d9a131c14afe93ad24449bc7e5db7908eaa967a86",
+      "build/VERSION": "9b1d884cf984888fb7fb9d29735d329d4b852703208d920d73c0b500c8a0cb84",
+      "build/scripts/apt_install_x86_64.sh": "969ef15ce8a7755967ef8648c60e3f1409adde92fc978fc21e13ce3ea730c3b3",
+      "build/patches/add_license_dav1d.patch": "53df992b239249c240c20b94bd321eeff00a0d22595f522c129b90f115bb84a8",
+      "build/patches/android_webrtc_version.patch": "38db530b367e6b16a432c482b60291f0c3b681d308066786c31634744c5a417e",
+      "build/patches/fix_mocks.patch": "470388523a650424b48bbec5b2110c999c5776e2aeb408b24fc43ebc0fbc4a64"
+    },
+    "android_patches": [
+      "add_license_dav1d.patch",
+      "android_webrtc_version.patch",
+      "fix_mocks.patch"
+    ],
+    "common_gn_args": [
+      "rtc_use_h264=false",
+      "is_component_build=false",
+      "rtc_build_examples=false",
+      "use_rtti=true",
+      "rtc_build_tools=false",
+      "rtc_enable_protobuf=false"
+    ],
+    "android_gn_args": [
+      "treat_warnings_as_errors=false"
+    ],
+    "version": {
+      "WEBRTC_BUILD_VERSION": "150.7871.01",
+      "WEBRTC_VERSION": "150.7871.01",
+      "WEBRTC_READABLE_VERSION": "M150.7871@{#1}",
+      "WEBRTC_COMMIT": "73cb8180f7258ee292878d6edd05177f41883962"
+    }
+  },
   "publisher_compat_sha256": "5dbb1a1b66e9f837dfbe83cd53be2900f784db6e512b2fb3cd6acd5e12e0b7c8",
+  "publisher_compat_role": "legacy equivalence reference; not applied by this build",
   "publisher_compat_is_original_publisher_artifact": false,
   "focused_tests": {
     "revision": "73cb8180f7258ee292878d6edd05177f41883962",
     "passed": true,
     "filter": "PacingControllerTest.SourceRate*:RtpTransportControllerSendTest.SourceRate*:VideoStreamEncoderTest.SourceRate*",
-    "patch_sha256": "f8fd25546df048db631a1cbc9062e3073a5cc5581b072d75375d15018d2db300",
-    "binary_sha256": "9a65a4484032011d21f875d8eaa8df4fd7d7fad3918217ab59ea801086d01010"
+    "patch_sha256": "92e011a9d6a50cb3ab8e1d51d2df511039d6a01451cd54cb8c9dba33dab5254e",
+    "binary_sha256": "7a26c98456991af8f86a3782c66ea64f103e565be4ae23fc4c85e9dbe53b2793",
+    "prepared_state_sha256": "f91996c9529082662632dca694477efd5ff02b5f07cde0f55ff3a3139b689d50"
   },
-  "aar_sha256": "38efe35641a0a87df5e99634eeaa5d1900be5da10711c7e72d9966632bbec0bf",
+  "native_symbols": {
+    "format": "tiplay-native-symbols-v1",
+    "index_sha256": "4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c",
+    "archive_tag": "native-symbols-webrtc-4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c",
+    "archive_visibility": "authenticated-draft-only"
+  },
+  "aar_sha256": "d9b59a3160bffc1fcd3676cf5bd4d63046212d6847cc56e7122332d4dcf8fe98",
   "architectures": [
     "armeabi-v7a",
     "arm64-v8a",

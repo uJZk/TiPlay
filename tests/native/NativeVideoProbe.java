@@ -41,6 +41,14 @@ public final class NativeVideoProbe {
   static Thread heartbeatThread;
   static final List<Map<String,Object>> bundleNegotiations=new ArrayList<>();
   static final List<Map<String,Object>> videoNegotiations=new ArrayList<>();
+  static boolean rejectedVideoMid(SessionDescription description,String expectedMid){
+    boolean video=false,rejected=false;
+    for(String line:description.description.split("\\r?\\n")){
+      if(line.startsWith("m=")){String[] parts=line.substring(2).split(" ");video=parts[0].equals("video");rejected=parts.length>1&&parts[1].equals("0");}
+      if(line.equals("a=mid:"+expectedMid))return video&&rejected;
+    }
+    return false;
+  }
   static void recordVideoNegotiation(String stage,RtpTransceiver receive,PeerConnection tx,RtpSender sender)throws Exception{
     String mid=receive.getMid(),senderMid=null;
     for(RtpTransceiver t:tx.getTransceivers())if(t.getSender().id().equals(sender.id()))senderMid=t.getMid();
@@ -233,7 +241,7 @@ public final class NativeVideoProbe {
     }
     if(!bridge.awaitInput(10_000))throw new Exception("native input completion timeout");
     long expected=counter(bridge,"outputFrames");
-    if(counter(bridge,"outputFrames")==0)throw new Exception("Warmup did not produce an encoded access unit");
+    if(counter(bridge,"outputFrames")==0)throw new Exception("Warmup did not produce an encoded access unit: "+bridge.diagnostics()+" flow="+bridge.flowDiagnostics());
     long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
     do{stats(rx,"receiver",true);if(!lastReceiverStats.isEmpty()&&statCount(lastReceiverStats,"framesReceived")>=expected)break;Thread.sleep(100);}while(System.nanoTime()<deadline);
     if(lastReceiverStats.isEmpty()||statCount(lastReceiverStats,"framesReceived")!=expected)throw new Exception("Warmup RTP access units did not drain");
@@ -340,7 +348,7 @@ public final class NativeVideoProbe {
     entry.put("stage",stage); entry.put("retiredEpoch",retired); entry.put("epoch",status[0]); entry.put("failureEpoch",status[1]);
     queueEpochProof.add(entry);
   }
-  public static void main(String[] args){try{run(args);}catch(Throwable t){t.printStackTrace(System.out);System.exit(1);}}
+  public static void main(String[] args){try{run(args);}catch(Throwable t){synchronized(NativeVideoProbe.class){try{if(nativeLog!=null)nativeLog.flush();}catch(Exception ignored){}}t.printStackTrace(System.out);System.exit(1);}}
   public static void run(String[] args)throws Exception{
     System.out.println("STEP probe-main");
     outputDigest=java.security.MessageDigest.getInstance("SHA-256");
@@ -348,15 +356,18 @@ public final class NativeVideoProbe {
     String mode=args.length>0?args[0]:"paced"; int start=args.length>1?Integer.parseInt(args[1]):0;
     boolean sourceRate=args.length>6&&args[6].equals("source-rate");
     boolean expectQueueEpoch=args.length>7&&args[7].equals("queue-epoch");
-    if(expectQueueEpoch&&(!sourceRate||!mode.equals("bundle")))throw new IllegalArgumentException("queue epoch proof requires source-rate bundle mode");
+    if(expectQueueEpoch&&(!sourceRate||!(mode.equals("bundle")||mode.equals("permanent-stop"))))throw new IllegalArgumentException("queue epoch proof requires source-rate bundle or permanent-stop mode");
     long queueEpoch=0;
     if(sourceRate&&start!=0)throw new IllegalArgumentException("source-rate mode forbids bitrate settings");
     if(start!=0&&(start<VIDEO_MIN_BITRATE_BPS||start>VIDEO_MAX_BITRATE_BPS))throw new IllegalArgumentException("start bitrate must be zero or between "+VIDEO_MIN_BITRATE_BPS+" and "+VIDEO_MAX_BITRATE_BPS);
     int delay=args.length>2?Integer.parseInt(args[2]):0;int frameCount=args.length>3?Integer.parseInt(args[3]):360;
     boolean warm=args.length>4&&args[4].equals("warm");
     boolean verbose=args.length>5&&args[5].equals("verbose");
-    boolean bundle=mode.equals("bundle")||mode.equals("bundle-video-anchor");
-    boolean primeData=mode.equals("bundle");
+    boolean permanentStop=mode.equals("permanent-stop");
+    boolean bundle=mode.equals("bundle")||mode.equals("bundle-video-anchor")||permanentStop;
+    boolean primeData=mode.equals("bundle")||permanentStop;
+    int replacements=permanentStop?1:3;
+    List<Map<String,Object>> permanentStopProof=new ArrayList<>();
     String dir="/data/local/tmp/tiplay-native-probe";
     nativeLog=new BufferedWriter(new FileWriter(dir+"/native-"+mode+"-"+start+"-"+delay+(sourceRate?"-source-rate":"")+".log"));
     System.out.println("STEP context");
@@ -384,7 +395,7 @@ public final class NativeVideoProbe {
     Map<String,String> baselineParams=new LinkedHashMap<>(params);baselineParams.put("profile-level-id","42002a");
     VideoCodecInfo baselineCodec=new VideoCodecInfo("H264",baselineParams,Collections.emptyList());
     List<BrowserRtcVideoPolicy.Codec> offered=new ArrayList<>();
-    if(mode.equals("bootstrap")||bundle)offered.add(new BrowserRtcVideoPolicy.Codec("H264",baselineParams));
+    if(mode.equals("bootstrap")||bundle&&!permanentStop)offered.add(new BrowserRtcVideoPolicy.Codec("H264",baselineParams));
     offered.add(new BrowserRtcVideoPolicy.Codec("H264",params));
     RequestGate requestGate=new RequestGate();
     BrowserRtcVideoTrack bridge=new BrowserRtcVideoTrack(offered,()->mode.equals("bootstrap")?requestGate.request():Unit.INSTANCE,null,()->System.nanoTime());
@@ -416,7 +427,7 @@ public final class NativeVideoProbe {
     System.out.println("STEP factories");
     PeerConnectionFactory txFactory=PeerConnectionFactory.builder().setOptions(options).setFieldTrials(sourceRate?SOURCE_RATE_TRIAL:TRIALS).setVideoEncoderFactory(encoder).createPeerConnectionFactory();
     PeerConnectionFactory rxFactory=PeerConnectionFactory.builder().setOptions(options).setFieldTrials(TRIALS).setVideoDecoderFactory(new VideoDecoderFactory(){
-      public VideoCodecInfo[] getSupportedCodecs(){return mode.equals("bootstrap")||bundle?new VideoCodecInfo[]{baselineCodec,codec}:new VideoCodecInfo[]{codec};}
+      public VideoCodecInfo[] getSupportedCodecs(){return mode.equals("bootstrap")||bundle&&!permanentStop?new VideoCodecInfo[]{baselineCodec,codec}:new VideoCodecInfo[]{codec};}
       public VideoDecoder createDecoder(VideoCodecInfo info){return new Decoder();}
     }).createPeerConnectionFactory();
     System.out.println("STEP peers");
@@ -466,12 +477,22 @@ public final class NativeVideoProbe {
     if(bundle){
       checkControl("initial");recordBundleNegotiation(rx.getLocalDescription(),"initial",primeData);
       startControlHeartbeat();
-      for(int replacement=0;replacement<3;replacement++){
+      for(int replacement=0;replacement<replacements;replacement++){
         proveGeneration(bridge,tx,rx,frames,replacement);
         sourcePhase="replacement-"+replacement;checkControl("before-replacement-"+replacement);
-        bridge.disable("video-track-replaced");sender.setTrack(null,false);
-        if(expectQueueEpoch)verifyQueueRetired(sender,"retired-"+replacement,queueEpoch);
-        if(receiveActive==receiveAnchor)receiveActive.setDirection(RtpTransceiver.RtpTransceiverDirection.INACTIVE);else receiveActive.stop();
+        String retiredMid=receiveActive.getMid();
+        if(permanentStop){
+          RtpTransceiver retiring=null;
+          for(RtpTransceiver t:tx.getTransceivers())if(t.getSender().id().equals(sender.id()))retiring=t;
+          if(retiring==null||retiring.isStopped())throw new Exception("Missing active sending transceiver before permanent stop");
+          System.out.println("PERMANENT_STOP_BEGIN sourceRate="+sourceRate+" phase="+sourcePhase);System.out.flush();
+          // Keep its native sending stream active: detaching first can hide the StopPermanent fault.
+          retiring.stop();
+          if(!retiring.isStopped())throw new Exception("Sending transceiver did not become stopped");
+        }
+        bridge.disable("video-track-replaced");
+        if(!permanentStop){sender.setTrack(null,false);if(expectQueueEpoch)verifyQueueRetired(sender,"retired-"+replacement,queueEpoch);}
+        if(!permanentStop&&receiveActive==receiveAnchor)receiveActive.setDirection(RtpTransceiver.RtpTransceiverDirection.INACTIVE);else receiveActive.stop();
         receiveActive=rx.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,new RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY));
         List<RtpCapabilities.CodecCapability> receivePreferred=new ArrayList<>();
         for(RtpCapabilities.CodecCapability c:rxFactory.getRtpReceiverCapabilities(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO).codecs)
@@ -480,6 +501,12 @@ public final class NativeVideoProbe {
         s=new Sdp();rx.createOffer(s,new MediaConstraints());SessionDescription nextOffer=s.await();s=new Sdp();rx.setLocalDescription(s,nextOffer);s.await();
         Files.write(Paths.get(dir+"/bundle-offer-"+replacement+".sdp"),rx.getLocalDescription().description.getBytes("UTF-8"));
         s=new Sdp();tx.setRemoteDescription(s,rx.getLocalDescription());s.await();
+        if(permanentStop){
+          if(!rejectedVideoMid(rx.getLocalDescription(),retiredMid))throw new Exception("Permanent stop offer did not reject old video MID");
+          if(expectQueueEpoch)verifyQueueRetired(sender,"retired-"+replacement,queueEpoch);
+          checkControl("permanent-stop-drained");
+          System.out.println("PERMANENT_STOP_DRAINED");System.out.flush();
+        }
         bridge.close();bridge=new BrowserRtcVideoTrack(offered,()->Unit.INSTANCE,null,()->System.nanoTime());currentBridge=bridge;
         sender=tx.addTrack(bridge.attach(txFactory),Collections.singletonList("probe-video"));
         activeSender=sender;activeReceiver=receiveActive.getReceiver();
@@ -496,6 +523,10 @@ public final class NativeVideoProbe {
         s=new Sdp();tx.createAnswer(s,new MediaConstraints());SessionDescription nextAnswer=s.await();s=new Sdp();tx.setLocalDescription(s,nextAnswer);s.await();
         Files.write(Paths.get(dir+"/bundle-answer-"+replacement+".sdp"),tx.getLocalDescription().description.getBytes("UTF-8"));
         bridge.negotiated(tx.getLocalDescription().description);s=new Sdp();rx.setRemoteDescription(s,tx.getLocalDescription());s.await();
+        if(permanentStop){
+          if(!rejectedVideoMid(tx.getLocalDescription(),retiredMid))throw new Exception("Permanent stop answer did not reject old video MID");
+          Map<String,Object> proof=new LinkedHashMap<>();proof.put("senderTransceiverStopped",true);proof.put("offerRejectedOldVideo",true);proof.put("answerRejectedOldVideo",true);proof.put("controlRoundTripAfterStop",true);permanentStopProof.add(proof);
+        }
         recordVideoNegotiation("replacement-"+replacement,receiveActive,tx,sender);
         if(expectQueueEpoch)queueEpoch=awaitQueueEpoch(sender,"replacement-"+replacement,queueEpoch);
         if(!bridge.configure(new WebVideoRecord(1,0,1,0,1,0,config.getBytes("UTF-8"),null,0,null,null)))throw new Exception("replacement configure failed");
@@ -515,7 +546,7 @@ public final class NativeVideoProbe {
       preroll=warmBridge(bridge,rx,frames);
       System.out.println("WARMUP receiverDecoderInvocations="+decoded.get()+" "+bridge.flowDiagnostics());
     }
-    beginSourcePhase(bundle?"generation-3-measured":"measured");
+    beginSourcePhase(bundle?"generation-"+replacements+"-measured":"measured");
     stats(tx,"sender");Map<String,Object> senderBaseline=new LinkedHashMap<>(lastSenderStats);
     stats(rx,"receiver");
     Map<String,Object> receiverBaseline=new LinkedHashMap<>(lastReceiverStats);
@@ -548,6 +579,7 @@ public final class NativeVideoProbe {
     System.out.println("RESULT mode="+mode+" start="+start+" delay="+delay+" offered="+sent+" receiverDecoderInvocations="+decoded.get()+" keys="+keys.get()+" nativeBlocked="+blocked.get()+" badTimestamps="+badTimestamps.get()+" "+bridge.flowDiagnostics());
     Map<String,Object> result=new LinkedHashMap<>();
     result.put("videoNegotiations",videoNegotiations);
+    if(permanentStop)result.put("permanentStopProof",permanentStopProof);
     if(expectQueueEpoch)result.put("queueEpochProof",queueEpochProof);
     result.put("mode",mode);result.put("startBitrateBps",start);result.put("minBitrateBps",start>0?VIDEO_MIN_BITRATE_BPS:null);result.put("maxBitrateBps",start>0?VIDEO_MAX_BITRATE_BPS:null);
     result.put("requestedRateControlMode",sourceRate?"source-rate":"adaptive");result.put("nativeRateControlVerified",false);result.put("receiverContentVerified",false);result.put("senderFieldTrials",sourceRate?SOURCE_RATE_TRIAL:TRIALS);result.put("receiverFieldTrials",TRIALS);
