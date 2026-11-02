@@ -5,6 +5,25 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 Release-specific test counts and public artifact checks are evidence for their
 recorded source, not interchangeable coverage counts for later engines.
 
+## Beta.38 native-crash release preparation
+
+Beta.38/code80 with browser/cache v113 is being prepared; beta.37 remains the
+published release below. A November 2 native tombstone matches the selected exit
+and beta.37's ARM64 WebRTC Build ID. Instruction/source fingerprints identify a
+high-confidence post-stop source-rate update dereferencing a cleared cadence
+adapter. This is separate from earlier reports without a matching trace; see
+[Robustness](Robustness.md#matched-post-stop-native-crash) for what is established.
+
+The minimum fix must reject the late update on the encoder queue before changing
+gate state or accessing the adapter. Native regression must configure at least
+one stream, stop permanently, issue a late update and drain the queue; an empty
+encoder can miss the failing loop. Fresh encoder behavior must remain covered.
+The regression, full four-ABI AAR producer, matching private symbol archive,
+packaged-APK identity, signed release and public-page checks are pending for
+this revision. Prior release counts below do not verify this new fix. Repeated
+H.264/HEVC replacement and sustained phone/car-browser playback remain physical
+acceptance after installing the matching APK and page.
+
 ## Current release source
 
 **Beta.37/code79, browser/cache v112, is published** from
@@ -29,8 +48,8 @@ and AGP confirms `NDK_DEBUG=0`. The signed workflow subsequently passed its
 release, symbols and draft jobs and privately archived 24 matching JNI ELF files
 plus their Build ID index. Both private archive assets were independently
 re-downloaded byte-identical. Twenty-seven historical prebuilt libraries still
-lack matching symbols, and eight have no Build ID; future full WebRTC/audio
-producer rebuilds have not been run for this revision.
+lack matching symbols, and eight have no Build ID. Full WebRTC/audio producer
+rebuilds were not run for the beta.37 release.
 
 Independent candidate checks confirm non-debug packaging, signer/runtime
 continuity, all 51 native libraries unchanged from beta.36, 25 ELF64 and 51 JNI
@@ -48,9 +67,9 @@ and main/Worker Processor-to-Canvas local-track paths. They do not establish a
 vehicle RTP path or hardware decoding. Public-tree/cache checks, workflow syntax,
 diff whitespace and documentation limits pass. Full remote CI was skipped at
 the user's request; required local source checks, signed packaging and Pages ran.
-Historical SIGSEGV attribution, vehicle reconnect behavior, SCO/focus recovery,
-slow storage, native trace retrieval and graphics/device failures still need
-matching hardware evidence.
+Earlier unmatched SIGSEGV reports, vehicle reconnect behavior, SCO/focus recovery,
+slow storage and graphics/device failures still need matching hardware evidence.
+The November 2 matched trace and pending native fix are recorded above.
 
 Use the [Android workflow](../.github/workflows/android.yml) for the source revision
 under test. Synthetic caption and player tests

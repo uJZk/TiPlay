@@ -42,8 +42,12 @@ Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Beta.37/code79 with browser/cache v112 is published. Build records the exact
 source, signed packaging, private archive of 24 JNI symbol pairs and independent
-public-byte checks. Historical prebuilt-symbol gaps and SIGSEGV attribution remain
-open. Use [native-crash evidence](docs/Diagnostics.md#native-crash-traces) and
+public-byte checks. Beta.38/code80 with browser/cache v113 is in preparation;
+its native build, matching symbol archive and release checks are pending.
+The matched November 2 tombstone identifies a high-confidence post-stop
+source-rate encoder defect; see [the evidence boundary](docs/Robustness.md#matched-post-stop-native-crash).
+Earlier unmatched SIGSEGV reports and historical symbol gaps remain open.
+Use [native-crash evidence](docs/Diagnostics.md#native-crash-traces) and
 [wireless startup timing](docs/Diagnostics.md#reading-wireless-startup-evidence)
 for the remaining physical acceptance; source checks do not establish it.
 Keep source checks, published artifact

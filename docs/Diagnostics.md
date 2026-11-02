@@ -101,6 +101,15 @@ source line resolution may additionally require the matching unstripped build.
 Historical tombstones can predate the installed APK, so match Build IDs rather
 than assuming they describe the current binaries.
 
+The November 2 beta.37 trace was independently decoded as an Android native
+tombstone and matched by PID/time and the ARM64 WebRTC Build ID. It supplies
+concrete native-fault evidence; earlier unmatched exit records do not become
+attributable by association. Its stripped historical WebRTC ELF lacks matching
+full symbols, and beta.37's retained app-JNI symbols do not cover that module.
+The high-confidence instruction/source attribution and pending fix are recorded
+in [Robustness](Robustness.md#matched-post-stop-native-crash). This offline check
+of one trace does not add format validation to the exporter.
+
 Only a complete trace up to 8 MiB is included; empty, oversized or unreadable
 traces are omitted with a status. This bounded collection happens off-thread at
 export, adds no native crash handler and does not change media transport. The
@@ -707,8 +716,9 @@ synchronous. Startup records use `stage=create|listener|register` and
 failures retain only the exception class. Standard logs retain these records.
 The observed 26.532-second wait was not divided into these stages, so the
 hostname change is a candidate reverse-DNS workaround rather than an established
-cause or a verified vehicle improvement. These startup observations do not
-identify the native SIGSEGV fault.
+cause or a verified vehicle improvement. Startup observations alone do not
+identify a native SIGSEGV; the November 2 matched tombstone supplies separate
+[native-crash evidence](#native-crash-traces).
 
 After Bluetooth handoff, the 45-second watchdog requires a rendered frame before retaining a session without tunneled iAP2. `STEP handoff/fallback` retains Bluetooth control after proven video; `STEP handoff/complete` releases it once the tunnel is ready. Fallback alone does not establish authenticated-tunnel saved-history proof.
 

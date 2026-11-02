@@ -69,6 +69,36 @@ The candidate concerning an Activity losing the only session-end recovery event
 was withdrawn after tracing the normal type-130 close through `Failed` and the
 retained reporter. It is not part of the remediation count.
 
+## Matched post-stop native crash
+
+The November 2 beta.37/code79 capture contains a real Android tombstone whose
+PID and time match the selected native exit. Its faulting `VideoEncoderQue`
+thread has SIGSEGV at relative PC `0xada5cc` in `libjingle_peerconnection_so.so`,
+Build ID `fda638c36519d2b5`, matching the installed ARM64 AAR. The fault instruction
+dereferences a null cadence-adapter pointer. It occurs after the second video
+generation becomes ready during H.264/HEVC replacement; this timing alone does
+not establish every higher-level caller.
+
+The machine-code and field-access fingerprint identify the custom
+`VideoStreamEncoder::SetSourceRateSending` implementation with high confidence.
+Upstream permanent stop first stops the encoder and clears its cadence adapter,
+then stops the send stream. The latter can enqueue a source-rate state update;
+the current setter reaches the cleared adapter without a queue-side stop guard.
+One configured stream is sufficient. This is a concrete valid-object post-stop
+path; a separate use-after-free hypothesis is not needed to explain it.
+The historical binary lacks matching full symbols, so this is not a DWARF source
+line resolution or an independently executed native reproducer.
+
+Beta.38/code80 with browser/cache v113 is in preparation. Its minimal native fix
+must reject the late update on the encoder queue before gate-state changes or
+adapter access. Required regression covers a configured stream, permanent-stop
+ordering, the late update and queue drain, plus normal fresh-encoder behavior.
+The native regression, full AAR producer, matching symbol retention, APK identity
+and release/public-page verification are pending. Source inspection cannot prove
+repeated H.264/HEVC replacement or sustained vehicle continuity; those remain
+acceptance after the matching APK/page is installed. The original 19-item audit
+count above is unchanged by this later field evidence.
+
 ## Diagnostics and storage
 
 Original media ingress retains its full, synchronous capture contract. Small
@@ -100,7 +130,8 @@ uncontrolled network load across an external CDN deployment.
 
 ## Verification and remaining device evidence
 
-The complete [AGENTS](../AGENTS.md) Android command passed: 4,535 unit cases
+For the published beta.37 source, the complete [AGENTS](../AGENTS.md) Android
+command passed: 4,535 unit cases
 (2,613 shared, 1,916 common and six home), mobile/home/maphost Debug lint and all
 three Debug assemblies. Node 22 passed all 690 browser cases. The 52 Python
 checks cover native symbols, the WebRTC build driver, final-APK verification,
@@ -121,17 +152,17 @@ do not establish a vehicle RTP path or hardware decoding. New owner, failure,
 deadline and storage tests exercise the blocked operation or actual transition.
 See [Testing](Testing.md) for reproducible source checks and their limits.
 
-Full future WebRTC/audio producer rebuilds have not been executed for this source
-revision; actual mobile JNI symbol archival has passed separately. No committed
-AAR or native prebuilt binary was replaced, and all 51 packaged native libraries
-match beta.36. The three public Release attachments and tag, 226 page files and
+Full WebRTC/audio producer rebuilds were not executed for beta.37; actual mobile
+JNI symbol archival passed separately. That release replaced no committed AAR or
+native prebuilt binary, and all 51 packaged native libraries match beta.36. The three public Release attachments and tag, 226 page files and
 156 MIME checks pass independent verification. Full remote CI was skipped for
 this release at the user's request; required local source checks, signed
 packaging and Pages all ran.
 
-The previous native SIGSEGV still lacks its matching native backtrace. These
-changes do not establish its cause or prove ARM64 vehicle continuity. Hardware
-acceptance still includes sustained calls with transient focus, actual graphics
-context loss, existing Wi-Fi handoff, slow storage and native trace retrieval.
+Earlier native SIGSEGV reports still lack their matching native backtraces;
+the November 2 matched crash is analyzed separately above. The beta.37 audit
+changes do not establish those earlier crashes' causes or prove ARM64 vehicle
+continuity. Hardware acceptance still includes sustained calls with transient
+focus, actual graphics context loss, existing Wi-Fi handoff and slow storage.
 See [Diagnostics](Diagnostics.md) for capture and [Build](Build.md#current-browser-deployment)
 for the last published artifact's separate evidence.

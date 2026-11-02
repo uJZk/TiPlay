@@ -49,6 +49,15 @@ Verify a rebuilt AAR and its actual APK packaging before replacing the committed
 artifact. Source configuration checks do not establish a successful native build
 or physical phone/browser playback.
 
+The matched November 2 native crash exposes a source-rate patch lifetime rule:
+a late sending-state task must check the stopped encoder on its owning queue
+before changing gate fields or dereferencing the cleared cadence adapter.
+A caller-side check cannot cover an already queued task. Beta.38's minimal guard,
+configured-stream permanent-stop regression, full four-ABI AAR build and matching
+private symbol archive are pending; see [Robustness](Robustness.md#matched-post-stop-native-crash).
+A successful replacement must preserve original compressed frames and all normal
+source-rate/congestion behavior.
+
 The local vendor modules must resolve exclusively from their pinned Ivy source;
 checking an unused local AAR is insufficient. Release packaging also verifies
 the final APK against the pinned native artifact. Future native producers retain
