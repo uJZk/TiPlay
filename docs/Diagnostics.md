@@ -106,9 +106,13 @@ tombstone and matched by PID/time and the ARM64 WebRTC Build ID. It supplies
 concrete native-fault evidence; earlier unmatched exit records do not become
 attributable by association. Its stripped historical WebRTC ELF lacks matching
 full symbols, and beta.37's retained app-JNI symbols do not cover that module.
-The high-confidence instruction/source attribution and pending fix are recorded
-in [Robustness](Robustness.md#matched-post-stop-native-crash). This offline check
-of one trace does not add format validation to the exporter.
+The high-confidence instruction/source attribution and beta.38 queue-side guard
+are recorded in [Robustness](Robustness.md#matched-post-stop-native-crash). Beta.38's
+rebuilt ARM64 WebRTC Build ID is `f8632addc3d7f771`, with matching retained symbols;
+those symbols cannot resolve the old Build ID's addresses. Its two producer
+archives provide 28 matching app-JNI/WebRTC pairs; 23 historical libraries remain
+without line symbols, eight without Build IDs. This offline check of one trace
+does not add format validation to the exporter.
 
 Only a complete trace up to 8 MiB is included; empty, oversized or unreadable
 traces are omitted with a status. This bounded collection happens off-thread at

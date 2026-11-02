@@ -5,106 +5,79 @@ TiPlay supports an Android phone plus car browser. Follow [installation](Install
 Release-specific test counts and public artifact checks are evidence for their
 recorded source, not interchangeable coverage counts for later engines.
 
-## Beta.38 native-crash release preparation
+## Current release source
 
-Beta.38/code80 with browser/cache v113 is being prepared; beta.37 remains the
-published release below. A November 2 native tombstone matches the selected exit
-and beta.37's ARM64 WebRTC Build ID. Instruction/source fingerprints identify a
-high-confidence post-stop source-rate update dereferencing a cleared cadence
-adapter. This is separate from earlier reports without a matching trace; see
-[Robustness](Robustness.md#matched-post-stop-native-crash) for what is established.
+**Beta.38/code80, browser/cache v113, is published** from
+`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It rejects late source-rate updates
+on the encoder queue before changing gate state or accessing the cleared adapter.
+The November 2 beta.37 tombstone matches PID/time and its ARM64 WebRTC Build ID;
+[Robustness](Robustness.md#matched-post-stop-native-crash) records the high-confidence
+instruction/source attribution and the limits of earlier unmatched reports.
+Original-codec RTP video, native Opus, fallback audio, Bluetooth microphones and
+SCO silence keepalive remain. Audio trimming is paused.
 
-The patch rejects the late update on the encoder queue before changing gate
-state or accessing the adapter. Producer source is
-`aef6c97a2402f4f5ef4a821a876a11941116d180`;
-[native run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134)
+Producer source `aef6c97a2402f4f5ef4a821a876a11941116d180` is distinct from the
+application build commit.
+[Native run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134)
 completed the full four-ABI AAR build and 11 focused native tests. Actual RUN/OK
 logs include `VideoStreamEncoderTest.SourceRateSendingAfterStopIgnoresLateGateUpdates`,
-which configures a stream before stop and exercises late gate updates and queue
-drain. The adopted AAR SHA-256 is
+which configures a stream before stop and exercises late updates and queue drain.
+The adopted AAR SHA-256 is
 `d9b59a3160bffc1fcd3676cf5bd4d63046212d6847cc56e7122332d4dcf8fe98`.
-Independent checks bind its provenance, all four ELF libraries, Java class
-inventory and licenses; no Java API/class-entry change was introduced. Four
-matching WebRTC symbol ELF files and their Build ID index were independently
-verified against the durable private archive. This producer commit is not the
-still-unassigned final APK source commit.
+Independent checks bind its provenance, four ELF libraries, Java inventory and
+licenses; no Java class/API change was introduced. The four matching WebRTC
+symbol files and Build ID index were independently byte-verified against their
+durable private archive. The signed application's separate archive supplies 24
+matching JNI line/symbol pairs: 28 combined, with 23 historical libraries still
+missing symbols and eight lacking Build IDs. New symbols cannot resolve the old
+crashing binary's addresses.
 
 The fixed-AAR permanent-stop JNI probe exits successfully: 60 pre-stop access
 units match their encoder-output hash, old video MID 1 is stopped and rejected
 in both SDP descriptions without `bundle-only`, the queue epoch changes
 1→0→2, and replacement MID 2 resumes frames/RTP. All 72 control heartbeats and
-the post-stop round trip complete. This is a local counting-decoder/transport
-structural probe: receiver-content verification, codec decoding, physical
-performance and all rate-control paths are not established. It does not claim
-a deterministic reproduction of the old binary's crash or HEVC/vehicle acceptance.
+the post-stop round trip complete. This local counting-decoder/transport probe
+does not establish receiver picture content, codec decoding, physical performance
+or all rate-control paths. It does not claim deterministic reproduction of the
+old binary's crash or physical HEVC/vehicle acceptance.
 
-The v113 pre-adoption checks passed 690 web cases and 52 Python cases: 16
-native-symbol, 17 build-driver, eight APK-verifier, nine release-draft and two
-site-deployment. The 27-case native probe-driver suite also passes. The full
-required Android command passed against the adopted AAR in 14m 48s: 4,535 JUnit
-cases, zero failures/errors, all three lint and debug-build targets. Unchanged
-shared/home tests and home/maphost builds reused Gradle results. The actual
-mobile Debug APK passes the new-AAR/patch/provenance packaging verifier. Final
-signed-APK identity, release and public-page checks remain pending. The published beta.37 record below is unchanged. Repeated H.264/HEVC
-replacement and sustained phone/car-browser playback remain physical acceptance
-after installing the matching APK and page.
+The required Android command passed against the adopted AAR in 14m 48s. JUnit
+reports contain 4,535 cases (2,613 shared, 1,916 common, six home), zero failures
+or errors; all three lint and Debug-build targets pass. Shared/home tests and
+home/maphost builds reused unchanged Gradle results, so not every case was newly
+executed. The actual mobile Debug APK passes the new AAR/patch/provenance gate.
+The v113 checks passed 690 web and 52 Python cases: 16 native-symbol, 17 WebRTC
+build-driver, eight APK-verifier, nine release-draft and two site-deployment.
+The separate 27-case native probe-driver suite passes. Full remote CI was skipped
+at the user's request; required local checks, native producer, signed packaging
+and Pages ran.
 
-## Current release source
+[Signed run 41390877469](https://github.com/uJZk/TiPlay/actions/runs/41390877469)
+passed release, symbols and draft jobs. Independent checks confirm non-debug
+packaging, signer/runtime continuity, exactly four replaced WebRTC libraries,
+47 other libraries unchanged from beta.37, 25 ELF64 and all 51 JNI ZIP entries
+aligned to 16 KiB, pinned AAR identity and exact source. Three unauthenticated
+public attachment downloads match the candidate; the tag resolves to the app
+commit. Pages succeeded from that source: all 226 public files (37,807,638 bytes),
+156 MIME checks, eight download languages, v113/beta.38 metadata, waiting-worker
+policy and legacy `/webrtc/` 404 checks pass. [Build](Build.md#current-browser-deployment)
+records hashes and the two producer archives. Later documentation-only commits
+do not change those release inputs.
 
-**Beta.37/code79, browser/cache v112, is published** from
-`d038685c623112407b656ab78995bd8bd8facdfd`. The [19-item remediation](Robustness.md)
-follows audit baseline `42db8dca` and strengthens ownership, cancellation,
-stream recovery, platform callbacks, storage and worker updates. Original-codec
-RTP video, native Opus, fallback audio, Bluetooth microphones and SCO silence
-keepalive remain. Audio trimming is paused; committed native binaries and AARs
-are unchanged.
-
-The full local Android workflow command passes 4,535 unit cases: 2,613 shared,
-1,916 common and six home. Mobile, home and maphost Debug lint and assembly pass.
-Node 22 passes all 690 web cases. The 52 Python checks comprise 16 native-symbol,
-17 WebRTC build-driver, eight final-APK verifier, nine release-draft and two
-site-deployment cases. The new mobile Debug APK passes pinned AAR identity,
-provenance, four-ABI ELF and ZIP-alignment checks; this source-only package is
-separate from the signed CarPlay release.
-
-Actual Release JNI compilation and stripping pass for all 24 module/ABI pairs:
-Build IDs match the stripped output, unstripped ELF retains line/symbol tables,
-and AGP confirms `NDK_DEBUG=0`. The signed workflow subsequently passed its
-release, symbols and draft jobs and privately archived 24 matching JNI ELF files
-plus their Build ID index. Both private archive assets were independently
-re-downloaded byte-identical. Twenty-seven historical prebuilt libraries still
-lack matching symbols, and eight have no Build ID. Full WebRTC/audio producer
-rebuilds were not run for the beta.37 release.
-
-Independent candidate checks confirm non-debug packaging, signer/runtime
-continuity, all 51 native libraries unchanged from beta.36, 25 ELF64 and 51 JNI
-ZIP entries aligned to 16 KiB, pinned AAR provenance and exact committed source.
-The three public Release attachments were independently re-downloaded and match
-their hashes; the tag resolves to the build commit. Pages succeeded from that
-commit, and all 226 public files (37,807,638 bytes), 156 MIME checks, eight download
-languages, version metadata and legacy `/webrtc/` 404 checks pass.
-[Build](Build.md#current-browser-deployment) records workflows, hashes and the
-private symbol-index identity. Later documentation-only commits do not change
-these release inputs.
-
-Actual Chromium 151 checks pass for the two-page legacy service-worker update
-and main/Worker Processor-to-Canvas local-track paths. They do not establish a
-vehicle RTP path or hardware decoding. Public-tree/cache checks, workflow syntax,
-diff whitespace and documentation limits pass. Full remote CI was skipped at
-the user's request; required local source checks, signed packaging and Pages ran.
-Earlier unmatched SIGSEGV reports, vehicle reconnect behavior, SCO/focus recovery,
-slow storage and graphics/device failures still need matching hardware evidence.
-The November 2 matched trace and pending native fix are recorded above.
-
-Use the [Android workflow](../.github/workflows/android.yml) for the source revision
-under test. Synthetic caption and player tests
-do not establish physical subtitle availability, vehicle rendering, or source
-compatibility. Validate the matching APK and browser page on the target vehicle;
-observe YouTube subtitle delivery, repeated consent, AirPlay mirroring and video
-continuity separately. Missing audio transport keys are diagnosed without assuming
-a plaintext stream.
+The earlier real Chromium 151 two-page worker-update and Processor/Canvas local
+track probes establish those paths only. Repeated physical H.264/HEVC replacement,
+sustained phone/car-browser playback, reconnects, SCO/focus recovery, slow storage
+and graphics/device failures remain acceptance work. Use the matching APK and
+page; software checks do not establish vehicle hardware decoding or continuity.
 
 ## Previous release source
+
+Beta.37/code79 with browser/cache v112 shipped the 19-item robustness remediation
+from `d038685c623112407b656ab78995bd8bd8facdfd`. Its unchanged native binaries,
+4,535 Android reports, 690 web/52 Python checks, 24 app-JNI symbol pairs and
+independent publication checks are recorded in the
+[frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment).
+Those results did not cover the later native source-rate fix.
 
 Beta.36/code78, browser v111, was published from `c1ad4b32` with system native
 trace collection and a Bonjour hostname-lookup workaround. Its 86 focused

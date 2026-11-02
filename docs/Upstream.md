@@ -28,8 +28,8 @@ TiPlay's build wrapper uses its fixed M150-compatible revision
 `06e3410d8f67d08202e26f55225705596b60778e`: the Android environment setup,
 common GN arguments, Android warning policy and three upstream compatibility
 patches. Only the source-rate patch is applied on top. The old
-combined `publisher-compat.patch` remains an input fingerprint for the committed
-AAR; it is not the compatibility patch source for new builds. Upstream sets
+combined `publisher-compat.patch` is a historical Java-equivalence reference;
+new builds apply the three pinned upstream patches directly. Upstream sets
 `treat_warnings_as_errors=false` for Android, so its unchanged Java compiles
 without a local generic-type patch. The original and legacy-patched factory
 produce identical Java class bytes; this does not establish an identical AAR.
@@ -52,11 +52,38 @@ or physical phone/browser playback.
 The matched November 2 native crash exposes a source-rate patch lifetime rule:
 a late sending-state task must check the stopped encoder on its owning queue
 before changing gate fields or dereferencing the cleared cadence adapter.
-A caller-side check cannot cover an already queued task. Beta.38's minimal guard,
-configured-stream permanent-stop regression, full four-ABI AAR build and matching
-private symbol archive are pending; see [Robustness](Robustness.md#matched-post-stop-native-crash).
-A successful replacement must preserve original compressed frames and all normal
-source-rate/congestion behavior.
+A caller-side check cannot cover an already queued task. Beta.38 includes the
+minimal queue-side guard and its configured-stream permanent-stop regression;
+see [Robustness](Robustness.md#matched-post-stop-native-crash). Preserve original
+compressed frames and all normal source-rate/congestion behavior.
+
+The adopted four-ABI AAR was built from producer source
+`aef6c97a2402f4f5ef4a821a876a11941116d180` in
+[run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134).
+All 11 focused native cases pass with actual RUN/OK for the post-stop test.
+AAR SHA-256 is `d9b59a3160bffc1fcd3676cf5bd4d63046212d6847cc56e7122332d4dcf8fe98`.
+Its Java class inventory and licenses match the prior release; all four WebRTC
+ELF libraries change. The corresponding private archive, targeted at that
+producer commit, was independently byte-verified; index SHA-256 is
+`4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c`.
+
+| ABI | Matching WebRTC Build ID |
+| --- | --- |
+| `arm64-v8a` | `f8632addc3d7f771` |
+| `armeabi-v7a` | `fa285cc39287a514` |
+| `x86` | `29ffc2a18edebd09` |
+| `x86_64` | `d3aeedc9d4d50388` |
+
+The application release uses separate source
+`ab629363e6af9d7ea914fd8808baf84ab5f391fb` and a private app-JNI archive with
+24 matching pairs; its index SHA-256 is
+`87106603f394f0e45f7a91cad40467a390f4ccc9fd30f8c75157c6a2d2a4e56d`.
+Together the archives cover 28 packaged line/symbol pairs; 23 historical libraries
+remain without matching line symbols and eight without Build IDs. The WebRTC
+producer is now exercised end to end; this release did not rebuild the independent
+audio producer. [Build](Build.md#current-browser-deployment) records final APK,
+public Release and Pages verification. Local JNI transport probes and native
+tests do not establish physical H.264/HEVC rendering or vehicle continuity.
 
 The local vendor modules must resolve exclusively from their pinned Ivy source;
 checking an unused local AAR is insufficient. Release packaging also verifies

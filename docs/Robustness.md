@@ -40,8 +40,9 @@ to prevent taking another application's call route.
 
 The following 19 items shipped in beta.37/code79 with browser/cache v112 from
 `d038685c623112407b656ab78995bd8bd8facdfd`. Required source regressions, signed
-packaging, Pages and independent public-artifact checks pass; [Build](Build.md#current-browser-deployment)
-records their exact scope and hashes. These results do not establish vehicle acceptance.
+packaging, Pages and independent public-artifact checks pass; the
+[frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment)
+retains their exact scope and hashes. These results do not establish vehicle acceptance.
 
 | Audit | Boundary | Required behavior |
 | --- | --- | --- |
@@ -83,20 +84,25 @@ The machine-code and field-access fingerprint identify the custom
 `VideoStreamEncoder::SetSourceRateSending` implementation with high confidence.
 Upstream permanent stop first stops the encoder and clears its cadence adapter,
 then stops the send stream. The latter can enqueue a source-rate state update;
-the current setter reaches the cleared adapter without a queue-side stop guard.
+the affected setter reaches the cleared adapter without a queue-side stop guard.
 One configured stream is sufficient. This is a concrete valid-object post-stop
 path; a separate use-after-free hypothesis is not needed to explain it.
-The historical binary lacks matching full symbols, so this is not a DWARF source
-line resolution or an independently executed native reproducer.
+The historical binary lacks matching full symbols, so this is not DWARF source
+line resolution. Its old-binary fault has not been independently reproduced.
 
-Beta.38/code80 with browser/cache v113 is in preparation. Its minimal native fix
-must reject the late update on the encoder queue before gate-state changes or
-adapter access. Required regression covers a configured stream, permanent-stop
-ordering, the late update and queue drain, plus normal fresh-encoder behavior.
-The native regression, full AAR producer, matching symbol retention, APK identity
-and release/public-page verification are pending. Source inspection cannot prove
-repeated H.264/HEVC replacement or sustained vehicle continuity; those remain
-acceptance after the matching APK/page is installed. The original 19-item audit
+Beta.38/code80 with browser/cache v113 is published from
+`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. Its minimal native guard rejects
+late updates on the encoder queue before gate-state changes or adapter access.
+Producer `aef6c97a2402f4f5ef4a821a876a11941116d180`, run `41382204134`, rebuilt
+all four AAR ABIs. Eleven actual focused native tests pass, including the
+configured-stream post-stop regression. The fixed-AAR JNI probe stops the active
+video transceiver, retires the old MID, advances epoch 1→0→2, resumes replacement
+RTP and completes 72/72 control heartbeats. Its counting decoder does not verify
+receiver pictures or physical HEVC/vehicle behavior. New matching symbols and
+APK identity have been verified; [Testing](Testing.md#current-release-source)
+and [Build](Build.md#current-browser-deployment) record their scope.
+Repeated H.264/HEVC replacement and sustained vehicle continuity remain physical
+acceptance after installing the matching APK/page. The original 19-item audit
 count above is unchanged by this later field evidence.
 
 ## Diagnostics and storage
@@ -130,39 +136,35 @@ uncontrolled network load across an external CDN deployment.
 
 ## Verification and remaining device evidence
 
-For the published beta.37 source, the complete [AGENTS](../AGENTS.md) Android
-command passed: 4,535 unit cases
-(2,613 shared, 1,916 common and six home), mobile/home/maphost Debug lint and all
-three Debug assemblies. Node 22 passed all 690 browser cases. The 52 Python
-checks cover native symbols, the WebRTC build driver, final-APK verification,
-release drafts and site deployment. The freshly assembled mobile Debug APK also
-passes the pinned WebRTC identity/provenance, four-ABI ELF and ZIP-alignment gate.
-Public-tree, cache, workflow syntax and documentation word-limit checks pass.
-Actual AGP Release JNI compilation and stripping also pass: all 24 module/ABI
-pairs have matching Build IDs and retained line tables/symbol tables, backed by
-`NDK_DEBUG=0` configurations. The signed beta.37 workflow subsequently verified
-the APK and privately archived its 24 matching JNI symbol files plus Build ID
-index; independent downloads matched both archive assets byte for byte. This
-does not supply symbols for the 27 historical prebuilt libraries, eight of which
-have no Build ID.
+For beta.38, the required [AGENTS](../AGENTS.md) Android command passes with
+4,535 zero-failure JUnit report cases, all mobile/home/maphost Debug lint and
+assemblies. Unchanged shared/home tests and home/maphost builds reused Gradle
+results; this is not a claim that all cases were freshly executed. The actual
+mobile Debug APK passes the new AAR/patch/provenance gate. The 690 web, 52 Python
+and separate 27 native probe-driver cases pass. The full native AAR build and
+11 focused native regressions pass independently of those source checks.
 
-Real Chromium checks cover legacy-to-waiting service-worker updates with two
-pages and Processor/Canvas main/Worker paths using a local capture track. They
-do not establish a vehicle RTP path or hardware decoding. New owner, failure,
-deadline and storage tests exercise the blocked operation or actual transition.
-See [Testing](Testing.md) for reproducible source checks and their limits.
+The signed APK verifies exactly four replaced WebRTC libraries and 47 unchanged
+libraries, signer/runtime continuity, exact source, 25 ELF64 and all 51 JNI ZIP
+entries aligned to 16 KiB. Its two producer archives were independently verified:
+24 app-JNI matching line/symbol pairs for the application commit and four WebRTC
+pairs for the native producer. Twenty-three historical libraries still lack
+matching line symbols, eight have no Build ID. New symbols cannot retrospectively
+resolve the old crashing ELF. The full WebRTC producer has run; the independent
+audio producer was not rebuilt for this release.
 
-Full WebRTC/audio producer rebuilds were not executed for beta.37; actual mobile
-JNI symbol archival passed separately. That release replaced no committed AAR or
-native prebuilt binary, and all 51 packaged native libraries match beta.36. The three public Release attachments and tag, 226 page files and
-156 MIME checks pass independent verification. Full remote CI was skipped for
-this release at the user's request; required local source checks, signed
-packaging and Pages all ran.
+All three public Release attachments and the tag, 226 page files and 156 MIME
+checks pass independent verification. Full remote CI was skipped at the user's
+request; required local checks, native producer, signed packaging and Pages ran.
+The [frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment)
+retains the original audit release's evidence. Earlier real Chromium worker-update
+and local-track Processor/Canvas probes establish those paths, not a vehicle RTP
+path or hardware decoding.
 
 Earlier native SIGSEGV reports still lack their matching native backtraces;
-the November 2 matched crash is analyzed separately above. The beta.37 audit
-changes do not establish those earlier crashes' causes or prove ARM64 vehicle
-continuity. Hardware acceptance still includes sustained calls with transient
-focus, actual graphics context loss, existing Wi-Fi handoff and slow storage.
-See [Diagnostics](Diagnostics.md) for capture and [Build](Build.md#current-browser-deployment)
-for the last published artifact's separate evidence.
+the November 2 matched crash is analyzed separately above. These results do not
+establish those earlier crashes' causes or prove ARM64 vehicle continuity.
+Hardware acceptance still includes sustained calls with transient focus, actual
+graphics context loss, existing Wi-Fi handoff, repeated codec replacement and
+slow storage. See [Diagnostics](Diagnostics.md) for capture and
+[Build](Build.md#current-browser-deployment) for the published artifact's evidence.

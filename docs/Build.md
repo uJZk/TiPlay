@@ -568,46 +568,46 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-Published [beta.37](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.37),
-code **79**, browser/cache **v112**, at **2026-10-31 15:36:52 UTC** from
-`d038685c623112407b656ab78995bd8bd8facdfd`. The [robustness remediation](Robustness.md)
-adds owner-safe cancellation, bounded recovery, diagnostic/storage isolation and
-conservative browser updates. RTP video, native Opus, Bluetooth/SCO and paused
-audio trimming remain. Historical SIGSEGV attribution and vehicle acceptance are open.
+Published [beta.38](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.38),
+code **80**, browser/cache **v113**, at **2026-11-02 13:04:37 Asia/Shanghai** from
+`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It guards post-stop source-rate
+updates implicated by the [matched tombstone](Robustness.md#matched-post-stop-native-crash).
+RTP video, native Opus, Bluetooth/SCO and paused audio trimming remain.
+Physical H.264/HEVC acceptance remains open.
 
-Local checks pass: 4,535 Android, 690 browser and 52 Python cases; required Debug
-lint/assemblies and Chromium SW/Canvas probes pass. Full remote CI was skipped at
-the user's request. [Signed run 41214807077](https://github.com/uJZk/TiPlay/actions/runs/41214807077)
-succeeded for that commit. Independent checks confirm non-debug packaging,
-signer/runtime continuity, all 51 native libraries unchanged from beta.36,
-25 ELF64 and 51 JNI ZIP entries aligned to 16 KiB, pinned AAR provenance and an
-exact committed source archive.
+Native producer `aef6c97a2402f4f5ef4a821a876a11941116d180`,
+[run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134), rebuilt
+all four AAR ABIs and passed 11 focused native tests. The fixed-AAR permanent-stop
+JNI probe passes with replacement RTP and 72/72 heartbeats; its counting decoder
+does not establish pictures. [Upstream](Upstream.md#webrtc-build-maintenance)
+records the AAR and four matching symbol pairs; their private index SHA-256 is
+`4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c`.
 
-The private symbol archive was byte-verified: 24 JNI ELF files plus Build ID index
-for this commit; index SHA-256
-`7f048112d61d6cdb5a7285bef5cd1aa73f9553d51997fec53f5aca274a14af77`.
-Twenty-seven historical prebuilt libraries still lack matching symbols; eight
-have no Build ID. Future WebRTC/audio producer rebuilds remain unverified.
+Required Android checks pass: 4,535 zero-failure JUnit report cases, three
+lint/assembly targets and the Debug AAR gate. Shared/home tests and home/maphost
+builds reused results. Web/Python/native probe-driver checks pass 690/52/27 cases.
+Full remote CI was skipped at the user's request.
+[Signed run 41390877469](https://github.com/uJZk/TiPlay/actions/runs/41390877469)
+succeeded for the application commit. Independent checks confirm non-debug
+packaging, signer/runtime continuity, four replaced WebRTC libraries, 47 unchanged
+libraries, 25 ELF64/51 JNI ZIP 16 KiB alignment and exact committed source.
+The 24 application-JNI symbol pairs were privately archived and byte-verified;
+index SHA-256 `87106603f394f0e45f7a91cad40467a390f4ccc9fd30f8c75157c6a2d2a4e56d`.
+Twenty-three historical libraries still lack symbols, eight without Build IDs.
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.37.apk` | 114,513,731 | `b84e39293713e3f08e376d7bdada59ef90bb765e6d46ed349ab144e8d88f57ef` |
-| `TiPlay-0.2.20-beta.37-source.zip` | 70,173,225 | `41214c131cee126ff64fefc97d8125d5214f5cf6f668916770708099b56fcd15` |
-| `SHA256SUMS.txt` | 191 | `d9b36d3e295b4e250c1596a7c3f366ab9e313cd5b4088f316a3074da37ec9c46` |
+| `TiPlay-0.2.20-beta.38.apk` | 114,514,767 | `0fbf069e584d7896ecd1b1d88998cd0ebed22fc6fcab9aace99e4c90c4319a49` |
+| `TiPlay-0.2.20-beta.38-source.zip` | 70,179,750 | `ae13f3e76abc93c888156307729a064f8ef90e212a48d08702566d3026a263b4` |
+| `SHA256SUMS.txt` | 191 | `44c96bd7c695759f7ee4c9203ef10ede59a9a1f88bc19a3a0a8e779c92635692` |
 
-All three public attachments were independently re-downloaded and match the table;
-the Release tag resolves to the build commit.
-[Pages run 41215698173](https://github.com/uJZk/TiPlay/actions/runs/41215698173) succeeded
-from the same commit. All 226 public files (37,807,638 bytes), 156 MIME checks,
-eight download languages and v112/beta.37 metadata match the assembly, with legacy
-`/webrtc/` paths returning 404.
-Later documentation-only commits do not change release inputs.
-
-The preceding beta.36/code78/v111 build `c1ad4b32` has its complete publication,
-workflow and hash evidence in the
-[frozen beta.36 record](https://github.com/uJZk/TiPlay/blob/42db8dcaea38f4038ebee130312a3e5077227793/docs/Build.md#current-browser-deployment).
-The [frozen beta.35 record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment)
-retains its earlier evidence.
+All three unauthenticated public downloads match; the tag resolves to the build
+commit. [Pages run 41391911418](https://github.com/uJZk/TiPlay/actions/runs/41391911418)
+succeeded from that source. All 226 public files (37,807,638 bytes), 156 MIME
+checks, eight download languages and v113/beta.38 metadata match; legacy
+`/webrtc/` paths return 404. Later documentation-only commits do not change
+release inputs. The [frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment)
+retains the preceding provenance.
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).
