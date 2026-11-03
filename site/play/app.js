@@ -54,7 +54,7 @@ const STRINGS = {
     retryPairing: 'Pairing could not be verified. Check the current code in TiPlay. Retrying in {0} s…',
     retryConnection: 'Cannot connect. Keep both devices on the same network. Retrying in {0} s…',
     stats: 'Performance monitor',
-    statsLabel: 'Performance monitor: codec, current FPS, current Delta, dropped frames',
+    statsLabel: 'Performance monitor: codec, current FPS, receive processing time, confirmed dropped frames',
     fit: 'Apply and reconnect',
     fitPending: 'Reconnecting…',
     source: 'TiPlay',
@@ -114,7 +114,7 @@ const STRINGS = {
     retryPairing: '配对验证未通过，请检查 TiPlay 当前显示的配对码。{0} 秒后重试…',
     retryConnection: '暂时无法连接，请确认两台设备连接同一网络。{0} 秒后重试…',
     stats: '性能监视器',
-    statsLabel: '性能监视器：编码、当前 FPS、当前 Delta、丢帧计数',
+    statsLabel: '性能监视器：编码、当前 FPS、接收处理时间、已确认丢帧数',
     fit: '应用并重新连接',
     fitPending: '正在重新连接…',
     source: 'TiPlay',
@@ -846,7 +846,7 @@ function render() {
 function renderStats() {
   const rtp = rtcMedia?.stats().rtpVideo;
   $('stats').textContent = formatPerformanceMonitor(codecName(config?.codec ?? videoStats.codec ?? '—'), videoStats,
-    config && rtp?.generation === currentVideoGeneration ? rtp : null, lang);
+    config && rtp?.generation === currentVideoGeneration ? rtp : null);
 }
 
 function retryStatusText(error, seconds) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-const EVENTS = new Set(['open', 'probe-start', 'probe-ready', 'open-error',
+const EVENTS = new Set(['open', 'probe-start', 'probe-ready', 'resource-probe', 'open-error',
   'directive-seek', 'directive-play', 'directive-pause', 'play-resolved', 'play-rejected',
   'loadedmetadata', 'play', 'pause', 'waiting', 'playing', 'seeking', 'seeked', 'ratechange', 'ended', 'error',
   'drag-start', 'drag-end', 'drag-cancel', 'canvas-error', 'explicit-stop', 'proxy-fallback', 'resync', 'engine-state']);
@@ -142,6 +142,18 @@ export function createAirPlayDiagnostics(send, { state, media = () => null, acti
   }
   return {
     event,
+    resource({ route, status, redirected, elapsedMs, error }) {
+      if (disposed || !active()) return;
+      try {
+        const entry = airplayDiagnostic('resource-probe', state(), { error });
+        if (!entry) return;
+        if (route === 'direct' || route === 'relay') entry.resourceRoute = route;
+        if (Number.isInteger(status) && status >= 100 && status <= 599) entry.httpStatus = status;
+        if (typeof redirected === 'boolean') entry.redirected = redirected;
+        if (Number.isFinite(elapsedMs) && elapsedMs >= 0 && elapsedMs <= 120000) entry.elapsedMs = Math.round(elapsedMs);
+        send(entry);
+      } catch (_) {}
+    },
     monitor(target, surface) {
       for (const name of MEDIA_EVENTS) listen(target, name, received => {
         if (name !== 'error') { event(name, received.error); return; }

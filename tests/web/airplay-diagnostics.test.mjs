@@ -16,6 +16,20 @@ function fixture() {
   return { media, surface, diagnostics, events, retire: () => { active = false; } };
 }
 
+test('resource probes send bounded route evidence without a URL', () => {
+  const f = fixture();
+  f.diagnostics.resource({ route: 'direct', status: 206, redirected: true, elapsedMs: 21.6 });
+  assert.deepEqual(f.events.at(-1), { k: 'ap-diag', id: 7, revision: 3, event: 'resource-probe',
+    dragging: false, resourceRoute: 'direct', httpStatus: 206, redirected: true, elapsedMs: 22 });
+  f.diagnostics.resource({ route: 'https://secret.example', status: 999, elapsedMs: Infinity,
+    error: new TypeError('https://secret.example/private?token=secret') });
+  const entry = JSON.stringify(f.events.at(-1));
+  assert.equal(entry.includes('secret'), false);
+  assert.equal(f.events.at(-1).resourceRoute, undefined);
+  f.retire(); f.diagnostics.resource({ route: 'relay', status: 200 });
+  assert.equal(f.events.length, 2);
+});
+
 test('AirPlay diagnostics isolate an exception message getter and include only known fields', () => {
   const secret = 'https://private.example/video?code=secret&session=secret';
   const failure = { name: 'NotAllowedError', code: 4,

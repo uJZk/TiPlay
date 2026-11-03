@@ -87,7 +87,8 @@ object RawTraffic {
         val starting = active && (!enabled || changed)
         if ((changed || !active) && enabled) {
             metadataSession?.retire()
-            record("capture/stop", "${if (active) "reconfigured" else "disabled"} ${metadataSession?.summary().orEmpty()}".toByteArray())
+            record("capture/stop", ("${if (active) "reconfigured" else "disabled"} ${metadataSession?.summary().orEmpty()}\n" +
+                metadataSession?.failureReport().orEmpty()).toByteArray())
         }
         if (changed || !active) closeWriter()
         if (changed || starting) needsBoundaryCheck = true
@@ -158,13 +159,13 @@ object RawTraffic {
     internal fun writeMetadata(entry: MetadataCaptureSession.Entry) = synchronized(lock) {
         if (!entry.isPending) return@synchronized
         if (!enabled || metadataSession !== entry.session || sessionId != entry.session.id) {
-            entry.finish(false)
+            entry.finish(MetadataCaptureSession.Failure.SESSION_CHANGED)
             return@synchronized
         }
         val before = failures
         val previousSequence = sequence
         recordReferenced(entry.channel, entry.bytes, 0, entry.bytes.size, observedAtMillis = entry.observedAtMillis)
-        entry.finish(sequence != previousSequence && failures == before)
+        entry.finish(if (sequence != previousSequence && failures == before) null else MetadataCaptureSession.Failure.WRITE_FAILED)
     }
 
     /** Session validation and append share the clear/enable monitor: delayed reports cannot enter a new capture. */
@@ -366,13 +367,15 @@ object RawTraffic {
         val length = target?.length() ?: 0L
         val async = metadataSession
         val totalFailures = failures + (async?.failureCount() ?: 0)
+        val reportedLastFailure = if (failures == 0L && totalFailures > 0) "AsyncMetadataLoss" else lastFailure
         Snapshot(if (length == 0L) java.io.ByteArrayInputStream(byteArrayOf()) else target!!.inputStream(), length,
-            "RAW_CAPTURE failures=$totalFailures lastFailure=$lastFailure enabled=$enabled format=${if (compressed) "zstd-tsv-base64-v1" else "tsv-base64"} bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
+            "RAW_CAPTURE failures=$totalFailures lastFailure=$reportedLastFailure enabled=$enabled format=${if (compressed) "zstd-tsv-base64-v1" else "tsv-base64"} bytes=$length snapshotEpochMillis=${System.currentTimeMillis()}\n" +
                 "RAW_CAPTURE_INTEGRITY coverage=${if (integrity()["complete"] == true) "no-observed-write-failure" else "partial"} " +
                 "firstFailureEpochMillis=$firstFailureEpochMillis lastFailureEpochMillis=$lastFailureEpochMillis " +
                 "failedByteAttempts=$failedByteAttempts lastFailureSource=$lastFailureChannel " +
                 "lastFailureText=$lastFailureText referenceIntegrity=${referenceIntegrity && async?.referenceIntegrity?.get() != false} durability=application-flush\n" +
                 "RAW_ASYNC_METADATA ${async?.summary().orEmpty()}\n" +
+                (async?.failureReport() ?: "") +
                 "RAW_CAPTURE_TIMING " + timing.snapshot().entries.joinToString(" ") { "${it.key}=${it.value}" } + "\n", compressed, target?.name ?: "raw-traffic.tsv.zst")
     }
 

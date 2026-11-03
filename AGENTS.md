@@ -38,6 +38,8 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment).
+Beta.39/code81 and browser/cache v114 are prepared for release; see the beta.39
+preparation note in Build for scope, checks and remaining vehicle validation.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Beta.38/code80 with browser/cache v113 is published from

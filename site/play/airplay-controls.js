@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { addressSpaceFor } from './link.js';
 import { createAirPlayDiagnostics } from './airplay-diagnostics.js';
 import { fetchMediaResource } from './airplay-fetch.js';
 import { createAirPlayArtwork } from './airplay-artwork.js';
@@ -158,7 +159,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       player.media.pause();
     }
   }
-  function resourceRoute(next, forceProxy = next.proxyOnly === true, resource = next.resource) {
+  function resourceRoute(next, forceProxy = false, resource = next.resource) {
     const { code, session } = credentials();
     return `/airplay-resource?id=${next.id}&r=${encodeURIComponent(resource)}&c=${encodeURIComponent(code)}&s=${encodeURIComponent(session)}${forceProxy ? '&proxy=1' : ''}`;
   }
@@ -199,7 +200,7 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     }
   }
   async function openPhoto(next) {
-    const currentKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
+    const currentKey = `${next.id}:${host()}:${next.resource}`;
     clear(); key = currentKey; layer.hidden = next.outputAllowed === false;
     const abort = loading = new AbortController();
     try {
@@ -219,9 +220,8 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
     }
   }
   async function open(next, forced = false) {
-    const sourceKey = `${next.id}:${host()}:${next.resource}:`;
-    const currentKey = `${sourceKey}${next.proxyOnly === true}`;
-    const resume = player && (forced || key !== currentKey) && key?.startsWith(sourceKey) && appliedRevision === next.revision
+    const currentKey = `${next.id}:${host()}:${next.resource}`;
+    const resume = forced && player && key === currentKey && appliedRevision === next.revision
       ? { time: player.media.currentTime, rate: player.media.playbackRate } : null;
     clear(); key = currentKey;
     layer.hidden = next.outputAllowed === false || next.videoShown === false;
@@ -233,30 +233,42 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       active: () => diagnostics === observation && key === currentKey && !abort.signal.aborted && !disposed,
     });
     observation.event('open', undefined, next);
-    let forceProxy = forced || next.proxyOnly === true;
-    let route;
-    const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+    const fetchExternal = (url, init) => fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store',
+      targetAddressSpace: addressSpaceFor(new URL(url).host) });
     try {
       const { createVideoPlayer } = await loadModule();
       if (!owns() || key !== currentKey) return;
       player = createVideoPlayer(layer, { lang, stop: () => { if (owns() && key === currentKey) stop(); }, stopText, signal: abort.signal,
         onCanvasError: error => observation.event('canvas-error', error),
-        proxyOnly: next.proxyOnly === true,
+        proxyOnly: false,
         proxyOrigin: `http://${host()}`,
       });
       playerKind = 'video';
-      route = resourceRoute(next, forceProxy);
+      let forceProxy = forced;
+      let route = resourceRoute(next, forceProxy);
       observation.event('probe-start', undefined, next);
       let response;
-      try {
-        response = await fetchMediaResource(next.directUrl && !forceProxy ? fetchExternal : (_, init) => fetchPhone(route, init), next.directUrl || `http://${host()}${route}`,
-          { signal: abort.signal, headers: { Range: 'bytes=0-65535' } });
-        if (!response.ok) throw new Error('AirPlay media unavailable');
-      } catch (cause) {
+      const probe = async () => {
+        const started = performance.now();
+        try {
+          const result = await fetchMediaResource(next.directUrl && !forceProxy ? fetchExternal : (_, init) => fetchPhone(route, init),
+            next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`,
+            { signal: abort.signal, headers: { Range: 'bytes=0-65535' } });
+          observation.resource({ route: next.directUrl && !forceProxy ? 'direct' : 'relay', status: result.status,
+            redirected: result.redirected, elapsedMs: performance.now() - started });
+          if (!result.ok) throw new Error('AirPlay media unavailable');
+          return result;
+        } catch (error) {
+          observation.resource({ route: next.directUrl && !forceProxy ? 'direct' : 'relay',
+            elapsedMs: performance.now() - started, error });
+          throw error;
+        }
+      };
+      try { response = await probe(); }
+      catch (cause) {
         if (forceProxy || abort.signal.aborted) throw cause;
         forceProxy = true; route = resourceRoute(next, true); observation.event('proxy-fallback');
-        response = await fetchMediaResource((_, init) => fetchPhone(route, init), `http://${host()}${route}`,
-          { signal: abort.signal, headers: { Range: 'bytes=0-65535' } });
+        response = await probe();
       }
       if (!response.ok) throw new Error('AirPlay media unavailable');
       const type = response.headers.get('Content-Type')?.split(';')[0] ?? '';
@@ -274,7 +286,9 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
           if (event === 'play' && state?.outputAllowed === false) { media.pause(); return; }
           if (event === 'waiting' || event === 'seeking') waiting = true;
           else if (['pause', 'playing', 'seeked', 'ended', 'error'].includes(event)) waiting = false;
-          if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') { observation.event('proxy-fallback'); void open(state, true); return; }
+          if (event === 'error' && !forceProxy && media.error?.name !== 'NotSupportedError') {
+            observation.event('proxy-fallback'); void open(state, true); return;
+          }
           if (event === 'playing') finishPreparation();
           else if (event === 'error') { terminalFailure = true; showFailure(media.error); }
           else syncPreparation();
@@ -283,7 +297,6 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       await player.source(next.directUrl && !forceProxy ? next.directUrl : `http://${host()}${route}`, type, { proxyOnly: forceProxy });
       if (abort.signal.aborted || player !== opened) return;
       sourceReady = true; applyDirective(); syncPreparation();
-      // A command received during source preparation takes precedence over the old player's snapshot.
       if (resume && Number.isFinite(resume.time) && state?.id === next.id && state.revision === next.revision
         && (state.seekRevision ?? state.revision) === (next.seekRevision ?? next.revision)) {
         media.currentTime = resume.time; media.playbackRate = resume.rate;
@@ -315,13 +328,13 @@ export function createAirPlayControls(stage, send, lang = 'en', { fetchPhone, cr
       }
       if (next.kind === 'photo') {
         if (!next.resource && key) clear();
-        if (next.resource && key !== `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`) void openPhoto(next);
+        if (next.resource && key !== `${next.id}:${host()}:${next.resource}`) void openPhoto(next);
         layer.hidden = next.outputAllowed === false;
         return;
       }
       layer.hidden = next.outputAllowed === false || next.videoShown === false;
       if (!next.resource || !Number.isSafeInteger(next.revision)) { clear(); return; }
-      const nextKey = `${next.id}:${host()}:${next.resource}:${next.proxyOnly === true}`;
+      const nextKey = `${next.id}:${host()}:${next.resource}`;
       if (key !== nextKey) open(next);
       else if (terminalFailure) report();
       else applyDirective();

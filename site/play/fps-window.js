@@ -84,14 +84,14 @@ export function createReceiveProcessingTracker() {
 }
 
 /** The receive duration excludes sender, network, Canvas and panel latency. */
-export function formatPerformanceMonitor(codec, stats = {}, rtp = null, language = 'en') {
+export function formatPerformanceMonitor(codec, stats = {}, rtp = null) {
   const number = value => Number.isFinite(value) ? String(Math.round(value)) : '—';
-  const zh = language === 'zh';
   const receive = rtp?.state === 'selected' && Number.isFinite(rtp.sampleAgeMs) && rtp.sampleAgeMs <= 5000 ? rtp : null;
-  const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
-  const pre = counter(stats.preConfigDroppedFrames), local = counter(stats.transferDroppedFrames), main = counter(stats.mainTransferDroppedFrames), render = counter(stats.renderDroppedFrames);
-  // These queues are distinct stages; keep the counters separate rather than assuming disjoint loss.
-  const app = [pre, main, local, render].some(value => value !== null)
-    ? zh ? `预 ${number(pre)} 入 ${number(main)} 出 ${number(local)} 绘制 ${number(render)}` : `pre ${number(pre)} in ${number(main)} out ${number(local)} render ${number(render)}` : '—';
-  return `${codec} · ${number(stats.currentFps)} fps · ${zh ? '接收处理' : 'recv'} ${number(receive?.receiveProcessingMs)} ms · RTC ${number(counter(receive?.framesDropped))} / ${zh ? '应用' : 'app'} ${app} ${zh ? '丢帧' : 'drops'}`;
+  // Receiver and application counters may overlap. Their maximum is a conservative
+  // lower bound on confirmed drops, without counting the same frame twice.
+  const counts = [receive?.framesDropped, stats.preConfigDroppedFrames, stats.mainTransferDroppedFrames,
+    stats.transferDroppedFrames, stats.renderDroppedFrames]
+    .filter(value => Number.isSafeInteger(value) && value >= 0);
+  const drops = counts.length ? Math.max(...counts) : null;
+  return `${codec} · ${number(stats.currentFps)} fps · ${number(receive?.receiveProcessingMs)} ms · ${drops === null ? '—' : drops > 0 ? `≥${drops}` : '0'} drops`;
 }

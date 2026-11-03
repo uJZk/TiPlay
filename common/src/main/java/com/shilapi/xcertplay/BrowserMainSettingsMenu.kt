@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothDevice
 import android.Manifest
@@ -174,23 +175,31 @@ internal class BrowserMainSettingsMenu(
             Toast.makeText(activity, R.string.settings_car_bluetooth_enable, Toast.LENGTH_LONG).show(); return
         }
         val devices = runCatching { adapter?.bondedDevices?.filter { it.bondState == BluetoothDevice.BOND_BONDED && !it.address.equals(draft.phoneAddress, true) }?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
-        val hasSelection = CarBluetoothPreference.address(activity) != null
+        showBluetoothPicker(R.string.settings_car_bluetooth_choose, R.string.settings_car_bluetooth_pair_first,
+            devices, if (CarBluetoothPreference.address(activity) != null) {
+                { CarBluetoothPreference.save(activity, null, null); refresh() }
+            } else null) { device -> chooseCarDevice(device.address) }
+    }
+
+    @SuppressLint("MissingPermission") // Callers check BLUETOOTH_CONNECT before collecting devices.
+    private fun showBluetoothPicker(title: Int, emptyMessage: Int, devices: List<BluetoothDevice>,
+        clear: (() -> Unit)? = null, select: (BluetoothDevice) -> Unit) {
         val labels = devices.map { "${it.name ?: activity.getString(R.string.paired_device)} · ${it.address.takeLast(5)}" } +
-            (if (hasSelection) listOf(activity.getString(R.string.settings_car_bluetooth_clear)) else emptyList()) +
+            (if (clear != null) listOf(activity.getString(R.string.settings_car_bluetooth_clear)) else emptyList()) +
             activity.getString(R.string.settings_car_bluetooth_open_settings)
-        val dialog = AlertDialog.Builder(activity).setTitle(R.string.settings_car_bluetooth_choose)
+        val dialog = AlertDialog.Builder(activity).setTitle(title)
         if (devices.isEmpty()) {
-            dialog.setMessage(R.string.settings_car_bluetooth_pair_first)
+            dialog.setMessage(emptyMessage)
                 .setPositiveButton(R.string.settings_car_bluetooth_open_settings) { _, _ ->
                     activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }
-            if (hasSelection) dialog.setNeutralButton(R.string.settings_car_bluetooth_clear) { _, _ ->
-                CarBluetoothPreference.save(activity, null, null); refresh()
+            if (clear != null) dialog.setNeutralButton(R.string.settings_car_bluetooth_clear) { _, _ ->
+                clear()
             }
         } else {
             dialog.setItems(labels.toTypedArray()) { _, index ->
-                if (index < devices.size) chooseCarDevice(devices[index].address)
-                else if (hasSelection && index == devices.size) { CarBluetoothPreference.save(activity, null, null); refresh() }
+                if (index < devices.size) select(devices[index])
+                else if (clear != null && index == devices.size) clear()
                 else activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
             }
         }
@@ -211,16 +220,10 @@ internal class BrowserMainSettingsMenu(
         }
         val adapter = activity.getSystemService(BluetoothManager::class.java)?.adapter
         val devices = runCatching { adapter?.takeIf { it.isEnabled }?.bondedDevices?.sortedBy { it.name ?: "" } }.getOrNull().orEmpty()
-        if (devices.isEmpty()) {
-            activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); return
+        showBluetoothPicker(R.string.choose_your_iphone, R.string.on_your_iphone_open_settings_bluetooth_and_pair_with_the_c, devices) { device ->
+            draft.phoneAddress = device.address; draft.phoneName = device.name ?: "iPhone"
+            phone.text = phoneLabel(); applyChanges()
         }
-        AlertDialog.Builder(activity).setTitle(R.string.choose_your_iphone)
-            .setItems(devices.map { "${it.name ?: activity.getString(R.string.paired_device)} · ${it.address.takeLast(5)}" }.toTypedArray()) { _, index ->
-                val device = devices[index]
-                draft.phoneAddress = device.address; draft.phoneName = device.name ?: "iPhone"
-                phone.text = phoneLabel(); applyChanges()
-            }.setNeutralButton(R.string.pair_another) { _, _ -> activity.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-            .setNegativeButton(android.R.string.cancel, null).create().also(ui::showDialog)
     }
     private fun input(parent: LinearLayout, label: Int, value: String, secret: Boolean = false, changed: (String) -> Unit): EditText {
         parent.addView(text(activity.getString(label)).also(spacing::field))

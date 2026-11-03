@@ -140,6 +140,12 @@ class ScreenStream(
                 listener.onFrame(annexB, ScreenCodec.senderNanos(header), arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
+                // Some senders emit an empty first message before the codec record.
+                // Later empty messages still invalidate an existing configuration.
+                if (body.isEmpty() && lastConfigBody == null) {
+                    onDiagnostic("Video config: empty message ignored")
+                    return
+                }
                 val config = ScreenCodec.describeConfig(body)
                 Log.i(TAG, "video codec config codec=${config.codec} body=${body.size} data=${config.record.size}")
                 // The iPhone repeats the same config after every forceKeyFrame; describe each distinct one once.

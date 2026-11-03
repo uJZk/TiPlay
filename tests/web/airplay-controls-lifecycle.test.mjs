@@ -76,7 +76,7 @@ function fixture(t, { moduleGate = null, photoDecode = async () => {} } = {}) {
   });
   t.after(() => { controls.dispose(); globalThis.document = previous; });
   const directive = (overrides = {}) => ({ id: 1, revision: 1, seekRevision: 1, trackRevision: 1,
-    kind: 'video', resource: 'movie', proxyOnly: true, playing: true, target: 0, ...overrides });
+    kind: 'video', resource: 'movie', playing: true, target: 0, ...overrides });
   const layer = stage.children[0];
   const indicator = () => layer.getAttribute('data-preparing') !== null ? layer : undefined;
   const probeReady = async index => {
@@ -102,7 +102,7 @@ test('cast preparation uses the player loading state until actual playing', asyn
   assert.equal(h.stop.hidden, false);
   await h.probeReady(0);
   const player = h.players[0];
-  assert.equal(player.options.proxyOnly, true, 'Debug resource policy reaches the AVPlayer adapter');
+  assert.equal(player.options.proxyOnly, false);
   assert.equal(player.options.proxyOrigin, 'http://phone.test');
   assert.equal(h.players.length, 1, 'preparation keeps the same player shell');
   assert.ok(h.indicator(), 'metadata and first decoded samples are still preparing');
@@ -165,7 +165,7 @@ test('a rejected play that returns to paused leaves the ready controls usable wi
 
 test('direct-to-proxy fallback keeps the same loading surface across both header probes', async t => {
   const h = fixture(t);
-  h.controls.update(h.directive({ proxyOnly: false })); await flush();
+  h.controls.update(h.directive()); await flush();
   const indicator = h.indicator();
   h.requests[0].reject(new TypeError('Direct resource unavailable')); await flush();
   assert.equal(h.requests.length, 2); assert.equal(h.indicator(), indicator);
@@ -173,6 +173,21 @@ test('direct-to-proxy fallback keeps the same loading surface across both header
   await h.probeReady(1); h.players[0].gate.resolve(); await flush();
   h.players[0].media.dispatchEvent(new Event('playing'));
   assert.equal(h.indicator(), undefined);
+});
+
+test('an external direct request falls back to Android after failure', async t => {
+  const h = fixture(t), previousFetch = globalThis.fetch, direct = [];
+  globalThis.fetch = async (url, init) => { direct.push({ url, init }); throw new TypeError('Network unavailable'); };
+  t.after(() => { globalThis.fetch = previousFetch; });
+  h.controls.update(h.directive({ directUrl: 'https://media.example.test/movie.mp4' }));
+  await flush();
+  assert.equal(direct.length, 1);
+  assert.equal(direct[0].url, 'https://media.example.test/movie.mp4');
+  assert.match(h.requests[0].route, /[?&]proxy=1/);
+  await h.probeReady(0);
+  assert.equal(h.players[0].sourceArguments[2].proxyOnly, true);
+  assert.deepEqual(h.sent.filter(entry => entry.event === 'resource-probe').map(entry => entry.resourceRoute), ['direct', 'relay']);
+  h.players[0].gate.resolve(); await flush();
 });
 
 test('an old probe failure cannot remove the replacement indicator or publish failure for its owner', async t => {
@@ -193,6 +208,7 @@ test('a current probe failure replaces loading with the existing error message a
   const h = fixture(t);
   h.controls.update(h.directive()); await flush();
   h.requests[0].reject(new Error('Media headers timed out')); await flush();
+  h.requests[1].reject(new Error('Media headers timed out')); await flush();
   assert.equal(h.indicator(), undefined);
   assert.equal(h.layer.getAttribute('aria-busy'), null);
   assert.equal(h.players[0].failure.message, 'Unable to play video. Try again from your iPhone.');
@@ -207,12 +223,13 @@ test('output permission hides and restores an early-error Stop action without re
   const h = fixture(t);
   h.controls.update(h.directive()); await flush();
   h.requests[0].reject(new Error('Resource unavailable')); await flush();
+  h.requests[1].reject(new Error('Resource unavailable')); await flush();
   assert.equal(h.stop.hidden, false); assert.equal(h.layer.hidden, false);
   h.controls.update(h.directive({ outputAllowed: false, playing: false, revision: 2 })); await flush();
   assert.equal(h.layer.hidden, true);
   h.controls.update(h.directive({ outputAllowed: true, revision: 3 })); await flush();
   assert.equal(h.stop.hidden, false); assert.equal(h.layer.hidden, false);
-  assert.equal(h.requests.length, 1, 'permission updates preserve the current failure rather than restarting loading');
+  assert.equal(h.requests.length, 2, 'permission updates preserve the current failure rather than restarting loading');
   h.stop.dispatchEvent(new Event('click'));
   assert.deepEqual(h.sent.filter(event => event.k === 'ap').at(-1), { k: 'ap', id: 1, a: 'stop' });
   h.controls.update(h.directive({ resource: null, revision: 4 })); await flush();
@@ -244,6 +261,7 @@ test('an initial failure is reported again with the latest revision until the ow
   const h = fixture(t);
   h.controls.update(h.directive()); await flush();
   h.requests[0].reject(new Error('Resource unavailable')); await flush();
+  h.requests[1].reject(new Error('Resource unavailable')); await flush();
   const failures = () => h.sent.filter(event => event.k === 'ap-state' && event.failed);
   assert.equal(failures().at(-1).revision, 1);
   // Model Android rejecting the old revision after a concurrent directive.
@@ -343,7 +361,7 @@ test('a controls-adapter cleanup failure cannot retain a cast surface or revive 
 
 test('a direct resource fallback applies proxy-only policy to the actual AVPlayer source', async t => {
   const h = fixture(t);
-  h.controls.update(h.directive({ proxyOnly: false })); await flush();
+  h.controls.update(h.directive()); await flush();
   h.requests[0].reject(new TypeError('Direct source unavailable')); await flush();
   await h.probeReady(1);
   assert.equal(h.players[0].sourceArguments[2].proxyOnly, true);

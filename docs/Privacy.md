@@ -35,7 +35,7 @@ Exports normally use Downloads/TiPlay. If unavailable, TiPlay uses `Android/data
 
 ## Media and permissions
 
-CarPlay and ordinary AirPlay encoded video are forwarded to the browser. Ordinary AirPlay audio and original JPEG/PNG photos are also decoded in the browser. URL playback fetches resources from the iPhone or sender's media service through Android’s authenticated proxy or supported direct resource URLs. While Debug mode is enabled, all resources pass through Android so the capture includes them; the browser receives no direct iPhone URL or redirect.
+CarPlay and ordinary AirPlay encoded video are forwarded to the browser. Ordinary AirPlay audio and original JPEG/PNG photos are also decoded in the browser. URL playback fetches resources from the iPhone or sender's media service through Android’s authenticated proxy or supported direct resource URLs. Debug mode does not change the route. Browser-direct resources and their response bodies are not captured by Android, and direct URLs are sent to the browser for playback.
 
 With CarPlay sound enabled, Android requests microphone permission while connecting in the foreground. Capture opens only when the iPhone requests Siri/call input, using a verified car HFP/SCO Bluetooth route; denial still permits playback. There is no handset or browser microphone fallback. The browser never requests microphone permission. Advanced settings can leave audio/calls on the iPhone-to-car Bluetooth link. See [audio routing](Browser.md#audio-and-microphone) for route-release and physical-validation limits.
 

@@ -400,8 +400,12 @@ distinguish DNS, CORS, local-network permission and other browser fetch failures
 The upstream retries and preparation deadlines are unchanged.
 
 Authenticated resources validate browser/playback/resource identity, preserve Range,
-stream media and rewrite bounded HLS manifests/children/keys. Current-iPhone resources
-may redirect directly, with authorized proxy fallback for failed CORS/reachability. Debug mode forces all media through Android, including nested playlists and redirects, and updates the browser directive so active playback reopens on the new route.
+stream media and rewrite bounded HLS manifests/children/keys. HTTP and HTTPS resources
+first use browser-direct access; when direct playback fails, playback retries through the
+authenticated Android proxy. App-specific URLs require the iPhone resource broker.
+Debug capture does not change this route choice. Browser probe diagnostics record the
+route, status, redirect flag, elapsed time and error class without resource URLs.
+A browser fetch failure alone cannot distinguish CORS from network reachability.
 Inline `data:` resources are decoded locally after playback/resource validation;
 they never enter the serialized iPhone loader. Percent escapes preserve literal `+`,
 Base64 and MIME/charset metadata are validated, and decoded content is limited to
@@ -418,8 +422,8 @@ byte ranges. This avoids paying the same failed HTTP attempt for every read unit
 It stores a route preference, not media bytes, and does not disable an entire origin.
 Changed resource URLs and replacement playback items probe their own routes; the
 first failing route can still add its connection/error wait before fallback succeeds.
-Debug's forced proxy path and synchronous raw-capture writes can also change loading
-costs, so captured admission times do not establish ordinary direct-path startup time.
+Synchronous raw-capture writes can change loading costs, so captured admission times
+do not establish ordinary direct-path startup time.
 Browser resource reads follow the player loader's prefetch, concurrency, retry
 and cancellation policy. TiPlay does not add a second browser network queue or
 media-byte cache. Android FCUP exchanges remain serialized and resource-specific

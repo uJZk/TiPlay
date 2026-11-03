@@ -833,7 +833,7 @@ class BrowserLinkServerTest {
         } finally { binding.close(); playback.close() }
     }
 
-    @Test fun peerMediaIsFetchedByAndroidAndNeverRedirectedToTheBrowser() {
+    @Test fun peerMediaUsesDirectRoutingEvenWithDebugCapture() {
         val playback = AirPlayVideoPlayback(com.shilapi.xcertplay.receiver.ReceiverPlay(
             "http://192.168.1.7/movie.mp4", 0.0, false, iphoneHost = "192.168.1.7"), { _, _ ->
             com.shilapi.xcertplay.receiver.ReceiverResource(byteArrayOf(4, 5, 6), 200, null)
@@ -843,12 +843,11 @@ class BrowserLinkServerTest {
         val capture = File(directory, "raw.tsv")
         try {
             com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, true)
-            assertNull(playback.source()["directUrl"])
-            assertEquals(true, playback.source()["proxyOnly"])
+            assertEquals("http://192.168.1.7/movie.mp4", playback.source()["directUrl"])
+            assertNull(playback.source()["proxyOnly"])
             val id = AirPlayBrowserPlayback.snapshot()!!["id"] as Long
             val response = get("/airplay-resource?id=$id&r=${playback.proxy.rootId}&s=$session&c=$code")
-            assertEquals(200, response.status)
-            assertArrayEquals(byteArrayOf(4, 5, 6), response.body)
+            assertEquals(307, response.status)
         } finally {
             com.shilapi.xcertplay.diagnostics.RawTraffic.configure(capture, false)
             binding.close(); playback.close(); directory.deleteRecursively()

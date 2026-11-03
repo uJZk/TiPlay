@@ -41,6 +41,12 @@ internal class AirPlayPlaybackDiagnostics(
             lastStartupPhase = null
         }
         val error = (fields["errorName"] as? String)?.takeIf { it in ERRORS } ?: "OTHER"
+        if (event == "resource-probe") {
+            val route = (fields["resourceRoute"] as? String)?.takeIf { it in setOf("direct", "relay") } ?: "unknown"
+            emit("browser video stage=RESOURCE id=$id revision=${whole(fields["revision"])} active=$active " +
+                "route=$route status=${bounded(fields["httpStatus"], 599)} redirected=${flag(fields["redirected"])} " +
+                "elapsedMs=${bounded(fields["elapsedMs"], 120000)} errorType=$error")
+        }
         if (event != "engine-state") emit("browser video stage=EVENT id=$id revision=${whole(fields["revision"])} event=$event active=$active " +
             times(fields) + " " + EVENT_FLAGS.joinToString(" ") { "$it=${flag(fields[it])}" } +
             " readyState=${bounded(fields["readyState"], 4)} networkState=${bounded(fields["networkState"], 3)}" +
@@ -126,7 +132,7 @@ internal class AirPlayPlaybackDiagnostics(
         private val ACTIONS = setOf("play", "pause", "seek", "rate", "stop")
         private val REPORT_FLAGS = listOf("playing", "ready", "buffering", "seekable", "ended", "failed")
         private val EVENT_FLAGS = listOf("paused", "ended", "seeking", "dragging")
-        private val EVENTS = setOf("open", "probe-start", "probe-ready", "open-error", "directive-seek",
+        private val EVENTS = setOf("open", "probe-start", "probe-ready", "resource-probe", "open-error", "directive-seek",
             "directive-play", "directive-pause", "play-resolved", "play-rejected", "loadedmetadata",
             "play", "pause", "waiting", "playing", "seeking", "seeked", "ratechange", "ended", "error",
             "drag-start", "drag-end", "drag-cancel", "canvas-error", "explicit-stop", "proxy-fallback", "resync", "engine-state")

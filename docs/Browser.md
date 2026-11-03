@@ -271,7 +271,7 @@ preferences do not override the browser canvas.
 
 The performance monitor cannot alter viewport/touch mapping. It shows codec,
 last-second successful Canvas submissions, WebRTC receive processing time, and
-separate receiver, cross-thread and Canvas drop counts. Receive processing time
+a conservative lower bound on confirmed receiver, cross-thread and Canvas drops. Receive processing time
 comes from consecutive samples of the same inbound RTP stream and does not include
 sender, network or panel latency. Multiple
 submissions before one display refresh can overstate visible FPS. Debug diagnostics
@@ -311,6 +311,8 @@ Producer stop retains the authenticated response. `lifecycle=1` opts into kind-6
 release decoders/frames and wait for the next configuration on that response. Old
 queued frames are discarded; replacement configuration supersedes unsent idle. Kind-4
 end retires the response; clients without lifecycle opt-in retain compatibility.
+An empty first CarPlay screen configuration message is ignored while awaiting codec
+data. Once a configuration has arrived, invalid replacements still fail explicitly.
 
 CarPlay dimensions are fixed per stream. Resize fits the current picture and reports
 latest dimensions on the next animation frame; Android negotiates a replacement by

@@ -125,6 +125,38 @@ class BrowserMainPageTest {
         assertFalse(adapter.isDiscovering)
     }
 
+    @Test fun iphonePickerUsesTheSameDeviceListAndSettingsEntry() {
+        val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        val iphone = adapter.getRemoteDevice("02:00:00:00:00:01").also {
+            shadowOf(it).setName("iPhone")
+            shadowOf(it).setBondState(BluetoothDevice.BOND_BONDED)
+        }
+        shadowOf(adapter).setBondedDevices(setOf(iphone))
+        page.view.findViewWithTag<Button>("iphone_bluetooth_button").performClick()
+        val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
+        val items = shadowOf(dialog).items
+        assertEquals(2, items.size)
+        assertTrue(items[0].toString().startsWith("iPhone"))
+        assertEquals(activity.getString(R.string.settings_car_bluetooth_open_settings), items[1].toString())
+        shadowOf(dialog).clickOnItem(0)
+        assertEquals(iphone.address, page.draft.phoneAddress)
+        assertFalse(adapter.isDiscovering)
+    }
+
+    @Test fun anEmptyIphoneListExplainsPairingAndOpensSystemSettings() {
+        val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
+        shadowOf(adapter).setEnabled(true)
+        shadowOf(adapter).setBondedDevices(emptySet())
+        page.view.findViewWithTag<Button>("iphone_bluetooth_button").performClick()
+        val dialog = requireNotNull(ShadowAlertDialog.getLatestAlertDialog())
+        assertEquals(activity.getString(R.string.on_your_iphone_open_settings_bluetooth_and_pair_with_the_c),
+            dialog.findViewById<TextView>(android.R.id.message).text.toString())
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(Settings.ACTION_BLUETOOTH_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+    }
+
     @Test fun anEmptyCarListExplainsCarInitiatedPairingAndOpensSystemSettings() {
         val adapter = activity.getSystemService(BluetoothManager::class.java).adapter
         shadowOf(adapter).setEnabled(true)

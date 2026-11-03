@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-/** Session-scoped streaming proxy. The browser never supplies an upstream URL or sees app URLs. */
+/** Session-scoped streaming proxy. The browser never supplies an upstream URL. */
 class AirPlayVideoProxy internal constructor(private val root: String,
                        private val iphone: (String, String?) -> ReceiverResource?,
                        private val iphoneHost: String?, log: (String) -> Unit,
@@ -77,12 +77,11 @@ class AirPlayVideoProxy internal constructor(private val root: String,
 
     init { requirePlayable(root) }
 
-    /** Only literal addresses belonging to this AirPlay peer qualify, never a DNS name or app scheme. */
+    /** HTTP resources may be fetched by the browser directly. */
     fun directUrl(url: String): String? {
-        if (RawTraffic.enabled) return null
         val uri = URI(url)
         return url.takeIf { uri.scheme.lowercase() in listOf("http", "https") &&
-            iphoneHost != null && uri.host == iphoneHost && uri.userInfo == null }
+            uri.host != null && uri.userInfo == null }
     }
     fun directResource(id: String): String? = synchronized(this) {
         if (closed.get()) null else (if (id == rootId) root else urls[id])?.let(::directUrl)

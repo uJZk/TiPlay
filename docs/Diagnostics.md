@@ -23,7 +23,7 @@ negotiated viewport or touch coordinates. Its fields are:
 | Codec | Current video codec; hardware preference does not prove hardware decoding. |
 | FPS | Actual successful draws during the last second. |
 | Receive processing | The selected inbound WebRTC stream's increase in `totalProcessingDelay` divided by its increase in decoded frames between consecutive fresh samples. This covers browser receive/decode processing, not sender, network, Canvas or panel latency. Missing, stale or changed streams show an unknown value. |
-| Drops | The browser's inbound `framesDropped` is shown separately from application queue and renderer discards. Application `pre`, `in`, `out` and `render` identify the pre-configuration, main-to-worker, worker-to-main and Canvas stages; unused or unknown stages are not reported as zero. None counts all phone or network loss. |
+| Drops | A conservative lower bound on browser-confirmed drops: the maximum available count among inbound WebRTC `framesDropped` and the pre-configuration, cross-thread and Canvas discard counters. These counters may overlap, so they are not added. A positive value is prefixed `≥`; `—` means no counter is available. This is not a complete count of phone, network or browser-internal losses; zero only means no observed counter has recorded a drop. |
 
 Browser v96 adds the current video's bounded error code to **Diagnostics** and
 `tiplayStats.page.video.errorReason`; first-fault `st` telemetry prioritizes the
@@ -129,11 +129,16 @@ control transfers, USBMUX/NCM/CH341, interrupts and failures. Android playback P
 the canonical incoming streams and Android/browser diagnostic events remain. USB records
 carry connection/request IDs and requested/completed lengths. Asynchronous input is
 captured once at completion before parsing, including bytes drained after timeout.
-Debug forces AirPlay URL resources through Android and captures Android HTTP
-response bodies. FCUP resources arrive inside the captured encrypted control
+Debug capture does not alter AirPlay URL routing. It captures Android HTTP response
+bodies only when the proxy is actually used; browser-direct resource bodies are not
+in the Android capture. FCUP resources arrive inside the captured encrypted control
 stream; a capture begun after pairing may not contain enough material to recover
-their plaintext bodies. Successful FCUP byte counts do not imply plaintext capture;
-disabling restores direct eligibility, reopening active playback on policy changes.
+their plaintext bodies. Successful FCUP byte counts do not imply plaintext capture.
+`RAW_ASYNC_FAILURE_SUMMARY` records first/last failure time and counts by reason;
+up to 32 recent `RAW_ASYNC_FAILURE` entries record failure and observation times,
+source category and metadata size. `omitted` counts older failures. The same bounded
+summary is retained in the raw capture stop record. It contains no channel URL or
+metadata payload. Older reports cannot recover reasons that were not recorded.
 Android owns A2DP/HFP encoding and USB host-controller signalling. Capture cannot
 observe Bluetooth air packets, USB bus signalling, unread kernel buffers or packets
 lost before application delivery. Capture does not establish speaker playback timing.

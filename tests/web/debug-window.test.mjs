@@ -45,7 +45,7 @@ test('warm-up, expiration and reset never retain stale data', () => {
   window.frame(6000, 1, -1);
   assert.equal(window.stats(6000).fps90, null);
   assert.equal(window.stats(6000).presentationOffset90, -1);
-  assert.equal(formatPerformanceMonitor('H.264'), 'H.264 · — fps · recv — ms · RTC — / app — drops');
+  assert.equal(formatPerformanceMonitor('H.264'), 'H.264 · — fps · — ms · — drops');
 });
 
 test('browser clock bridge preserves scheduled future presentation and rejects unrelated clocks', () => {
@@ -60,16 +60,16 @@ test('browser clock bridge preserves scheduled future presentation and rejects u
   assert.equal(presentationTime(90, null, 1030), null);
 });
 
-test('performance monitor separates receive processing and browser, transfer and renderer drops', () => {
+test('performance monitor reports a conservative lower bound without adding overlapping drop counters', () => {
   const stats = { currentFps: 60, currentDelta: 5.2, presentationOffset90: 99, presentationOffsetHigh5: 34.1,
     decodeDroppedFrames: 1, scheduledDroppedFrames: 2, transferDroppedFrames: 3, renderDroppedFrames: 4 };
   const rtp = { state: 'selected', sampleAgeMs: 20, receiveProcessingMs: 8.1, framesDropped: 83 };
-  assert.equal(formatPerformanceMonitor('HEVC', stats, rtp), 'HEVC · 60 fps · recv 8 ms · RTC 83 / app pre — in — out 3 render 4 drops');
+  assert.equal(formatPerformanceMonitor('HEVC', stats, rtp), 'HEVC · 60 fps · 8 ms · ≥83 drops');
   assert.equal(formatPerformanceMonitor('HEVC', stats).split(' · ').length, 4);
   assert.equal(formatPerformanceMonitor('HEVC', { ...stats, mainTransferDroppedFrames: 2 }, { ...rtp, sampleAgeMs: 5001 }),
-    'HEVC · 60 fps · recv — ms · RTC — / app pre — in 2 out 3 render 4 drops');
-  assert.equal(formatPerformanceMonitor('HEVC', stats, rtp, 'zh'),
-    'HEVC · 60 fps · 接收处理 8 ms · RTC 83 / 应用 预 — 入 — 出 3 绘制 4 丢帧');
+    'HEVC · 60 fps · — ms · ≥4 drops');
+  assert.equal(formatPerformanceMonitor('H.264', { currentFps: 30, renderDroppedFrames: 0 }, { ...rtp, receiveProcessingMs: 12, framesDropped: 0 }), 'H.264 · 30 fps · 12 ms · 0 drops');
+  assert.equal(formatPerformanceMonitor('H.264', { renderDroppedFrames: -1 }, { ...rtp, framesDropped: -1 }), 'H.264 · — fps · 8 ms · — drops');
   assert.equal(performanceStats(stats).droppedFrames, 10);
   assert.equal(performanceStats({ decoded: 100, expiredFrames: 20 }).droppedFrames, null, 'unrelated counts never imply drops');
 });
@@ -81,7 +81,7 @@ test('early presentation stays negative and the slowest tail contains the larges
   const stats = window.stats(at);
   assert.equal(stats.presentationOffset90, -40);
   assert.equal(stats.presentationOffsetHigh5, -10);
-  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 20 fps · recv — ms · RTC — / app — drops');
+  assert.equal(formatPerformanceMonitor('HEVC', stats), 'HEVC · 20 fps · — ms · — drops');
 });
 
 test('current FPS counts actual draws in a rolling second and reaches zero while offsets retain their five-second window', () => {
@@ -100,7 +100,7 @@ test('current FPS counts actual draws in a rolling second and reaches zero while
   now = 1500;
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, -40);
-  assert.equal(formatPerformanceMonitor('HEVC', window.stats()), 'HEVC · 0 fps · recv — ms · RTC — / app — drops');
+  assert.equal(formatPerformanceMonitor('HEVC', window.stats()), 'HEVC · 0 fps · — ms · — drops');
   window.reset();
   assert.equal(window.stats().currentFps, 0);
   assert.equal(window.stats().presentationOffset90, null);

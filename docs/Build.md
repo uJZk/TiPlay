@@ -568,6 +568,19 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Beta.39 preparation
+
+Beta.39/code81 and browser/cache v114 prepare direct-first AirPlay URL loading
+with Android fallback, browser resource probes, CarPlay empty-initial-config
+recovery, shared Bluetooth selection dialogs and bounded raw-metadata failure
+details. Debug capture no longer changes URL routing. Source checks before the
+version bump passed the required Android unit/lint/debug command and 692 web
+tests. These checks do not establish vehicle playback or fix ordinary AirPlay
+mirroring; YouTube reachability and screen mirroring require fresh vehicle
+evidence. Published artifact and Pages identities must be verified after release.
+
+### Published beta.38
+
 Published [beta.38](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.38),
 code **80**, browser/cache **v113**, at **2026-11-02 13:04:37 Asia/Shanghai** from
 `ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It guards post-stop source-rate

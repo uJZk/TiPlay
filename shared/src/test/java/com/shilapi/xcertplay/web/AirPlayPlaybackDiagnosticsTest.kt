@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AirPlayPlaybackDiagnosticsTest {
+    @Test fun resourceProbeLogsOnlyBoundedRouteEvidence() {
+        val lines = mutableListOf<String>()
+        val diagnostics = AirPlayPlaybackDiagnostics(lines::add)
+        diagnostics.event(7, mapOf("revision" to 3, "event" to "resource-probe", "resourceRoute" to "direct",
+            "httpStatus" to 206, "redirected" to true, "elapsedMs" to 22, "url" to "secret-url"), true)
+        val line = lines.first { it.contains("stage=RESOURCE") }
+        assertTrue(line.contains("route=direct status=206 redirected=true elapsedMs=22"))
+        assertFalse(lines.any { it.contains("secret-url") })
+    }
     @Test fun avPlayerFixtureContainsOnlyUpstreamQueueRenderAndFacadeEvidence() {
         val lines = mutableListOf<String>()
         AirPlayPlaybackDiagnostics(lines::add, debug = { false }, nowMillis = { 0L }).event(7, fixture(), true)

@@ -33,7 +33,9 @@ Wi-Fi observations distinguish no Wi-Fi, unreadable SSID and a readable mismatch
 
 `BrowserConnectionDraft` retains incomplete edits through window recreation and Advanced settings navigation. Valid text saves after 400 ms without typing; leaving Main settings applies valid pending edits. Choices apply immediately. Invalid fields remain editable without replacing saved connection parameters. Drafts contain connection parameters only, so they cannot overwrite independently saved video settings. Existing-Wi-Fi credentials and security are separate from hotspot credentials; legacy external-network selections restore to Existing Wi-Fi.
 
-Car Bluetooth selection is stored independently and accepts only devices already
+The iPhone and car Bluetooth pickers use the same paired-device list format and
+Bluetooth settings entry; an empty list explains how to pair. Car Bluetooth
+selection is stored independently and accepts only devices already
 paired in Android, excluding the selected iPhone. Selecting a car saves it directly;
 it does not start pairing or require companion-device authorization. First pairing
 starts from the car, as described in [Connection setup](Connection-setup.md#android-car-bluetooth).

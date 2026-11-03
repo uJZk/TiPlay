@@ -8,6 +8,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RawMetadataCaptureTest {
+    @Test fun failureReportKeepsBoundedTimesReasonsAndSafeSourceCategories() {
+        val state = MetadataCaptureSession("test")
+        val before = System.currentTimeMillis()
+        repeat(35) {
+            assertFalse(state.enqueue("iphone/private-url-secret", ByteArray(RawMetadataCapture.MAX_BYTES + 1), 42L + it))
+        }
+        assertFalse(state.enqueue("browser/" + "x".repeat(257), byteArrayOf(1), 91))
+        val report = state.failureReport()
+        assertTrue(report.contains("omitted=4"))
+        assertTrue(report.contains("payload_too_large=35"))
+        assertTrue(report.contains("channel_too_long=1"))
+        assertEquals(32, report.lineSequence().count { it.startsWith("RAW_ASYNC_FAILURE reason=") })
+        assertTrue(report.contains("observedEpochMillis=91 source=browser bytes=1"))
+        assertFalse(report.contains("private-url-secret"))
+        val first = Regex("firstEpochMillis=(\\d+)").find(report)!!.groupValues[1].toLong()
+        val last = Regex("lastEpochMillis=(\\d+)").find(report)!!.groupValues[1].toLong()
+        assertTrue(first >= before && last >= first && last <= System.currentTimeMillis())
+    }
     private fun text(file: File) = ZstdInputStream(file.inputStream()).use { String(it.readBytes()) }
     private fun journalLock(): Any = RawTraffic::class.java.getDeclaredField("lock").apply {
         isAccessible = true
@@ -65,6 +83,10 @@ class RawMetadataCaptureTest {
             assertEquals(true, RawTraffic.integrity()["complete"])
             assertFalse(text(current).contains("b2xkLWV2ZW50"))
             assertTrue(text(old).contains("\tcapture/stop\t"))
+            val stop = text(old).lineSequence().first { it.contains("\tcapture/stop\t") }.split('\t', limit = 5)
+            val failureReport = String(java.util.Base64.getDecoder().decode(stop[4]))
+            assertTrue(Regex("queue_full=[1-9][0-9]*").containsMatchIn(failureReport))
+            assertTrue(failureReport.contains("reason=session_retired"))
         } finally { RawTraffic.configure(current, false); waitForCancelledQueue(); root.deleteRecursively() }
     }
 
@@ -76,6 +98,19 @@ class RawMetadataCaptureTest {
             assertFalse(RawTraffic.recordMetadataAsync("usb/device-event", ByteArray(RawMetadataCapture.MAX_BYTES + 1)))
             assertEquals(false, RawTraffic.integrity()["complete"])
             assertEquals(false, RawTraffic.integrity()["referenceIntegrity"])
+            val archive = java.io.ByteArrayOutputStream()
+            RawTraffic.writeArchive(archive, "report.txt", "report", root)
+            java.util.zip.ZipInputStream(archive.toByteArray().inputStream()).use { zip ->
+                var status = ""
+                while (true) {
+                    val item = zip.nextEntry ?: break
+                    if (item.name == "capture.txt.zst") status = ZstdInputStream(zip.readBytes().inputStream()).use { String(it.readBytes()) }
+                }
+                assertTrue(status.contains("payload_too_large=1"))
+                assertTrue(status.contains("reason=payload_too_large"))
+                assertTrue(status.contains("source=usb"))
+                assertTrue(status.contains("lastFailure=AsyncMetadataLoss"))
+            }
             RawTraffic.clear()
             RawTraffic.configure(raw, false, compressed = true)
             val before = RawTraffic.integrity()["failures"]
