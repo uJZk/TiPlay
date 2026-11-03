@@ -38,11 +38,12 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment).
-Beta.39/code81 and browser/cache v114 are prepared for release; see the beta.39
-preparation note in Build for scope, checks and remaining vehicle validation.
+Beta.39/code81 and browser/cache v114 are published from
+`17b43beaec4200ea7410b38a768fb55882d527fe`; see Build for verified release
+artifacts, checks and remaining physical validation.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
-Beta.38/code80 with browser/cache v113 is published from
+Previously, beta.38/code80 with browser/cache v113 was published from
 `ab629363e6af9d7ea914fd8808baf84ab5f391fb`. Build records signed packaging,
 independent public bytes and 28 matching symbol pairs across the app-JNI and
 WebRTC producer archives. The rebuilt four-ABI AAR comes from native producer

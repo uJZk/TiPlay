@@ -568,59 +568,36 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-### Beta.39 preparation
+### Published beta.39
 
-Beta.39/code81 and browser/cache v114 prepare direct-first AirPlay URL loading
-with Android fallback, browser resource probes, CarPlay empty-initial-config
-recovery, shared Bluetooth selection dialogs and bounded raw-metadata failure
-details. Debug capture no longer changes URL routing. Source checks before the
-version bump passed the required Android unit/lint/debug command and 692 web
-tests. These checks do not establish vehicle playback or fix ordinary AirPlay
-mirroring; YouTube reachability and screen mirroring require fresh vehicle
-evidence. Published artifact and Pages identities must be verified after release.
+[Beta.39](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.39), code 81,
+browser/cache v114, was published at **2026-11-04 00:37:42 Asia/Shanghai** from
+`17b43beaec4200ea7410b38a768fb55882d527fe`. It adds direct-first AirPlay URL
+loading with Android fallback, browser probes, recovery from an empty initial
+CarPlay screen configuration, shared Bluetooth pickers and bounded metadata
+failure details. Debug capture does not change URL routing.
 
-### Published beta.38
-
-Published [beta.38](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.38),
-code **80**, browser/cache **v113**, at **2026-11-02 13:04:37 Asia/Shanghai** from
-`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It guards post-stop source-rate
-updates implicated by the [matched tombstone](Robustness.md#matched-post-stop-native-crash).
-RTP video, native Opus, Bluetooth/SCO and paused audio trimming remain.
-Physical H.264/HEVC acceptance remains open.
-
-Native producer `aef6c97a2402f4f5ef4a821a876a11941116d180`,
-[run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134), rebuilt
-all four AAR ABIs and passed 11 focused native tests. The fixed-AAR permanent-stop
-JNI probe passes with replacement RTP and 72/72 heartbeats; its counting decoder
-does not establish pictures. [Upstream](Upstream.md#webrtc-build-maintenance)
-records the AAR and four matching symbol pairs; their private index SHA-256 is
-`4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c`.
-
-Required Android checks pass: 4,535 zero-failure JUnit report cases, three
-lint/assembly targets and the Debug AAR gate. Shared/home tests and home/maphost
-builds reused results. Web/Python/native probe-driver checks pass 690/52/27 cases.
-Full remote CI was skipped at the user's request.
-[Signed run 41390877469](https://github.com/uJZk/TiPlay/actions/runs/41390877469)
-succeeded for the application commit. Independent checks confirm non-debug
-packaging, signer/runtime continuity, four replaced WebRTC libraries, 47 unchanged
-libraries, 25 ELF64/51 JNI ZIP 16 KiB alignment and exact committed source.
-The 24 application-JNI symbol pairs were privately archived and byte-verified;
-index SHA-256 `87106603f394f0e45f7a91cad40467a390f4ccc9fd30f8c75157c6a2d2a4e56d`.
-Twenty-three historical libraries still lack symbols, eight without Build IDs.
+[Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
+and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
+passed, including WASM reproduction, release lint/build, symbol archive and draft.
+The 692 web tests and public-tree checks pass. APK verification confirms package
+`com.ujzk.tiplay`, code 81, signature continuity
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`, WebRTC
+provenance and alignment. The source ZIP matches `git archive` of the build commit.
+All three anonymous public downloads match the independently verified draft bytes;
+the tag resolves to that commit. [Pages run 41670512475](https://github.com/uJZk/TiPlay/actions/runs/41670512475)
+passed, and the seven changed browser runtime files match public bytes.
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.38.apk` | 114,514,767 | `0fbf069e584d7896ecd1b1d88998cd0ebed22fc6fcab9aace99e4c90c4319a49` |
-| `TiPlay-0.2.20-beta.38-source.zip` | 70,179,750 | `ae13f3e76abc93c888156307729a064f8ef90e212a48d08702566d3026a263b4` |
-| `SHA256SUMS.txt` | 191 | `44c96bd7c695759f7ee4c9203ef10ede59a9a1f88bc19a3a0a8e779c92635692` |
+| `TiPlay-0.2.20-beta.39.apk` | 114,514,767 | `cf4c077a66804174259b29cbf119916f47c24e2bd98a378016aebad89bcc5627` |
+| `TiPlay-0.2.20-beta.39-source.zip` | 70,184,595 | `1e7df90503695e2d76672892af73f6d925a1828ae41fa45f86033a134aaf7ce1` |
+| `SHA256SUMS.txt` | 191 | `a96628d199d68d10b17dcf31bbf92882a23b503ddf2cf0058af7b6b38e8312aa` |
 
-All three unauthenticated public downloads match; the tag resolves to the build
-commit. [Pages run 41391911418](https://github.com/uJZk/TiPlay/actions/runs/41391911418)
-succeeded from that source. All 226 public files (37,807,638 bytes), 156 MIME
-checks, eight download languages and v113/beta.38 metadata match; legacy
-`/webrtc/` paths return 404. Later documentation-only commits do not change
-release inputs. The [frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment)
-retains the preceding provenance.
+Physical YouTube, AirPlay mirroring and CarPlay recovery remain unverified;
+software checks do not establish vehicle playback. The full prior
+[beta.38 record](https://github.com/uJZk/TiPlay/blob/c05baef56417a885a7e2f8e5f5e514b64dbfbda9/docs/Build.md#current-browser-deployment)
+is preserved in Git.
 
 The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
 [Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).

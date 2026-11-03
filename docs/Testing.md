@@ -7,7 +7,19 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.38/code80, browser/cache v113, is published** from
+**Beta.39/code81, browser/cache v114, is published** from
+`17b43beaec4200ea7410b38a768fb55882d527fe`.
+[Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
+and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
+passed. The browser suite passed 692 tests. The signed APK, source ZIP, checksums,
+release tag and public downloads were independently checked; [Build](Build.md#current-browser-deployment)
+records provenance. Browser direct-first loading and fallback, CarPlay recovery
+and failure diagnostics have automated coverage. Physical YouTube playback,
+AirPlay mirroring and recovery on the vehicle remain open acceptance items.
+
+### Beta.38 reference
+
+**Beta.38/code80, browser/cache v113, was published** from
 `ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It rejects late source-rate updates
 on the encoder queue before changing gate state or accessing the cleared adapter.
 The November 2 beta.37 tombstone matches PID/time and its ARM64 WebRTC Build ID;
