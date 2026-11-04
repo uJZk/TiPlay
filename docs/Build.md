@@ -568,16 +568,25 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v116
+
+Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`
+by [Pages run 41874214446](https://github.com/uJZk/TiPlay/actions/runs/41874214446).
+It removes the one-time `u.html` entry and preserves page-load update checks.
+Both `/u` and `/u.html` return 404 from the public site; the published worker and
+diagnostics match the source. All 693 web tests and the Chromium refresh, paired
+link, first-install and offline checks pass. The Android APK remains beta.40/code82.
+
 ### Browser v115
 
 Browser/cache v115 is deployed from `7027555a9e1ef811519f488af1478c37f7a9510c`
 by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/41817076243).
 It checks for updates on page load, activates only after caching the new assets,
-and reloads the page; v114 initially had a one-time update entry, later removed. The public
-update page, worker, app and diagnostics files match the deployed source. Local
+and reloads the page; v114 initially had a one-time update entry, later removed. At
+deployment the public update page, worker, app and diagnostics matched the source. Local
 checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
-be verified. The deployed browser is unchanged by the Android-only beta.40 release.
+be verified. The Android-only beta.40 release did not change the browser deployment.
 
 ### Published beta.40
 

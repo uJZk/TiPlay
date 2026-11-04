@@ -7,14 +7,13 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.39/code81, browser/cache v114, is published** from
-`17b43beaec4200ea7410b38a768fb55882d527fe`.
-The deployed browser was subsequently updated to v115 from
-`7027555a9e1ef811519f488af1478c37f7a9510c`; [Build](Build.md#current-browser-deployment)
-records its checks and browser update behavior.
-[Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
-and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
-passed. The browser suite passed 692 tests. The signed APK, source ZIP, checksums,
+**Beta.40/code82 is published** from `8eb3e46655d9d6c7c89970f900fe015e63cedb4c`.
+Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`;
+[Build](Build.md#browser-v116) records its checks and browser update behavior.
+The [Android checks](https://github.com/uJZk/TiPlay/actions/runs/41838540471) passed
+their substantive checks but timed out during post-job cleanup. The
+[signed release](https://github.com/uJZk/TiPlay/actions/runs/41850600419) passed.
+The browser suite passed 693 tests. The signed APK, source ZIP, checksums,
 release tag and public downloads were independently checked; [Build](Build.md#current-browser-deployment)
 records provenance. Browser direct-first loading and fallback, CarPlay recovery
 and failure diagnostics have automated coverage. Physical YouTube playback,

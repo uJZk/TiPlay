@@ -40,7 +40,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
 Resume current release work at [Build](docs/Build.md#published-beta40).
 Beta.40/code82 is published from `8eb3e46655d9d6c7c89970f900fe015e63cedb4c`;
 iPhone mirror picture and sound still need physical verification.
-Browser/cache v115 is deployed separately; see Build for the update entry,
+Browser/cache v116 is deployed separately; see Build for update behavior,
 verified release artifacts, checks and remaining physical validation.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
