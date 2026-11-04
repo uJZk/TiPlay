@@ -577,7 +577,17 @@ and reloads the page; cached v114 can use the one-time `u.html` entry. The publi
 update page, worker, app and diagnostics files match the deployed source. Local
 checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
-be verified. The Android APK remains beta.39/code81 below.
+be verified. The deployed browser is unchanged by the Android-only beta.40 release.
+
+### Beta.40 release preparation
+
+Beta.40/code 82 selects legacy FairPlay negotiation when mirroring is available,
+including unpaired transport-key handling, and exposes the existing AirPlay trust
+reset in the phone's advanced settings. Transient AirPlay 2 audio remains available
+when mirroring is unavailable. Local Android unit tests, lint and debug builds pass;
+all 693 browser tests pass. Verify the signed release workflow, update continuity,
+and actual iPhone mirror picture and sound before treating compatibility as proven.
+Only Android is being published; generated site version metadata is not deployed.
 
 ### Published beta.39
 

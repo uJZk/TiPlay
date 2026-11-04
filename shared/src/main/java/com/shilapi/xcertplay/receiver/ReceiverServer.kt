@@ -1321,9 +1321,12 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 require(it?.size == 16) { "invalid-audio-transport-iv" }
             } else audioIv
             val nextKey = if (encrypted != null) {
-                val shared = pairing.sharedSecret ?: return RtspMessage.Response(status = 403, statusText = "Forbidden")
-                val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted) ?: error("invalid transport key")
-                AirPlayCrypto.sha512(raw, shared).copyOf(16)
+                val shared = pairing.sharedSecret
+                if (shared == null && (pairing.presentedPublicKey != null || pairing2.complete))
+                    return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                val raw = fairPlayDecrypt(requireNotNull(handshake), encrypted)?.also { require(it.size == 16) }
+                    ?: error("invalid transport key")
+                if (shared != null) AirPlayCrypto.sha512(raw, shared).copyOf(16) else raw.copyOf()
             } else key
             val nextTimingReady = timing != null || encrypted != null
             if (encrypted != null) {

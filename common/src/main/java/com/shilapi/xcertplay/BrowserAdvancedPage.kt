@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.Switch
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.Toast
 import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.host.R
 
@@ -74,6 +75,10 @@ internal class BrowserAdvancedPage(
             activity.getString(R.string.settings_airplay_disable_description),
             AirPlayReceiverSettings.isDisabled(activity), true) {
             AirPlayReceiverSettings.setDisabled(activity, it)
+        }
+        spacing.button(content, activity.getString(R.string.settings_forget_airplay_devices)) {
+            AirPlayDeviceTrustStore.forgetAll(activity)
+            Toast.makeText(activity, R.string.settings_airplay_devices_forgotten, Toast.LENGTH_SHORT).show()
         }
         heading(R.string.diagnostics)
         debugToggle = spacing.toggle(content, activity.getString(R.string.settings_debug_logging), "",

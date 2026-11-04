@@ -1232,10 +1232,35 @@ class ReceiverServerTest {
     @Test fun sameSessionAudioMirrorAudioRestoresMetadataAndCannotCarryThePreviousTracksArtwork() =
         encryptedMirrorProbe(false, audioDrain = true, metadataRoundTrip = true)
 
+    @Test fun unpairedFairPlayMirrorDecryptsVideoWithTheTransportKey() =
+        encryptedMirrorProbe(false, unpaired = true)
+
+    @Test fun incompleteLegacyPairingCannotFallBackToUnpairedTransportKey() {
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener(),
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
+            fairPlayDecrypt = { _, _ -> ByteArray(16) })
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                val curve = AirPlayCrypto.x25519Generate()
+                val signing = AirPlayCrypto.ed25519Generate()
+                assertEquals(200, control.status("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey))
+                fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
+                    byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
+                    ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+                }
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(16, 1)))
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(164, 3)))
+                assertEquals(403, control.status("SETUP", "/", BplistCodec.encode(mapOf(
+                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0))))
+            }
+        } finally { receiver.close() }
+    }
+
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
                                      partialHeader: Boolean = false, failedReplacement: Boolean = false,
-                                     metadataRoundTrip: Boolean = false) {
+                                     metadataRoundTrip: Boolean = false, unpaired: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
@@ -1245,15 +1270,18 @@ class ReceiverServerTest {
         receiver.start()
         val control = connect(receiver.port)
         try {
-            val curve = AirPlayCrypto.x25519Generate()
-            val signing = AirPlayCrypto.ed25519Generate()
-            val reply = control.send("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey).body
-            val serverCurve = reply.copyOf(32)
-            val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
-            val verifyCipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), secret).copyOf(16),
-                AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
-            verifyCipher.update(reply.copyOfRange(32, 96))
-            assertEquals(200, control.status("POST", "/pair-verify", ByteArray(4) + verifyCipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
+            val secret = if (!unpaired) {
+                val curve = AirPlayCrypto.x25519Generate()
+                val signing = AirPlayCrypto.ed25519Generate()
+                val reply = control.send("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey).body
+                val serverCurve = reply.copyOf(32)
+                val shared = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
+                val verifyCipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), shared).copyOf(16),
+                    AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), shared).copyOf(16))
+                verifyCipher.update(reply.copyOfRange(32, 96))
+                assertEquals(200, control.status("POST", "/pair-verify", ByteArray(4) + verifyCipher.update(AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve))))
+                shared
+            } else null
             fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
                 byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
                 java.nio.ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
@@ -1319,7 +1347,7 @@ class ReceiverServerTest {
                 assertNotNull(subscription.take(5000))
                 assertEquals(720, listener.hub.info()!!.width)
                 assertTrue(listener.logs.any { it.contains("mirror stage=CONFIG codec=H264") })
-                val mirrorKey = AirPlayCrypto.sha512(rawKey, secret).copyOf(16)
+                val mirrorKey = if (secret != null) AirPlayCrypto.sha512(rawKey, secret).copyOf(16) else rawKey
                 val encryption = aesCtr(AirPlayCrypto.sha512("AirPlayStreamKey1234".toByteArray(), mirrorKey).copyOf(16),
                     AirPlayCrypto.sha512("AirPlayStreamIV1234".toByteArray(), mirrorKey).copyOf(16))
                 val first = byteArrayOf(0, 0, 0, 3, 0x65, 1, 2)

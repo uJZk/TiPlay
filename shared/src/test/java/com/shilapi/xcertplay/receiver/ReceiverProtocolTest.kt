@@ -57,8 +57,8 @@ class ReceiverProtocolTest {
         assertEquals("1.0", config.serverInfo()["protovers"])
         assertEquals(config.features, config.serverInfo()["features"])
         assertEquals(ReceiverCapabilities.txtFeatures(config.features), config.txt["features"])
-        for (bit in listOf(0, 1, 4, 7, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 30, 38, 48)) assertTrue(config.features and (1L shl bit) != 0L)
-        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 23, 26, 32, 33, 34, 40, 41, 42, 61)) {
+        for (bit in listOf(0, 1, 4, 7, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 30)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(2, 3, 5, 6, 8, 10, 11, 12, 23, 26, 27, 32, 33, 34, 38, 40, 41, 42, 48, 61)) {
             assertEquals("Unexpected advertised feature $bit", 0L, config.features and (1L shl bit))
         }
         assertFalse(config.info().containsKey("modes"))
@@ -70,6 +70,7 @@ class ReceiverProtocolTest {
             hevcEnabled = true, mirrorEnabled = false, audioOutputFormats = 0x3fffffcL)
         for (bit in listOf(7, 42)) assertEquals(0L, config.features and (1L shl bit))
         for (bit in listOf(0, 1, 9)) assertTrue(config.features and (1L shl bit) != 0L)
+        for (bit in listOf(27, 38, 48)) assertTrue(config.features and (1L shl bit) != 0L)
         assertEquals(config.features, config.info()["features"])
         assertTrue(config.copy(mirrorEnabled = true).features and (1L shl 42) != 0L)
     }

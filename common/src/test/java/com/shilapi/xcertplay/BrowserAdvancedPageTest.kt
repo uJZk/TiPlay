@@ -108,6 +108,16 @@ class BrowserAdvancedPageTest {
         assertFalse(AirPlayReceiverSettings.isDisabled(activity))
     }
 
+    @Test fun resetAirPlayTrustButtonClearsRememberedDevicesWithoutReconnect() {
+        val store = AirPlayDeviceTrustStore(activity)
+        val fingerprint = "a".repeat(64)
+        store.remember(fingerprint)
+        assertTrue(store.contains(fingerprint))
+        button(R.string.settings_forget_airplay_devices).performClick()
+        assertFalse(store.contains(fingerprint))
+        assertEquals(0, changes)
+    }
+
     @Test fun debugDescriptionIsNotRepeatedOnTheSettingsPage() {
         val description = activity.getString(R.string.settings_debug_mode_description)
         assertFalse(views(page.view).filterIsInstance<TextView>().any { it.text == description })

@@ -92,7 +92,7 @@ Ordinary audio has three transport paths on the same receiver listener:
 | --- | --- | --- |
 | AirPlay 1 / classic RAOP | `_raop` discovery; SDP ANNOUNCE; UDP SETUP/RECORD, PCM/ALAC, NTP, retransmission and FLUSH; clear or FairPlay AES-CBC packets | AirTunes RSA `Apple-Challenge`/`rsaaeskey` is unsupported; no private AirTunes credential is imported |
 | Legacy plist audio | FairPlay transport setup and type-96 UDP PCM/ALAC/AAC-LC/AAC-ELD | Existing legacy pair-verify path; no microphone |
-| AirPlay 2 realtime | Transient HAP/SRP pairing, authenticated control/event channels, NTP and type-96 ChaCha20-Poly1305 audio | Persistent HomeKit pairing, PTP/multiroom and type-103 buffered audio are unsupported and not advertised |
+| AirPlay 2 realtime | Transient HAP/SRP pairing, authenticated control/event channels, NTP and type-96 ChaCha20-Poly1305 audio | Advertised only when mirroring is unavailable; persistent HomeKit pairing, PTP/multiroom and type-103 buffered audio are unsupported |
 
 The protocol comparison uses
 [Shairport Sync RTSP handling](https://github.com/mikebrady/shairport-sync/blob/b991d91350e537c1f50dac98d9a3c836eceddcfc/rtsp.c)
@@ -102,8 +102,14 @@ than embedding Shairport's Linux audio backend. Authenticated HAP frames are bou
 to 1,024 bytes with independent channel counters; pairing failure retires that epoch.
 Transient pairing provides no persistent verified sender identity. The browser still
 authorizes the actual audio stream, and any separately presented sender identifier
-remains a claim. Capability flags offer transient/CoreUtils pairing only while a
-browser audio decoder is available; they do not offer buffered audio or PTP.
+remains a claim. When mirroring is available, discovery instead offers the unpaired
+legacy FairPlay path used by [shairplay-rust's iOS 18 mirror profile](https://github.com/metaneutrons/shairplay-rust/blob/8a9db93b9e55cc819e4d2c49a7243502e702ef4d/AP2-STATUS.md#key-discovery-uxplay-feature-set).
+Without a completed legacy pair-verify, that path uses the FairPlay transport key
+directly; an incomplete pairing or a transient session cannot fall back to it.
+When mirroring is unavailable and a browser audio decoder is available, discovery
+offers transient pairing. Neither profile offers buffered audio or PTP. Browser
+authorization still gates each media request, including unpaired connections.
+This capability selection and its effect on audio require physical iPhone testing.
 Independent SRP-client and loopback socket tests cover encrypted control, events,
 audio delivery and unsupported transport rejection. These checks do not establish
 iOS picker selection, interoperability with every sender or physical output timing.
