@@ -142,11 +142,6 @@ the HTTP cache. After the complete new asset cache is installed, the worker take
 over and reloads the TiPlay page, retaining its pairing URL. This interrupts
 an active projection; connections recover through the usual startup path. A failed
 or offline download leaves the existing cache active and retries on a later visit.
-The previously published version does not explicitly request an update check;
-the browser must first discover this worker through its own update mechanism.
-Until it does, refreshing can still serve the previous version. The `u.html`
-page, which the previous worker did not cache, is a one-time update entry: it asks the browser
-to check, then returns to the main page with its query and pairing fragment.
 
 ## Audio and microphone
 

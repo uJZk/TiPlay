@@ -573,7 +573,7 @@ APK/source or webpage build provenance.
 Browser/cache v115 is deployed from `7027555a9e1ef811519f488af1478c37f7a9510c`
 by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/41817076243).
 It checks for updates on page load, activates only after caching the new assets,
-and reloads the page; cached v114 can use the one-time `u.html` entry. The public
+and reloads the page; v114 initially had a one-time update entry, later removed. The public
 update page, worker, app and diagnostics files match the deployed source. Local
 checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to

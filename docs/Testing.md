@@ -11,7 +11,7 @@ recorded source, not interchangeable coverage counts for later engines.
 `17b43beaec4200ea7410b38a768fb55882d527fe`.
 The deployed browser was subsequently updated to v115 from
 `7027555a9e1ef811519f488af1478c37f7a9510c`; [Build](Build.md#current-browser-deployment)
-records its checks and the one-time update entry for the cached prior version.
+records its checks and browser update behavior.
 [Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
 and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
 passed. The browser suite passed 692 tests. The signed APK, source ZIP, checksums,
@@ -421,11 +421,10 @@ not use a live WebCodecs hardware override or an encoded-video fallback. Only UR
 AVPlayer harnesses retain the explicit desktop software-video override. API support
 and Canvas submission do not prove hardware use or physical output.
 
-The [service-worker update check](../tests/web-e2e/service-worker-update.mjs) loads
-the previously waiting-worker page, opens the uncached `u.html` update entry, and
-verifies that the page reloads with matching main/decoder-worker versions and
-retains its pairing fragment. A subsequent refresh must discover the next update;
-the updated cache must also open offline. Node tests cover unrelated pages, failed
+The [service-worker update check](../tests/web-e2e/service-worker-update.mjs) verifies
+that refreshing discovers updates, reloads matching main/decoder-worker versions,
+retains the pairing fragment, and keeps the updated cache usable offline.
+Node tests cover unrelated pages, failed
 downloads and first install without
 an unnecessary reload, as well as first-presentation deadlines,
 generation-safe acknowledgements and late WakeLock completion. The
