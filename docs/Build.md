@@ -579,15 +579,32 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The deployed browser is unchanged by the Android-only beta.40 release.
 
-### Beta.40 release preparation
+### Published beta.40
 
-Beta.40/code 82 selects legacy FairPlay negotiation when mirroring is available,
+[Beta.40](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.40), code 82,
+was published from `8eb3e46655d9d6c7c89970f900fe015e63cedb4c` at
+2026-11-04 14:55:46 UTC. It selects legacy FairPlay negotiation when mirroring is available,
 including unpaired transport-key handling, and exposes the existing AirPlay trust
 reset in the phone's advanced settings. Transient AirPlay 2 audio remains available
 when mirroring is unavailable. Local Android unit tests, lint and debug builds pass;
-all 693 browser tests pass. Verify the signed release workflow, update continuity,
-and actual iPhone mirror picture and sound before treating compatibility as proven.
-Only Android is being published; generated site version metadata is not deployed.
+all 693 browser tests pass. [Android checks](https://github.com/uJZk/TiPlay/actions/runs/41838540471)
+passed all substantive checks, including WASM and native DSP, but the overall run was
+cancelled at its 30-minute limit during Gradle's post-job cleanup.
+[Signed release](https://github.com/uJZk/TiPlay/actions/runs/41850600419) passed.
+The APK has package `com.ujzk.tiplay`, version code 82 and the previous signing
+certificate `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`;
+16 KiB ZIP alignment passes. The source ZIP matches `git archive` of the build
+commit, and the three published assets match the signed workflow artifacts.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.40.apk` | 114,514,767 | `2956629bcd24c28241b168eb106af5cb02f0e2f544964e0f2276e7e535b31c2c` |
+| `TiPlay-0.2.20-beta.40-source.zip` | 70,186,856 | `a921047f37a27b3929ee57b15b1cd036d50609774e07745a161bfe9175caa6b7` |
+| `SHA256SUMS.txt` | 191 | `8d8e70c2f63e532d55b838cb16b506fee1fd4a600cfbaec9743cd7dbe2814cf1` |
+
+Actual iPhone mirror picture and sound remain unverified. Only Android was
+published; generated site version metadata was not deployed. Increment the browser
+cache revision when next deploying these changed generated assets.
 
 ### Published beta.39
 
