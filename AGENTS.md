@@ -38,9 +38,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#current-browser-deployment).
-Beta.39/code81 and browser/cache v114 are published from
-`17b43beaec4200ea7410b38a768fb55882d527fe`; see Build for verified release
-artifacts, checks and remaining physical validation.
+Beta.39/code81 is published from `17b43beaec4200ea7410b38a768fb55882d527fe`.
+Browser/cache v115 is deployed separately; see Build for the update entry,
+verified release artifacts, checks and remaining physical validation.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

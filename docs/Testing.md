@@ -9,6 +9,9 @@ recorded source, not interchangeable coverage counts for later engines.
 
 **Beta.39/code81, browser/cache v114, is published** from
 `17b43beaec4200ea7410b38a768fb55882d527fe`.
+The deployed browser was subsequently updated to v115 from
+`7027555a9e1ef811519f488af1478c37f7a9510c`; [Build](Build.md#current-browser-deployment)
+records its checks and the one-time update entry for the cached prior version.
 [Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
 and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
 passed. The browser suite passed 692 tests. The signed APK, source ZIP, checksums,
