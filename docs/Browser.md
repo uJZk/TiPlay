@@ -137,11 +137,16 @@ caches only page assets, never phone media/unrelated downloads. Asset changes re
 a complete manifest/new cache identity. The removed `/webrtc/` location receives
 no compatibility alias or redirect in this deployment.
 
-An installed update waits while any old TiPlay page is still controlled by the
-previous service worker. Close or leave all TiPlay pages, then open the site
-again to activate it. Disconnecting within the page, or reloading while another
-old page remains open, does not guarantee an upgrade. This preserves the active
-page and its lazily created Workers as one protocol version.
+On page load the browser checks for an updated Service Worker without relying on
+the HTTP cache. After the complete new asset cache is installed, the worker takes
+over and reloads the TiPlay page, retaining its pairing URL. This interrupts
+an active projection; connections recover through the usual startup path. A failed
+or offline download leaves the existing cache active and retries on a later visit.
+The previously published version does not explicitly request an update check;
+the browser must first discover this worker through its own update mechanism.
+Until it does, refreshing can still serve the previous version. The `u.html`
+page, which the previous worker did not cache, is a one-time update entry: it asks the browser
+to check, then returns to the main page with its query and pairing fragment.
 
 ## Audio and microphone
 

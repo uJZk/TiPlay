@@ -419,10 +419,12 @@ AVPlayer harnesses retain the explicit desktop software-video override. API supp
 and Canvas submission do not prove hardware use or physical output.
 
 The [service-worker update check](../tests/web-e2e/service-worker-update.mjs) loads
-two pages under the previously forced-activation policy, installs the production
-replacement and verifies that it waits until both pages leave. The next page
-must load matching main/decoder-worker versions; an uncontrolled initial page
-must not be claimed. Node tests separately cover first-presentation deadlines,
+the previously waiting-worker page, opens the uncached `u.html` update entry, and
+verifies that the page reloads with matching main/decoder-worker versions and
+retains its pairing fragment. A subsequent refresh must discover the next update;
+the updated cache must also open offline. Node tests cover unrelated pages, failed
+downloads and first install without
+an unnecessary reload, as well as first-presentation deadlines,
 generation-safe acknowledgements and late WakeLock completion. The
 `rtc-canvas.mjs --local-track` smoke exercises actual Processor/Canvas main and
 Worker paths, without claiming an RTP network or vehicle hardware test.

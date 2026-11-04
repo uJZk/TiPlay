@@ -1118,10 +1118,14 @@ window.addEventListener('pagehide', event => {
   }
 });
 window.addEventListener('pageshow', event => {
-  if (event.persisted && resumeOnShow) start();
+  if (!event.persisted) return;
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration()
+    .then(registration => registration?.update()).catch(() => {});
+  if (resumeOnShow) start();
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('sw.js', import.meta.url)).catch(() => {});
+if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('sw.js', import.meta.url), { updateViaCache: 'none' })
+  .then(registration => registration.update()).catch(() => {});
 
 $('code').value = link.code ?? '';
 $('host').value = link.host;
