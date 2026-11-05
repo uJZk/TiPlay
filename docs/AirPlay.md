@@ -110,6 +110,10 @@ When mirroring is unavailable and a browser audio decoder is available, discover
 offers transient pairing. Neither profile offers buffered audio or PTP. Browser
 authorization still gates each media request, including unpaired connections.
 This capability selection and its effect on audio require physical iPhone testing.
+One iPhone capture sent `timingProtocol=NTP` together with the legacy FairPlay
+`ekey` and `eiv` in its initial SETUP; beta.40 rejected that combination before
+starting media. Legacy SETUP accepts it, with one NTP clock and the existing
+authorization and pairing checks. Real iPhone picture and audio remain unverified.
 Independent SRP-client and loopback socket tests cover encrypted control, events,
 audio delivery and unsupported transport rejection. These checks do not establish
 iOS picker selection, interoperability with every sender or physical output timing.

@@ -63,6 +63,10 @@ class ReceiverAirPlay2ServerTest {
         try {
             Peer(receiver.port).use { peer ->
                 val secret = peer.pair()
+                assertEquals("403", peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
+                    "timingProtocol" to "NTP", "timingPort" to 0L,
+                    "ekey" to ByteArray(72), "eiv" to ByteArray(16),
+                ))).path)
                 val ntp = peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
                     "timingProtocol" to "NTP", "timingPort" to 0L,
                 )))

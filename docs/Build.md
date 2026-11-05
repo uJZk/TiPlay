@@ -588,6 +588,16 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+### Beta.41 preparation
+
+Beta.41/code 83 accepts an initial legacy SETUP containing both FairPlay key
+material and NTP timing, matching iPhone requests observed on beta.40. Previously
+TiPlay rejected those requests with `mixed audio transport setup` before media
+started. Local Android checks and 693 browser tests pass. The Android CI timeout
+is 45 minutes so its post-job cleanup can finish after the substantive checks.
+Physical iPhone mirroring, video casting and sound remain to be verified. Only the
+Android APK is intended for release; generated site version metadata is not deployed.
+
 ### Published beta.40
 
 [Beta.40](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.40), code 82,

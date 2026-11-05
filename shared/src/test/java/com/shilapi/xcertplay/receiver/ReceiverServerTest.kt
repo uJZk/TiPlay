@@ -1235,6 +1235,9 @@ class ReceiverServerTest {
     @Test fun unpairedFairPlayMirrorDecryptsVideoWithTheTransportKey() =
         encryptedMirrorProbe(false, unpaired = true)
 
+    @Test fun unpairedFairPlayWithNtpSupportsMirrorAndAudio() =
+        encryptedMirrorProbe(false, audioDrain = true, unpaired = true)
+
     @Test fun incompleteLegacyPairingCannotFallBackToUnpairedTransportKey() {
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener(),
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
@@ -1252,7 +1255,7 @@ class ReceiverServerTest {
                 assertEquals(200, control.status("POST", "/fp-setup", fairPlay(16, 1)))
                 assertEquals(200, control.status("POST", "/fp-setup", fairPlay(164, 3)))
                 assertEquals(403, control.status("SETUP", "/", BplistCodec.encode(mapOf(
-                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0))))
+                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0, "timingProtocol" to "NTP"))))
             }
         } finally { receiver.close() }
     }
@@ -1288,7 +1291,12 @@ class ReceiverServerTest {
             }
             assertEquals(142, control.send("POST", "/fp-setup", fairPlay(16, 1)).body.size)
             assertEquals(32, control.send("POST", "/fp-setup", fairPlay(164, 3)).body.size)
-            val setup = mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0)
+            val setup = mapOf("eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0) +
+                if (unpaired) mapOf("timingProtocol" to "NTP") else emptyMap()
+            if (unpaired) {
+                assertEquals(461, control.status("SETUP", "/", BplistCodec.encode(setup + ("timingProtocol" to "PTP"))))
+                assertEquals(400, control.status("SETUP", "/", BplistCodec.encode(setup + ("timingPort" to "bad"))))
+            }
             val initialSetup = control.send("SETUP", "rtsp://receiver/stream", BplistCodec.encode(setup))
             assertEquals("200", initialSetup.path)
             val initialPorts = BplistCodec.decode(initialSetup.body) as Map<*, *>

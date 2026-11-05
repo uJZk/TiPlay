@@ -1304,10 +1304,13 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 when { pairing.verifiedPublicKey != null -> "verified"; pairing2.complete -> "transient";
                     pairing.presentedPublicKey != null -> "unverified"; else -> "none" })
             val timingProtocol = dict["timingProtocol"]
-            require(timingProtocol == null || !dict.containsKey("ekey")) { "mixed audio transport setup" }
+            val encrypted = dict["ekey"] as? ByteArray
+            require(!dict.containsKey("ekey") || encrypted != null) { "invalid transport key" }
             if (timingProtocol != null && timingProtocol != "NTP")
                 return RtspMessage.Response(status = 461, statusText = "Unsupported Transport")
-            if (timingProtocol == "NTP" && !dict.containsKey("streams")) {
+            if (encrypted != null && pairing2.complete)
+                return RtspMessage.Response(status = 403, statusText = "Forbidden")
+            if (timingProtocol == "NTP" && encrypted == null && !dict.containsKey("streams")) {
                 if (controlCipher == null) return RtspMessage.Response(status = 403, statusText = "Forbidden")
                 if (timing != null) return RtspMessage.Response(status = 455, statusText = "Method Not Valid in This State")
                 val timingPort = dict["timingPort"]
@@ -1316,7 +1319,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             }
             // Derive and validate new transport material before retiring the current
             // owner. A malformed replacement must not interrupt existing playback.
-            val encrypted = dict["ekey"] as? ByteArray
             val nextIv = if (encrypted != null) (dict["eiv"] as? ByteArray).also {
                 require(it?.size == 16) { "invalid-audio-transport-iv" }
             } else audioIv
@@ -1330,6 +1332,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             } else key
             val nextTimingReady = timing != null || encrypted != null
             if (encrypted != null) {
+                require(dict["timingPort"] == null || dict["timingPort"] is Byte || dict["timingPort"] is Short ||
+                    dict["timingPort"] is Int || dict["timingPort"] is Long) { "invalid-timing-port" }
                 val port = (dict["timingPort"] as? Number)?.toLong() ?: 0
                 require(port in 0L..65535L) { "invalid-timing-port" }
             }
@@ -1362,7 +1366,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             if (owner != null && owner !== this) { owner?.closeMedia(); owner = null }
             if (playbackPeer != null) finishPlayback(PlaybackFinishReason.IPHONE_STOP)
             val response = linkedMapOf<String, Any?>()
-            if (timingProtocol == "NTP" && requestedStreams == null) {
+            if (timingProtocol == "NTP" && encrypted == null && requestedStreams == null) {
                 val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
                 require(timingPort in 0..65535)
                 val clock = NtpClock(log = { listener.log("c=$diagnosticId $it") },
