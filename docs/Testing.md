@@ -7,12 +7,12 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.40/code82 is published** from `8eb3e46655d9d6c7c89970f900fe015e63cedb4c`.
+**Beta.41/code83 is published** from `424ed6c8fa8a44349183364c69f975a3fb2dadd6`.
 Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`;
 [Build](Build.md#browser-v116) records its checks and browser update behavior.
-The [Android checks](https://github.com/uJZk/TiPlay/actions/runs/41838540471) passed
-their substantive checks but timed out during post-job cleanup. The
-[signed release](https://github.com/uJZk/TiPlay/actions/runs/41850600419) passed.
+The [full Android checks](https://github.com/uJZk/TiPlay/actions/runs/42008614328)
+passed, including a WASM retry after a TLS download interruption. The
+[signed release](https://github.com/uJZk/TiPlay/actions/runs/42012960238) passed.
 The browser suite passed 693 tests. The signed APK, source ZIP, checksums,
 release tag and public downloads were independently checked; [Build](Build.md#current-browser-deployment)
 records provenance. Browser direct-first loading and fallback, CarPlay recovery

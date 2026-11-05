@@ -588,15 +588,31 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
-### Beta.41 preparation
+### Published beta.41
 
-Beta.41/code 83 accepts an initial legacy SETUP containing both FairPlay key
+[Beta.41](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.41), code 83,
+was published from `424ed6c8fa8a44349183364c69f975a3fb2dadd6` at
+2026-11-05 10:53:21 UTC. It accepts an initial legacy SETUP containing both FairPlay key
 material and NTP timing, matching iPhone requests observed on beta.40. Previously
 TiPlay rejected those requests with `mixed audio transport setup` before media
-started. Local Android checks and 693 browser tests pass. The Android CI timeout
-is 45 minutes so its post-job cleanup can finish after the substantive checks.
+started. Local Android checks and 693 browser tests pass. [Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42008614328)
+passed, including WASM reproduction, native checks, unit tests, lint and builds;
+WASM was retried after an upstream TLS download interruption. The Android CI
+timeout is 45 minutes so post-job cleanup can finish after substantive checks.
+[Signed release](https://github.com/uJZk/TiPlay/actions/runs/42012960238) passed.
+The APK has package `com.ujzk.tiplay`, version code 83 and the previous signing
+certificate `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`;
+16 KiB ZIP alignment passes. The source ZIP matches `git archive` of the build
+commit, and all three published assets match the signed workflow artifacts.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.41.apk` | 114,514,767 | `82e4940d136d1849c6e22b598f0e4d35d9d82aede7836dfa635b5073f8b6f301` |
+| `TiPlay-0.2.20-beta.41-source.zip` | 70,186,511 | `17d3bf6e703e853e44883c67ac0c384a435dfb8871af1f302a4c963d0deec134` |
+| `SHA256SUMS.txt` | 191 | `efe55d615514e6f66d7f48c4ca8a6560108d8283625d9157f1e95f6729ec79e9` |
+
 Physical iPhone mirroring, video casting and sound remain to be verified. Only the
-Android APK is intended for release; generated site version metadata is not deployed.
+Android APK was published; generated site version metadata was not deployed.
 
 ### Published beta.40
 
