@@ -588,6 +588,11 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta42-candidate"></a>
+### Beta.42 candidate
+
+Beta.42/code 84 retains browser v116. It buffers the bounded mirror key-frame chain during video track replacement, resets native audio negotiation deadlines, and records Bluetooth route and uplink diagnostics without device addresses or audio content. Device testing is needed to validate mirroring and investigate the first native audio failure and Bluetooth microphone routing; see [AirPlay](AirPlay.md) and [Diagnostics](Diagnostics.md).
+
 ### Published beta.41
 
 [Beta.41](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.41), code 83,

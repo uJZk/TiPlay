@@ -8,7 +8,7 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /** Browser-owned audio output. Encoded AirPlay/CarPlay and PCM compatibility streams keep independent browser epochs. */
-class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
+class WebAudioHub(private val log: (String) -> Unit = {}, private val nanoTime: () -> Long = System::nanoTime) {
     /** A decoder's publication lease; retiring it cannot wait for buffered music capacity. */
     class Publication internal constructor(private val hub: WebAudioHub, internal val owner: Any) : Closeable {
         @Volatile internal var active = true
@@ -302,6 +302,8 @@ class WebAudioHub(private val nanoTime: () -> Long = System::nanoTime) {
     /** A separate route owner survives display/audio ownership changes until SCO is really released. */
     @Synchronized fun voiceRoute(owner: Any, state: String, held: Boolean, error: String? = null): Boolean {
         if (voiceOwner != null && voiceOwner !== owner) return false
+        if (voiceState != state || voiceError != error || (voiceOwner != null) != held)
+            runCatching { log("Browser audio: bluetooth route state=$state held=$held error=${error ?: "none"}") }
         voiceOwner = owner.takeIf { held }
         voiceState = state; voiceError = error; voiceRevision++
         subscription?.let(::routeRecord)

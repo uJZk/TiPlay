@@ -6,6 +6,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class WebAudioHubTest {
+    @Test fun bluetoothRouteChangesAreLoggedWithoutRepeatingUnchangedState() {
+        val lines = mutableListOf<String>()
+        val hub = WebAudioHub(log = lines::add)
+        val owner = Any()
+        hub.voiceRoute(owner, "connecting", true)
+        hub.voiceRoute(owner, "connecting", true)
+        hub.voiceRoute(owner, "failed", true, "car-bluetooth-unavailable")
+        assertEquals(2, lines.size)
+        assertTrue(lines.last().contains("error=car-bluetooth-unavailable"))
+    }
     @Test fun extendedUnsignedStreamsRetainTheirOwnConfigurationAudioAndEnd() {
         val hub = WebAudioHub(); val owner = Any(); hub.begin(owner); val reader = hub.subscribe()
         repeat(5) { reader.take(100) }

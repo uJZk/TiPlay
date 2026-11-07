@@ -22,8 +22,9 @@ class BrowserMicrophoneTest {
             val key = ByteArray(32) { it.toByte() }
             val config = MicrophoneConfig("telephony", 16000, 1, 100, 20, host, receiver.localPort, key)
             val counters = MicrophoneCounters()
+            val diagnostics = mutableListOf<String>()
             repeat(2) { number ->
-                BrowserMicrophone(config, counters).use { it.accept(ByteArray(config.frameBytes)) }
+                BrowserMicrophone(config, counters, diagnostics::add).use { it.accept(ByteArray(config.frameBytes)) }
                 val packet = DatagramPacket(ByteArray(4096), 4096)
                 receiver.receive(packet)
                 val wire = packet.data.copyOf(packet.length)
@@ -34,6 +35,9 @@ class BrowserMicrophoneTest {
                 assertEquals(config.frameBytes, AirPlayCrypto.chachaOpen(key, nonce,
                     wire.copyOfRange(12, wire.size - 8), wire.copyOfRange(4, 12)).size)
             }
+            assertEquals(2, diagnostics.size)
+            assertTrue(diagnostics.all { it.contains("udpSent=1") && it.contains("sendErrors=0") })
+            assertTrue(diagnostics.none { it.contains(host.hostAddress) || it.contains(receiver.localPort.toString()) })
         }
     }
     @Test fun partialBluetoothCaptureReadsBecomeAuthenticatedOrderedMicrophoneDatagrams() {

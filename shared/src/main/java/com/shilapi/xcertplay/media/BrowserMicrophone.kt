@@ -10,7 +10,8 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 
 /** Packetizes mono capture PCM for the negotiated CarPlay uplink; no software AEC. */
-internal class BrowserMicrophone(private val config: MicrophoneConfig, private val counters: MicrophoneCounters = MicrophoneCounters()) : Closeable {
+internal class BrowserMicrophone(private val config: MicrophoneConfig, private val counters: MicrophoneCounters = MicrophoneCounters(),
+                                 private val diagnostic: (String) -> Unit = {}) : Closeable {
     val sampleRate: Int get() = if (config.codec == AudioCodecKind.OPUS) 48_000 else config.sampleRate
     init { require(config.channels == 1); require(config.codec in listOf(AudioCodecKind.OPUS, AudioCodecKind.LPCM)) }
     private val socket = DatagramSocket()
@@ -60,7 +61,9 @@ internal class BrowserMicrophone(private val config: MicrophoneConfig, private v
         val now = System.nanoTime()
         if (!force && now - reportAt < 5_000_000_000L) return
         // Counts only: no PCM, codec payload, encryption key or peer endpoint is logged.
-        Log.i(TAG, "stats uploadedBytes=$uploadedBytes encodedFrames=$encodedFrames emptyFrames=$emptyFrames udpSent=$sentPackets sendErrors=$sendErrors")
+        val message = "stage=uplink uploadedBytes=$uploadedBytes encodedFrames=$encodedFrames emptyFrames=$emptyFrames udpSent=$sentPackets sendErrors=$sendErrors"
+        Log.i(TAG, message)
+        runCatching { diagnostic(message) }
         reportAt = now
     }
 

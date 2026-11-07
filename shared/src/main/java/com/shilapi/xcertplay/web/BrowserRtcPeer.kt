@@ -137,6 +137,8 @@ private class AndroidBrowserRtcPeer(
     @Volatile private var audioFailure: String? = null
     override val audioTransport: String get() = if (audio != null) BrowserRtcAudioRouter.TRANSPORT else "unavailable"
     private val audioRouter = BrowserRtcAudioRouter(onFailure = ::nativeAudioFailure,
+        peerFactory = { slots, failed -> NativeRtcAudioPeer(slots, failed,
+            diagnostic = { detail -> log("Browser RTC: native-audio epoch=$epoch $detail") }) },
         captureNative = { bytes, submit -> nativeAudioCapture.route(nativeAudioSequence.getAndIncrement(), bytes, submit) })
     private val audioSignaling = BrowserRtcAudioSignaling(audioRouter,
         authenticated = { authenticated && audio != null && accepting() }, live = ::accepting,
@@ -491,6 +493,7 @@ private class AndroidBrowserRtcPeer(
     private fun pumpVideo() {
         var sequence = 0
         var deferredSourceRateRecord: WebVideoRecord? = null
+        var deferredSourceRateWasReplay = false
         var config: WebVideoRecord? = null
         var configuredGeneration = videoLease.generation
         var replacementAnnounced = false
@@ -503,6 +506,7 @@ private class AndroidBrowserRtcPeer(
         val sourceRateRecovery = BrowserRtcSourceRateRecovery()
         var lastNativeStatusGeneration = 0
         var lastNativeStatusNanos = Long.MIN_VALUE
+        val pendingVideo = BrowserRtcPendingVideo()
         fun reportFlow(terminal: Boolean = false) {
             val bridge = videoTrack ?: (if (terminal) lastFlowBridge else null) ?: return
             val now = System.nanoTime()
@@ -546,6 +550,7 @@ private class AndroidBrowserRtcPeer(
             sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
         }
         fun pauseVideo(next: WebVideoRecord?) {
+            pendingVideo.clear()
             val announce = videoSource.pause(next) {
                 // Source updates and offer snapshot selection share this lock.
                 // Only retire the active old bridge, not a replacement bridge.
@@ -580,10 +585,12 @@ private class AndroidBrowserRtcPeer(
             if (videoTrack == null) { endVideo("video-track-not-negotiated"); return }
             var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
             while (!closed.get()) {
-                val record = deferredSourceRateRecord
-                    ?: subscription.take(1_000)
-                    ?: WebVideoRecords.HEARTBEAT
+                val replay = if (deferredSourceRateRecord == null && videoLease.ready &&
+                    configuredGeneration == videoLease.generation) config?.let { pendingVideo.poll(it.epoch) } else null
+                val fromReplay = if (deferredSourceRateRecord != null) deferredSourceRateWasReplay else replay != null
+                var record = deferredSourceRateRecord ?: replay ?: subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
                 deferredSourceRateRecord = null
+                deferredSourceRateWasReplay = false
                 reportCodec()
                 reportFlow()
                 videoFailure?.let { endVideo(it); return }
@@ -649,6 +656,7 @@ private class AndroidBrowserRtcPeer(
                         log("Browser RTC: stage=video epoch=$epoch generation=$checkedGeneration reason=$reason state=recovering attempt=1")
                         // Preserve CONFIG/END if the source changed during this sample.
                         deferredSourceRateRecord = record
+                        deferredSourceRateWasReplay = fromReplay
                         pauseVideo(scopedRecovery)
                         continue
                     }
@@ -662,6 +670,7 @@ private class AndroidBrowserRtcPeer(
                     // A replacement raced the JNI sample. Preserve this record until
                     // the active sender has passed its own native-epoch check.
                     deferredSourceRateRecord = record
+                    deferredSourceRateWasReplay = fromReplay
                     Thread.sleep(20)
                     continue
                 }
@@ -676,16 +685,19 @@ private class AndroidBrowserRtcPeer(
                     if (failure != null) { endVideo(failure); break }
                 }
                 if (record.kind == WebVideoRecords.KIND_CONFIG) {
+                    pendingVideo.clear()
                     if (!videoLease.ready || config != null && config!!.epoch != record.epoch) pauseVideo(record)
                     else if (!configureVideo(record)) break
                     continue
                 }
                 if (record.kind == WebVideoRecords.KIND_IDLE && config != null) {
+                    pendingVideo.clear()
                     // Wait for the next actual source config before asking for a new video track.
                     // The old track is never reused across epochs; audio/SCTP remain untouched.
                     pauseVideo(null)
                 }
                 if (record.kind == WebVideoRecords.KIND_END) {
+                    pendingVideo.clear()
                     val reason = String(record.payload, Charsets.UTF_8)
                     if (reason in setOf("source-ended", "source-changed")) {
                         pauseVideo(null)
@@ -695,18 +707,22 @@ private class AndroidBrowserRtcPeer(
                         continue
                     } else { endVideo(reason); break }
                 }
-                record.sourceCapture?.let { source ->
-                    RawTraffic.recordForSession(source.session, "browser/rtc/video-reference",
-                        WebJson.write(source.fields() + mapOf("epoch" to record.epoch,
-                            "sequence" to record.sequence, "recordKind" to record.kind)).toByteArray(Charsets.UTF_8))
-                }
-                WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let {
-                    sendRecord("video", sequence++, BrowserRtcRecord.video(it))
-                }
                 if (record.kind == WebVideoRecords.KIND_FRAME) {
-                    // Drain while replacing the track, preserving finite source-side memory.
-                    // Resume only after video-ready, then ask the source for a fresh key frame.
-                    if (!videoLease.ready) continue
+                    // Mirroring cannot always request another key frame. Retain the bounded
+                    // dependency chain that arrives while the new track is being negotiated.
+                    if (!videoLease.ready) { pendingVideo.offer(record); continue }
+                    if (!fromReplay && pendingVideo.isNotEmpty()) {
+                        pendingVideo.offer(record)
+                        record = pendingVideo.poll(config?.epoch ?: record.epoch) ?: record
+                    }
+                    record.sourceCapture?.let { source ->
+                        RawTraffic.recordForSession(source.session, "browser/rtc/video-reference",
+                            WebJson.write(source.fields() + mapOf("epoch" to record.epoch,
+                                "sequence" to record.sequence, "recordKind" to record.kind)).toByteArray(Charsets.UTF_8))
+                    }
+                    WebDebugTiming.record(record, System.nanoTime(), extended = true)?.let {
+                        sendRecord("video", sequence++, BrowserRtcRecord.video(it))
+                    }
                     val owner = videoTrack ?: continue
                     val ownerGeneration = videoLease.generation
                     // Native cadence uses latest-frame coalescing at queue depth two.
@@ -753,9 +769,13 @@ private class AndroidBrowserRtcPeer(
     private fun nativeAudioFailure(reason: String) {
         if (closed.get() || !authenticated) return
         audioFailure = reason
-        val generation = (audioRouter.snapshot()["generation"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
+        val snapshot = audioRouter.snapshot()
+        val native = snapshot["native"] as? Map<*, *>
+        val generation = (snapshot["generation"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
         val event = if (reason == "audio-slots-exhausted") "audio-restart-required" else "audio-error"
-        log("Browser RTC: stage=native-audio epoch=$epoch generation=$generation reason=$reason failed=true")
+        log("Browser RTC: stage=native-audio epoch=$epoch generation=$generation peer=${native?.get("peer")} reason=$reason failed=true " +
+            listOf("negotiating", "slots", "owners", "receiverReadySlots", "queuedPackets", "queuedBytes")
+                .joinToString(" ") { "$it=${snapshot[it]}" })
         runCatching { sendControl(WebJson.write(mapOf("k" to event, "reason" to reason, "generation" to generation))) }
         synchronized(wake) { wake.notifyAll() }
     }

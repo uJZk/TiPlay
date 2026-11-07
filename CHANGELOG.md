@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.42
+
+Version code 84. Browser revision remains v116.
+
+- Preserve a bounded sequence beginning at an AirPlay mirror key frame while the browser video track is replaced, so a key frame sent before readiness can start the new track.
+- Give each native audio renegotiation a fresh deadline and record the first sender failure's stage and state.
+- Record car Bluetooth selection, audio focus, SCO routing and microphone uplink counters without addresses or audio content.
+
+Mirror playback and the navigation and Bluetooth microphone reports require physical retesting; the initial audio transport failure and Bluetooth routing cause remain under investigation.
+
 ## 0.2.20-beta.36
 
 Version code 78 and browser revision v111. Release checks and publication are

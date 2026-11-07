@@ -23,8 +23,10 @@ internal interface BrowserRtcAudioBackend : Closeable {
 internal class NativeRtcAudioPeer(
     override val slots: List<BrowserRtcAudioSlot>,
     private val onFailure: (String) -> Unit,
+    private val diagnostic: (String) -> Unit = {},
     private val nanoTime: () -> Long = System::nanoTime,
 ) : BrowserRtcAudioBackend {
+    private val diagnosticId = nextDiagnosticId.incrementAndGet()
     private data class Packet(val slot: Int, val payload: ByteArray, val timestamp: Long, val admittedAt: Long)
     private val answering = AtomicBoolean()
     private val closed = AtomicBoolean()
@@ -69,6 +71,9 @@ internal class NativeRtcAudioPeer(
     }
 
     private fun pump() {
+        var stage = "idle"
+        var packetSlot = -1
+        var admittedAt = 0L
         try {
             while (!closed.get() && !failed.get()) {
                 val packet = packets.poll(100, TimeUnit.MILLISECONDS)
@@ -78,6 +83,7 @@ internal class NativeRtcAudioPeer(
                     continue
                 }
                 try {
+                    stage = "wait-track"; packetSlot = packet.slot; admittedAt = packet.admittedAt
                     while (!closed.get() && !failed.get()) {
                         val open = synchronized(pointerLock) {
                             handle != 0L && answered && !nativeFailed(handle) && nativeReady(handle, packet.slot)
@@ -86,14 +92,29 @@ internal class NativeRtcAudioPeer(
                         if (nanoTime() - packet.admittedAt >= START_TIMEOUT_NANOS) error("audio-native-open-timeout")
                         Thread.sleep(5)
                     }
+                    stage = "send"
                     if (!closed.get() && !failed.get()) synchronized(pointerLock) {
                         if (handle != 0L && !closed.get()) nativeSend(handle, packet.slot, packet.timestamp, packet.payload)
                     }
+                    stage = "idle"; packetSlot = -1; admittedAt = 0L
                 } finally { bytes.addAndGet(-packet.payload.size) }
             }
         } catch (_: InterruptedException) {
             if (!closed.get()) fail("audio-native-interrupted")
-        } catch (_: Throwable) { if (!closed.get()) fail("audio-native-send-failed") }
+        } catch (error: Throwable) {
+            if (!closed.get()) {
+                val nativeState = runCatching { synchronized(pointerLock) {
+                    if (handle == 0L) "unavailable" else if (nativeFailed(handle)) "failed" else "not-failed"
+                } }.getOrDefault("unknown")
+                val ageMs = if (admittedAt == 0L) -1L else (nanoTime() - admittedAt).coerceAtLeast(0) / 1_000_000
+                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs") }
+                fail(when (error.message) {
+                "audio-native-open-timeout" -> "audio-native-open-timeout"
+                "audio-native-peer-failed" -> "audio-native-peer-failed"
+                else -> "audio-native-send-failed"
+                })
+            }
+        }
         finally {
             packets.clear(); bytes.set(0)
             // Native deletion runs off its callback stack and after the gathering waiter exits.
@@ -105,7 +126,7 @@ internal class NativeRtcAudioPeer(
     override fun ready(): Boolean = synchronized(pointerLock) {
         !closed.get() && !failed.get() && answered && handle != 0L && !nativeFailed(handle)
     }
-    override fun snapshot(): Map<String, Any?> = mapOf("backend" to "libdatachannel", "ready" to ready(),
+    override fun snapshot(): Map<String, Any?> = mapOf("backend" to "libdatachannel", "peer" to diagnosticId, "ready" to ready(),
         "queuedPackets" to packets.size, "queuedBytes" to bytes.get().coerceAtLeast(0), "tracks" to slots.size,
         "failed" to failed.get())
 
@@ -122,6 +143,7 @@ internal class NativeRtcAudioPeer(
     }
 
     companion object {
+        private val nextDiagnosticId = java.util.concurrent.atomic.AtomicLong()
         private const val MAX_PACKETS = 1024
         private const val MAX_BYTES = 1024 * 1024
         private const val MAX_PACKET_BYTES = 65479

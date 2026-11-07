@@ -55,7 +55,12 @@ internal class BrowserRtcAudioRouter(
             // Completed slots never revive on a replacement peer. Active owners retain only
             // packets admitted after the replacement starts; already-sent RTP is never replayed.
             val retained = owners.values.filter { active[it.key.type] == it.key && it.ended == null || it.packets.isNotEmpty() }
-            owners.clear(); retained.forEach { owner -> owner.slot = null; owner.generation = 0; owner.receiverReady = false; owners[owner.key] = owner }
+            val startedAt = nanoTime()
+            owners.clear(); retained.forEach { owner ->
+                owner.slot = null; owner.generation = 0; owner.receiverReady = false
+                owner.since = startedAt
+                owners[owner.key] = owner
+            }
         }
         previous.forEach { it.close() }
         val next = try { peerFactory(offered) { reason -> fail(nextGeneration, reason) } }

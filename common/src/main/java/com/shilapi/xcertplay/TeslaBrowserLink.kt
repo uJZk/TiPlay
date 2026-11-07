@@ -135,7 +135,7 @@ internal object TeslaBrowserLink {
     @Volatile internal var clock: () -> Long = SystemClock::elapsedRealtime
 
     val hub: WebVideoHub by lazy { WebVideoHub(log = ::log) }
-    val audioHub: WebAudioHub by lazy { WebAudioHub() }
+    val audioHub: WebAudioHub by lazy { WebAudioHub(log = ::log) }
 
     private val worker = ScheduledThreadPoolExecutor(1) { Thread(it, "tiplay-browser-link").apply { isDaemon = true } }
         .apply { removeOnCancelPolicy = true }
@@ -403,7 +403,8 @@ internal object TeslaBrowserLink {
             audioHub.carPlayEnabled = app?.let { !BrowserCarPlayAudioSettings.disabled(it) } ?: true
             val audio = BrowserAudioMediaSink(web, audioHub,
                 voiceFactory = app?.let { context -> BluetoothVoiceFactory { state ->
-                    AndroidBluetoothVoiceChannel(context, state, selectedCarAddress = { CarBluetoothPreference.address(context) })
+                    AndroidBluetoothVoiceChannel(context, state, diagnostic = ::log,
+                        selectedCarAddress = { CarBluetoothPreference.address(context) })
                 } })
             val previous = audioTaps.put(sink, audio)
             BrowserOnlyMediaSink(sink, audio) to previous

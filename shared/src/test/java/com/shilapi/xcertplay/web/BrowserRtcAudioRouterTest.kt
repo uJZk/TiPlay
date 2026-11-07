@@ -8,6 +8,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicLong
 
 class BrowserRtcAudioRouterTest {
     private val offer = File("src/test/resources/Browser-audio-track-offer.sdp").readText()
@@ -78,6 +79,25 @@ class BrowserRtcAudioRouterTest {
         val start = System.nanoTime(); val fallback = config(codec = "alac")
         assertSame(fallback, router.route(fallback)); assertTrue(System.nanoTime() - start < 250_000_000L)
         router.close(); thread.join(1000); assertFalse(thread.isAlive); assertTrue(peers.single().closed); assertNotNull(failure.get())
+    }
+
+    @Test fun replacementNegotiationGetsItsOwnTimeout() {
+        val now = AtomicLong(1L)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+        val router = BrowserRtcAudioRouter(failures::add,
+            { slots, _ -> Backend(slots, entered, release) }, nanoTime = now::get)
+        try {
+            router.route(config())
+            now.set(TimeUnit.SECONDS.toNanos(6))
+            val thread = Thread { router.answer(offer, 1) }
+            thread.start()
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            assertNull("an old stream deadline must not expire the new negotiation", failures.poll(700, TimeUnit.MILLISECONDS))
+            release.countDown(); thread.join(1000)
+            assertFalse(thread.isAlive)
+            assertNull(router.snapshot()["failure"])
+        } finally { release.countDown(); router.close() }
     }
 
     @Test fun seventeenUtterancesRetireSlotsAndRestartWithoutMissingOrRecapturingTheNewOwner() {

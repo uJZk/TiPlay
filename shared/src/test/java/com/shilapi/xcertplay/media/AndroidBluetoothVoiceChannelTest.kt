@@ -343,12 +343,16 @@ class AndroidBluetoothVoiceChannelTest {
         val unrelated = AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO).build()
         shadowOf(manager).setAvailableCommunicationDevices(listOf(unrelated))
         val states = mutableListOf<BluetoothVoiceState>()
-        val channel = AndroidBluetoothVoiceChannel(app, states::add) { "AA:BB:CC:DD:EE:01" }
+        val logs = mutableListOf<String>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add, diagnostic = logs::add) { "AA:BB:CC:DD:EE:01" }
         channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
         assertEquals("car-bluetooth-unavailable", states.last().error)
         assertTrue(states.last().released)
         assertEquals(AudioManager.MODE_NORMAL, manager.mode)
         assertNull(manager.communicationDevice)
+        assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") && it.contains("matches=0") })
+        assertTrue(logs.any { it.contains("stage=failure reason=car-bluetooth-unavailable") })
+        assertTrue(logs.none { it.contains("AA:BB:CC:DD:EE:01") })
         channel.close(); shadowOf(Looper.getMainLooper()).idle()
     }
     @Test fun deniedMicrophoneOrBluetoothPermissionDoesNotSelectThePhoneOrChangeMode() {
