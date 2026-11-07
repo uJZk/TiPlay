@@ -498,16 +498,30 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
-<a id="beta43-in-progress"></a>
-### Beta.43 release in progress
+<a id="published-beta43"></a>
+### Published beta.43
 
-Beta.43/code85 retains browser v116 and includes CarPlay video recovery after
-encoder selection timeout, removal of the Android mirror key-frame cache, and
-additional native audio and car HFP diagnostics. Navigation audio, Bluetooth
-microphone routing and physical mirror/CarPlay recovery remain to be verified.
-Local Android unit tests, lint and debug builds passed on retry after one port
-rebinding test failed; 694 browser tests passed. Full CI and signed release
-verification are pending.
+[Beta.43](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.43), code 85,
+was built from `47cf959ce3741bd15c00f3c9202daac81b65c759`. It retains browser
+v116 and includes CarPlay video recovery after encoder selection timeout, removal
+of the Android mirror key-frame cache, and native audio and car HFP diagnostics.
+Navigation audio, Bluetooth microphone routing and physical mirror/CarPlay recovery
+remain to be verified. A key frame discarded before the replacement track is ready
+may still require a later key frame before mirroring can show a picture.
+
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42373342720) and the
+[signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/42375059777)
+passed. Local Android checks passed on retry after one port rebinding test failed;
+694 browser tests passed. The signed workflow artifact was independently verified:
+package `com.ujzk.tiplay`, version code 85, signer matching beta.42, 16 KiB ZIP
+alignment and a source ZIP matching the build commit. Published asset digests match
+the workflow artifact. Browser v116 was not deployed again.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.43.apk` | 114,531,151 | `944942b2f01d25aa221e95d1b38d32502c7a360d1b7830887c0dfbba8fb94594` |
+| `TiPlay-0.2.20-beta.43-source.zip` | 70,190,035 | `19d1c723bb7a5db57ed30438c46fc5d8c22f9e82fa4758ab6d835aa9116e2e3c` |
+| `SHA256SUMS.txt` | 191 | `1df92e350efdda7687222f4742d6a03091e30d251b73065863a87830e0cb21bf` |
 
 <a id="published-beta42"></a>
 ### Published beta.42
