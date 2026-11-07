@@ -295,103 +295,13 @@ Reports/downloads remain outside Git under `/tmp/tiplay-beta30/`.
 
 ## Beta.29 release
 
-Published [TiPlay 0.2.20-beta.29](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.29),
-code **71**, browser **v104**, at **2026-10-27 14:11:24 UTC+08:00**.
-Build commit: `c25e92d26d80e0d69b80dcfa61745222a747b4ec`.
-Keep the user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum;
-the new functional change is idle keyframe recovery through the existing poll.
-
-The beta.28 follow-up had three fresh connections with High `64002a` source,
-negotiated and preferred formats but Baseline `42002a` still instantiated. Each
-received four source AUs, submitted one, released one before encoding and produced
-zero output before the six-second selection timeout. Immediate recovery requests
-fell within the Hub's 500 ms limit; the now-static source supplied no more frames
-to trigger a later retry. Browser v103 remained connected with no inbound video.
-
-An actual M150 AAR before/after probe reproduced this sparse startup using the
-same High answer, dual codec capabilities and rate-limited test source. Old
-beta.28 bridge class bytes produced zero frames and selection timeout with only
-Baseline allocated. With idle retries, requests near one and two seconds elicited
-fresh High IDRs; native selection became High/ready and the original 1,129-byte
-IDR reached RTP reception with no packet loss. These are source/native startup
-results, not picture decoding or vehicle timing measurements.
-
-The poll retries only while active and waiting for a keyframe. Existing Hub rate
-limiting, strict profile/level admission, both six-second deadlines, input
-completion backpressure and audio/control ownership remain enforced. All **2,493
-shared JVM tests** and **613 browser tests** pass. Four new JVM cases cover the
-actual Hub limiter, idle recovery and original-byte output, unchanged
-selection/start deadlines, and no retry after close/disable/failure. A socket
-shutdown test now waits for real `java.net`/`sun.nio.ch` write frames rather than
-matching its own generated test method; existing time limits are unchanged.
-The final complete shared run used `-Pkotlin.incremental=false` after a local
-incremental compilation metadata failure. A transient port-rebind conflict also
-passed isolated and final checks. Full Android test CI remains skipped under the
-user's instruction.
-
-[Signed workflow 40458373264](https://github.com/uJZk/TiPlay/actions/runs/40458373264)
-passed Release lint/build, signing, pinned runtime checks and draft upload.
-Artifact `12712938944` has ZIP SHA-256
-`81bd110ea0b591a073ea6a62a18427b5db0173671a77c0b8485101e660192cc0`.
-Independent checks confirm package/code71, signer/runtime continuity against
-verified beta.28, the unchanged 51-library set, all 25 ELF64 libraries and ZIP
-aligned to 16 KiB, and existing compiled 16 Mbps/input-barrier markers. The source
-ZIP exactly matches the build commit's `git archive`, including the guarded idle
-retry and recovery regression tests; no new DEX literal is claimed for this
-one-line change. All three public attachments were downloaded again and match
-the verified workflow files byte-for-byte. The tag points directly to the build
-commit; it remains a prerelease with stable latest unchanged. Reports and verified
-downloads remain outside Git under `/tmp/tiplay-beta29/`.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.29.apk` | 114,185,128 | `79b01420c084bdd01d685dbd3c76d1ec9ef32677d5f5042735daaa04f68ed0cf` |
-| `TiPlay-0.2.20-beta.29-source.zip` | 40,915,885 | `727e377454f25968b2869267e546cc87bf89dd213aa8f20685d44a77bd966bc7` |
-| `SHA256SUMS.txt` | 191 | `0719507367d939e16bccd60b0d55c03f8b84d2ad001293e9cb0c547515fb4a4d` |
+[Beta.29](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.29), code 71, adds idle key-frame recovery. The [original verification record](https://github.com/uJZk/TiPlay/blob/f00d2b69edd0fb0881a1795fe4dddb97b138b190/docs/Build.md#beta29-release) remains in Git history.
 
 <a id="beta28-release"></a>
 
 ## Beta.28 release
 
-Published [TiPlay 0.2.20-beta.28](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.28),
-code **70**, browser **v103**, at **2026-10-27 13:08:03 UTC+08:00**.
-Build commit: `50f94b322ddf3a79d7bf74e674800cba437b74fa`. At the user's request,
-the one-time native video startup estimate changes from 24 to **16 Mbps**. The
-64 Mbps stream ceiling, unset minimum, native input-completion barrier and real
-congestion feedback remain as in beta.27. This estimate is a startup prior, not a
-fixed encoding rate or a guarantee of network capacity.
-
-The probe's current default and reproduction examples use 16 Mbps. The beta.27
-native measurements below actually used 24 Mbps and retain that recorded value;
-they are not relabeled as tests of the new setting. A separate actual Android
-AAR run with `setBitrate(null,16000000,64000000)` accepted the new prior and passed
-all 180 native RTP receiver AUs, zero packet loss, and identical source/encoder
-SHA-256 for 181,238 original bytes (High-profile, about 0.483 Mbps). Software
-receive scheduling skipped five decode callbacks (175), so this is not a picture
-decode/render or vehicle FPS result. Evidence is outside Git under
-`/tmp/tiplay-beta28/native16/`; the temporary emulator and ADB server were stopped.
-Twenty-eight targeted shared
-JVM tests and 613 browser tests pass, along with public-tree, cache-manifest,
-release-draft and site-assembly checks. Full Android test CI was skipped
-under the user's instruction; 16 Mbps vehicle performance remains unverified.
-
-[Signed workflow 40452499960](https://github.com/uJZk/TiPlay/actions/runs/40452499960)
-passed Release lint/build, signing, pinned runtime checks and draft upload.
-Artifact `12711630934` has ZIP SHA-256
-`e9a3f927656320e5c43408da28a18760d9a84c599286cfe779ff745e518b2dde`.
-Independent verification confirms package/code70, signer/runtime continuity
-against verified beta.27, the unchanged 51-library set, all 25 ELF64 libraries and
-ZIP aligned to 16 KiB, compiled `startBps=16000000` plus existing barrier markers,
-and source ZIP identical to `git archive` of the build commit. All three public
-attachments match the independently verified workflow files byte-for-byte. The
-tag points directly to the build commit; it remains a prerelease with stable
-latest unchanged. Reports and downloads are outside Git under `/tmp/tiplay-beta28/`.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.28.apk` | 114,185,128 | `bccd89280862ea55b18d7830dc54debefce70d162f3d023d2b45674e58260723` |
-| `TiPlay-0.2.20-beta.28-source.zip` | 40,907,910 | `3f8358cdcb85b4f72f36f4f3eaabe5d9fe79abbf01a12407ae3d09f0741bb628` |
-| `SHA256SUMS.txt` | 191 | `c891d224854d22dfebf1476def71140de99cdb786f0b73f1f35f2473757529a0` |
+[Beta.28](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.28) and its [original verification record](https://github.com/uJZk/TiPlay/blob/f00d2b69edd0fb0881a1795fe4dddb97b138b190/docs/Build.md#beta28-release) remain available.
 
 <a id="beta27-release"></a>
 
@@ -588,10 +498,18 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
-<a id="beta42-candidate"></a>
-### Beta.42 candidate
+<a id="published-beta42"></a>
+### Published beta.42
 
-Beta.42/code 84 retains browser v116. It buffers the bounded mirror key-frame chain during video track replacement, resets native audio negotiation deadlines, and records Bluetooth route and uplink diagnostics without device addresses or audio content. Device testing is needed to validate mirroring and investigate the first native audio failure and Bluetooth microphone routing; see [AirPlay](AirPlay.md) and [Diagnostics](Diagnostics.md).
+[Beta.42](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.42), code 84, was published from `8da4eabd8e6b2d8fcbc6334fc09babeaf8a1db89` on 2026-11-07. It retains browser v116 and buffers the mirror key-frame chain during video track replacement. It also resets native audio negotiation deadlines and records Bluetooth route and uplink diagnostics without device addresses or audio content. Physical testing is needed to validate mirroring and investigate the first native audio failure and Bluetooth microphone routing; see [AirPlay](AirPlay.md) and [Diagnostics](Diagnostics.md).
+
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42327130495) and the [signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/42327370603) passed. The published APK was independently downloaded and matched the signed artifact. The package is `com.ujzk.tiplay`, the signing certificate matches beta.41, the source ZIP matches the build commit, and 16 KiB ZIP alignment passes.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.42.apk` | 114,531,151 | `d33b20cdb9c6b3addba0d5d7624ab77b0a4b119ed3b85201ec1fea056da8f12a` |
+| `TiPlay-0.2.20-beta.42-source.zip` | 70,191,071 | `1d242bfb6d8a5c3f8271840dd5346acdcd94809dd7c0a1868deac279df810d94` |
+| `SHA256SUMS.txt` | 191 | `c7b76daaf22681c4432caa52fb4309c9d2d0a734ee6d65eabb799dab12456adc` |
 
 ### Published beta.41
 

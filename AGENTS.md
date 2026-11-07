@@ -37,9 +37,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#beta42-candidate).
-Beta.41/code83 is published from `424ed6c8fa8a44349183364c69f975a3fb2dadd6`;
-iPhone mirror picture and sound still need physical verification.
+Resume current release work at [Build](docs/Build.md#published-beta42).
+Beta.42/code84 is published from `8da4eabd8e6b2d8fcbc6334fc09babeaf8a1db89`;
+iPhone mirror picture, navigation audio and Bluetooth microphone still need physical verification.
 Browser/cache v116 is deployed separately; see Build for update behavior,
 verified release artifacts, checks and remaining physical validation.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
