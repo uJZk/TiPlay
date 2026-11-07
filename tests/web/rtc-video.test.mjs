@@ -413,3 +413,20 @@ test('invalid video metadata stops only video and a later valid source can reque
   controller.enqueue(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode('video-renegotiation-required') })); await settle();
   assert.equal(messages.at(-1).reason, 'video-renegotiation-required'); assert.equal(cancelled, 0);
 });
+
+test('encoder selection failure permits renegotiation for the next video source', async t => {
+  let controller;
+  const messages = [], drawn = [];
+  const pipeline = createRtcVideoPipeline({ post: value => messages.push(value), present: value => { drawn.push(value); value.close(); } });
+  t.after(() => pipeline.stop());
+  pipeline.read(9, new ReadableStream({ start(value) { controller = value; } }));
+  controller.enqueue(config(1)); await settle();
+  controller.enqueue(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode('video-encoder-selection-timeout') })); await settle();
+  assert.equal(messages.at(-1).reason, 'video-encoder-selection-timeout');
+  controller.enqueue(encodeRecord({ kind: RECORD.END, payload: new TextEncoder().encode('video-renegotiation-required') })); await settle();
+  assert.equal(messages.at(-1).reason, 'video-renegotiation-required');
+  pipeline.resetGeneration(2);
+  controller.enqueue(config(2, RTC_VIDEO_TRANSPORT, 2)); await settle();
+  const current = frame(); pipeline.trackFrame(current, 2);
+  assert.equal(drawn.at(-1), current);
+});

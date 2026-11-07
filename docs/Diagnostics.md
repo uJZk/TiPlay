@@ -306,6 +306,15 @@ receiver stays connected for its buffered tail; it does not certify drain comple
 or audible output. Music may use software AAC while guidance uses this separate
 Opus peer, so successful music alone cannot establish native guidance playback.
 
+Android's `native-audio stage=sender-failure` also records its native `connection`
+and `ice` states and state-callback counts at failure. ICE connected with the peer
+still connecting points to a later transport stage; checking or failed ICE does
+not by itself identify which candidate or network caused the failure. No address
+or candidate contents are included. If no SCO communication device is available,
+`bluetooth route ... stage=headset-diagnostic` records the Android HFP profile
+state, connected headset count and whether the selected car matches. These do
+not establish microphone routing or distinguish all platform Bluetooth failures.
+
 RTP packet reception alone also does not establish decoded samples. The local
 original-Opus reproduction received packets with zero Worklet output until a
 muted, zero-volume audio anchor activated Chromium's peer playout. Check the

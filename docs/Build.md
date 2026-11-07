@@ -498,6 +498,17 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta43-in-progress"></a>
+### Beta.43 release in progress
+
+Beta.43/code85 retains browser v116 and includes CarPlay video recovery after
+encoder selection timeout, removal of the Android mirror key-frame cache, and
+additional native audio and car HFP diagnostics. Navigation audio, Bluetooth
+microphone routing and physical mirror/CarPlay recovery remain to be verified.
+Local Android unit tests, lint and debug builds passed on retry after one port
+rebinding test failed; 694 browser tests passed. Full CI and signed release
+verification are pending.
+
 <a id="published-beta42"></a>
 ### Published beta.42
 

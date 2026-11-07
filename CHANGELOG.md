@@ -4,6 +4,16 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.43
+
+Version code 85. Browser revision remains v116.
+
+- Resume CarPlay video negotiation when a new source arrives after an encoder selection timeout.
+- Remove the Android key-frame chain cache during video track replacement.
+- Record native audio ICE and connection states at sender failure, and inspect the selected car's HFP profile when no SCO device is available.
+
+Mirror playback, CarPlay recovery, navigation audio and Bluetooth microphone routing require physical testing. The audio connection and Bluetooth route causes remain under investigation.
+
 ## 0.2.20-beta.42
 
 Version code 84. Browser revision remains v116.

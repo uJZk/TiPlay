@@ -493,7 +493,6 @@ private class AndroidBrowserRtcPeer(
     private fun pumpVideo() {
         var sequence = 0
         var deferredSourceRateRecord: WebVideoRecord? = null
-        var deferredSourceRateWasReplay = false
         var config: WebVideoRecord? = null
         var configuredGeneration = videoLease.generation
         var replacementAnnounced = false
@@ -506,7 +505,7 @@ private class AndroidBrowserRtcPeer(
         val sourceRateRecovery = BrowserRtcSourceRateRecovery()
         var lastNativeStatusGeneration = 0
         var lastNativeStatusNanos = Long.MIN_VALUE
-        val pendingVideo = BrowserRtcPendingVideo()
+        var awaitingNewSourceAfterFailure = false
         fun reportFlow(terminal: Boolean = false) {
             val bridge = videoTrack ?: (if (terminal) lastFlowBridge else null) ?: return
             val now = System.nanoTime()
@@ -550,7 +549,6 @@ private class AndroidBrowserRtcPeer(
             sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
         }
         fun pauseVideo(next: WebVideoRecord?) {
-            pendingVideo.clear()
             val announce = videoSource.pause(next) {
                 // Source updates and offer snapshot selection share this lock.
                 // Only retire the active old bridge, not a replacement bridge.
@@ -585,15 +583,23 @@ private class AndroidBrowserRtcPeer(
             if (videoTrack == null) { endVideo("video-track-not-negotiated"); return }
             var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
             while (!closed.get()) {
-                val replay = if (deferredSourceRateRecord == null && videoLease.ready &&
-                    configuredGeneration == videoLease.generation) config?.let { pendingVideo.poll(it.epoch) } else null
-                val fromReplay = if (deferredSourceRateRecord != null) deferredSourceRateWasReplay else replay != null
-                var record = deferredSourceRateRecord ?: replay ?: subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
+                val record = deferredSourceRateRecord ?: subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
                 deferredSourceRateRecord = null
-                deferredSourceRateWasReplay = false
                 reportCodec()
                 reportFlow()
-                videoFailure?.let { endVideo(it); return }
+                val previousFailure = videoFailure
+                if (previousFailure != null) {
+                    if (!awaitingNewSourceAfterFailure) { endVideo(previousFailure); return }
+                    if (BrowserRtcSourceRateRecovery.recoverOnNewSource(previousFailure, config?.epoch,
+                            record.kind == WebVideoRecords.KIND_CONFIG, record.epoch)) {
+                        videoFailure = null
+                        awaitingNewSourceAfterFailure = false
+                        pauseVideo(record)
+                    }
+                    // Keep consuming the old source until a different configuration arrives.
+                    // That configuration announces video-only renegotiation via pauseVideo.
+                    continue
+                }
                 videoLease.readyTimeoutGeneration()?.let { publishVideoError("video-ready-timeout", it) }
                 val statusNow = System.nanoTime()
                 val sourceTransition = BrowserRtcSourceRateRecovery.sourceTransition(
@@ -656,7 +662,6 @@ private class AndroidBrowserRtcPeer(
                         log("Browser RTC: stage=video epoch=$epoch generation=$checkedGeneration reason=$reason state=recovering attempt=1")
                         // Preserve CONFIG/END if the source changed during this sample.
                         deferredSourceRateRecord = record
-                        deferredSourceRateWasReplay = fromReplay
                         pauseVideo(scopedRecovery)
                         continue
                     }
@@ -670,7 +675,6 @@ private class AndroidBrowserRtcPeer(
                     // A replacement raced the JNI sample. Preserve this record until
                     // the active sender has passed its own native-epoch check.
                     deferredSourceRateRecord = record
-                    deferredSourceRateWasReplay = fromReplay
                     Thread.sleep(20)
                     continue
                 }
@@ -682,22 +686,31 @@ private class AndroidBrowserRtcPeer(
                 }
                 if (videoLease.ready) {
                     val failure = videoTrack?.pollFailure()
-                    if (failure != null) { endVideo(failure); break }
+                    if (failure != null) {
+                        if (BrowserRtcSourceRateRecovery.recoverOnNewSource(failure, config?.epoch,
+                                record.kind == WebVideoRecords.KIND_CONFIG, record.epoch)) {
+                            pauseVideo(record)
+                            continue
+                        }
+                        endVideo(failure)
+                        if (failure == "video-encoder-selection-timeout" && config != null) {
+                            awaitingNewSourceAfterFailure = true
+                            continue
+                        }
+                        break
+                    }
                 }
                 if (record.kind == WebVideoRecords.KIND_CONFIG) {
-                    pendingVideo.clear()
                     if (!videoLease.ready || config != null && config!!.epoch != record.epoch) pauseVideo(record)
                     else if (!configureVideo(record)) break
                     continue
                 }
                 if (record.kind == WebVideoRecords.KIND_IDLE && config != null) {
-                    pendingVideo.clear()
                     // Wait for the next actual source config before asking for a new video track.
                     // The old track is never reused across epochs; audio/SCTP remain untouched.
                     pauseVideo(null)
                 }
                 if (record.kind == WebVideoRecords.KIND_END) {
-                    pendingVideo.clear()
                     val reason = String(record.payload, Charsets.UTF_8)
                     if (reason in setOf("source-ended", "source-changed")) {
                         pauseVideo(null)
@@ -708,13 +721,8 @@ private class AndroidBrowserRtcPeer(
                     } else { endVideo(reason); break }
                 }
                 if (record.kind == WebVideoRecords.KIND_FRAME) {
-                    // Mirroring cannot always request another key frame. Retain the bounded
-                    // dependency chain that arrives while the new track is being negotiated.
-                    if (!videoLease.ready) { pendingVideo.offer(record); continue }
-                    if (!fromReplay && pendingVideo.isNotEmpty()) {
-                        pendingVideo.offer(record)
-                        record = pendingVideo.poll(config?.epoch ?: record.epoch) ?: record
-                    }
+                    // Drain while replacing the track to keep source-side memory bounded.
+                    if (!videoLease.ready) continue
                     record.sourceCapture?.let { source ->
                         RawTraffic.recordForSession(source.session, "browser/rtc/video-reference",
                             WebJson.write(source.fields() + mapOf("epoch" to record.epoch,

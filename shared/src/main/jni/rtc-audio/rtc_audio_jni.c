@@ -24,6 +24,10 @@ typedef struct {
     int cancelled;
     int failed;
     int gathered;
+    int connection_state;
+    int ice_state;
+    unsigned int connection_changes;
+    unsigned int ice_changes;
 } AudioPeer;
 
 static void throw_state(JNIEnv *env, const char *message) {
@@ -36,8 +40,19 @@ static void state_changed(int pc, rtcState state, void *ptr) {
     AudioPeer *p = ptr;
     if (!p) return;
     pthread_mutex_lock(&p->mutex);
+    p->connection_state = (int)state;
+    if (p->connection_changes < 65535) p->connection_changes++;
     if (state == RTC_FAILED || state == RTC_CLOSED) p->failed = 1;
     pthread_cond_broadcast(&p->changed);
+    pthread_mutex_unlock(&p->mutex);
+}
+static void ice_changed(int pc, rtcIceState state, void *ptr) {
+    (void)pc;
+    AudioPeer *p = ptr;
+    if (!p) return;
+    pthread_mutex_lock(&p->mutex);
+    p->ice_state = (int)state;
+    if (p->ice_changes < 65535) p->ice_changes++;
     pthread_mutex_unlock(&p->mutex);
 }
 static void gathered(int pc, rtcGatheringState state, void *ptr) {
@@ -64,6 +79,7 @@ static void destroy(AudioPeer *p) {
     if (p->pc >= 0) {
         /* Unregister uses synchronized callbacks and waits for in-flight calls. */
         rtcSetStateChangeCallback(p->pc, NULL);
+        rtcSetIceStateChangeCallback(p->pc, NULL);
         rtcSetGatheringStateChangeCallback(p->pc, NULL);
         rtcSetUserPointer(p->pc, NULL);
         for (int i = 0; i < p->count; ++i) rtcDeleteTrack(p->tracks[i]);
@@ -85,6 +101,8 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
     AudioPeer *p = calloc(1, sizeof(*p));
     if (!p) { throw_state(env, "audio-native-allocation"); return 0; }
     p->pc = -1;
+    p->connection_state = -1;
+    p->ice_state = -1;
     pthread_mutex_init(&p->mutex, NULL);
     pthread_condattr_t attr;
     pthread_condattr_init(&attr); pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
@@ -97,6 +115,7 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
     if (p->pc < 0) { destroy(p); throw_state(env, "audio-native-peer-create"); return 0; }
     rtcSetUserPointer(p->pc, p);
     rtcSetStateChangeCallback(p->pc, state_changed);
+    rtcSetIceStateChangeCallback(p->pc, ice_changed);
     rtcSetGatheringStateChangeCallback(p->pc, gathered);
     jint pt[SLOT_LIMIT]; (*env)->GetIntArrayRegion(env, payloads, 0, count, pt);
     if ((*env)->ExceptionCheck(env)) { destroy(p); return 0; }
@@ -178,6 +197,15 @@ JNIEXPORT jboolean JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nat
     (void)env; (void)type; AudioPeer *p = peer(handle); if (!p) return JNI_TRUE;
     pthread_mutex_lock(&p->mutex); int result = p->failed || p->cancelled;
     pthread_mutex_unlock(&p->mutex); return result ? JNI_TRUE : JNI_FALSE;
+}
+JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nativeStates
+  (JNIEnv *env, jclass type, jlong handle) {
+    (void)env; (void)type; AudioPeer *p = peer(handle); if (!p) return 0;
+    pthread_mutex_lock(&p->mutex);
+    uint64_t result = (uint64_t)(p->connection_state + 1) | ((uint64_t)(p->ice_state + 1) << 4) |
+        ((uint64_t)p->connection_changes << 8) | ((uint64_t)p->ice_changes << 24);
+    pthread_mutex_unlock(&p->mutex);
+    return (jlong)result;
 }
 JNIEXPORT void JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nativeSend
   (JNIEnv *env, jclass type, jlong handle, jint slot, jlong timestamp, jbyteArray payload) {

@@ -106,8 +106,11 @@ internal class NativeRtcAudioPeer(
                 val nativeState = runCatching { synchronized(pointerLock) {
                     if (handle == 0L) "unavailable" else if (nativeFailed(handle)) "failed" else "not-failed"
                 } }.getOrDefault("unknown")
+                val transportState = runCatching { synchronized(pointerLock) {
+                    if (handle == 0L) "connection=unavailable ice=unavailable" else formatNativeAudioStates(nativeStates(handle))
+                } }.getOrDefault("connection=unknown ice=unknown")
                 val ageMs = if (admittedAt == 0L) -1L else (nanoTime() - admittedAt).coerceAtLeast(0) / 1_000_000
-                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs") }
+                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState $transportState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs") }
                 fail(when (error.message) {
                 "audio-native-open-timeout" -> "audio-native-open-timeout"
                 "audio-native-peer-failed" -> "audio-native-peer-failed"
@@ -155,6 +158,15 @@ internal class NativeRtcAudioPeer(
         @JvmStatic private external fun nativeDelete(handle: Long)
         @JvmStatic private external fun nativeReady(handle: Long, slot: Int): Boolean
         @JvmStatic private external fun nativeFailed(handle: Long): Boolean
+        @JvmStatic private external fun nativeStates(handle: Long): Long
         @JvmStatic private external fun nativeSend(handle: Long, slot: Int, timestamp: Long, payload: ByteArray)
     }
+}
+
+internal fun formatNativeAudioStates(value: Long): String {
+    val connections = listOf("new", "connecting", "connected", "disconnected", "failed", "closed")
+    val iceStates = listOf("new", "checking", "connected", "completed", "failed", "disconnected", "closed")
+    val connection = connections.getOrNull((value and 15).toInt() - 1) ?: "unavailable"
+    val ice = iceStates.getOrNull(((value ushr 4) and 15).toInt() - 1) ?: "unavailable"
+    return "connection=$connection ice=$ice connectionChanges=${(value ushr 8) and 65535} iceChanges=${(value ushr 24) and 65535}"
 }

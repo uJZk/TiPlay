@@ -5,6 +5,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserRtcSourceRateGuardTest {
+    @Test fun encoderSelectionFailureCanRecoverOnlyWhenTheSourceChanges() {
+        val recover = BrowserRtcSourceRateRecovery::recoverOnNewSource
+        assertFalse(recover("video-encoder-selection-timeout", 2, true, 2))
+        assertFalse(recover("video-encoder-selection-timeout", 2, false, 3))
+        assertFalse(recover("video-encoder-selection-timeout", null, true, 3))
+        assertFalse(recover("reordered-video", 2, true, 3))
+        assertTrue(recover("video-encoder-selection-timeout", 2, true, 3))
+    }
     @Test fun rejectsMissingChangedAndFailedEpochs() {
         val guard = BrowserRtcSourceRateGuard()
         val first = Any()

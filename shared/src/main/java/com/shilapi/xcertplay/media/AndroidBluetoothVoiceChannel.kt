@@ -85,6 +85,7 @@ class AndroidBluetoothVoiceChannel(
     private var receiverRegistered = false
     private var profilePending = false
     private var profileAttempt = 0L
+    private var profileDiagnosticRequested = false
     private var activeCarAddress: String? = null
     private var failedCarAddress: String? = null
     private var unavailableAttempts = 0
@@ -154,6 +155,7 @@ class AndroidBluetoothVoiceChannel(
     override fun start(config: MicrophoneConfig) { main.post {
         if (closed) return@post
         report("stage=demand codec=${config.codec} sampleRate=${config.sampleRate}")
+        profileDiagnosticRequested = false
         val replacing = wanted != null && wanted !== config
         wanted = config; failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
         if (replacing) { state(BluetoothVoiceState("connecting")); release(); return@post }
@@ -198,7 +200,10 @@ class AndroidBluetoothVoiceChannel(
                 val candidates = manager.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
                 val target = selectBluetoothAudioDevice(candidates, address) { audioAddress(it) }
                 report("stage=communication-devices candidates=${candidates.size} addressAvailable=${candidates.count { audioAddress(it) != null }} matches=${candidates.count { sameBluetoothSelection(address, audioAddress(it)) && address != null }} selected=${target != null}")
-                if (target == null) { fail(if (address != null || candidates.isEmpty()) "car-bluetooth-unavailable" else "multiple-bluetooth-headsets"); return }
+                if (target == null) {
+                    if (candidates.isEmpty()) diagnoseHeadsetProfile(address)
+                    fail(if (address != null || candidates.isEmpty()) "car-bluetooth-unavailable" else "multiple-bluetooth-headsets"); return
+                }
                 selected = target; previousDevice = manager.communicationDevice
                 openRoute()
             } else {
@@ -236,6 +241,31 @@ class AndroidBluetoothVoiceChannel(
             }
         } catch (_: SecurityException) { fail("bluetooth-permission-denied") }
         catch (_: Exception) { fail("bluetooth-route-failed") }
+    }
+
+    /** The system can expose an A2DP connection without a connected HFP headset profile. */
+    private fun diagnoseHeadsetProfile(address: String?) {
+        if (profileDiagnosticRequested) return
+        profileDiagnosticRequested = true
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        if (adapter == null) { report("stage=headset-diagnostic result=no-adapter"); return }
+        try {
+            val profileState = adapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+            val accepted = adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                    try {
+                        val connected = (proxy as BluetoothHeadset).connectedDevices
+                        report("stage=headset-diagnostic profileState=$profileState connected=${connected.size} selectedMatch=${address != null && connected.any { sameBluetoothSelection(address, it.address) }}")
+                    } catch (error: Exception) {
+                        report("stage=headset-diagnostic result=error exception=${error.javaClass.simpleName}")
+                    } finally { runCatching { adapter.closeProfileProxy(profile, proxy) } }
+                }
+                override fun onServiceDisconnected(profile: Int) = Unit
+            }, BluetoothProfile.HEADSET)
+            if (!accepted) report("stage=headset-diagnostic profileState=$profileState result=proxy-unavailable")
+        } catch (error: Exception) {
+            report("stage=headset-diagnostic result=error exception=${error.javaClass.simpleName}")
+        }
     }
 
     private fun openRoute() {

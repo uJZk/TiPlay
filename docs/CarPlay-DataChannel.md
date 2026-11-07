@@ -155,6 +155,14 @@ video-only action. With a current source configuration, it attempts at most one
 video renegotiation per peer; later failures remain video errors. Audio and control
 are not retired by that video error.
 
+After an encoder-selection timeout, the video writer keeps consuming the failed
+source without sending its frames. A later source configuration with a different
+epoch triggers video-only renegotiation, so a failed mirror cannot permanently
+block the returning CarPlay screen. This does not repair the encoder-selection
+failure itself; physical recovery still needs verification.
+Video frames received before a replacement track is ready are discarded; no
+additional Android key-frame cache is retained during renegotiation.
+
 These bounds do not cover every downstream socket buffer or guarantee delivery.
 TCP and TURN may use paths where a lower layer does not expose every dropped packet.
 The automatic renegotiation path and actual browser/vehicle recovery require
