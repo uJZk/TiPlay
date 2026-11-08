@@ -251,18 +251,19 @@ class AndroidBluetoothVoiceChannel(
         if (adapter == null) { report("stage=headset-diagnostic result=no-adapter"); return }
         try {
             val profileState = adapter.getProfileConnectionState(BluetoothProfile.HEADSET)
+            val a2dpState = adapter.getProfileConnectionState(BluetoothProfile.A2DP)
             val accepted = adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                 override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                     try {
                         val connected = (proxy as BluetoothHeadset).connectedDevices
-                        report("stage=headset-diagnostic profileState=$profileState connected=${connected.size} selectedMatch=${address != null && connected.any { sameBluetoothSelection(address, it.address) }}")
+                        report("stage=headset-diagnostic profileState=$profileState a2dpState=$a2dpState connected=${connected.size} selectedMatch=${address != null && connected.any { sameBluetoothSelection(address, it.address) }}")
                     } catch (error: Exception) {
                         report("stage=headset-diagnostic result=error exception=${error.javaClass.simpleName}")
                     } finally { runCatching { adapter.closeProfileProxy(profile, proxy) } }
                 }
                 override fun onServiceDisconnected(profile: Int) = Unit
             }, BluetoothProfile.HEADSET)
-            if (!accepted) report("stage=headset-diagnostic profileState=$profileState result=proxy-unavailable")
+            if (!accepted) report("stage=headset-diagnostic profileState=$profileState a2dpState=$a2dpState result=proxy-unavailable")
         } catch (error: Exception) {
             report("stage=headset-diagnostic result=error exception=${error.javaClass.simpleName}")
         }

@@ -1260,6 +1260,35 @@ class ReceiverServerTest {
         } finally { receiver.close() }
     }
 
+    @Test fun legacyMirrorIntentOffersASeparateEventSocketBeforeStreamSetup() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener,
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> ByteArray(16) })
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
+                    byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
+                    ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+                }
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(16, 1)))
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(164, 3)))
+                val response = control.send("SETUP", "rtsp://receiver/stream", BplistCodec.encode(mapOf(
+                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0,
+                    "timingProtocol" to "NTP", "isScreenMirroringSession" to true)))
+                assertEquals("200", response.path)
+                val ports = BplistCodec.decode(response.body) as Map<*, *>
+                val eventPort = (ports["eventPort"] as Number).toInt()
+                assertTrue(eventPort > 0 && eventPort != receiver.port)
+                connect(eventPort).use { event -> event.getOutputStream().write(byteArrayOf(1, 2, 3)) }
+                // Opening the event channel alone must not claim the screen or bypass consent.
+                assertEquals(0, listener.prepared)
+                assertTrue(listener.states.isEmpty())
+                assertEquals(200, control.status("TEARDOWN", "/"))
+            }
+        } finally { receiver.close() }
+    }
+
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
                                      partialHeader: Boolean = false, failedReplacement: Boolean = false,

@@ -4,6 +4,15 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.44
+
+Version code 86. Browser revision remains v116.
+
+- Offer a separate legacy mirror event socket when the sender explicitly requests a screen-mirroring session, and record whether it connects and closes.
+- Record privacy-preserving native audio ICE candidate counts and matching IPv4 /24 prefix counts; record Android A2DP and HFP profile states when diagnosing an unavailable car microphone.
+
+The mirror event change is a compatibility attempt, not a confirmed fix. Mirror playback and CarPlay recovery, navigation audio, and Bluetooth microphone routing require vehicle testing.
+
 ## 0.2.20-beta.43
 
 Version code 85. Browser revision remains v116.

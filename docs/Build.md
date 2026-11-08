@@ -498,6 +498,15 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta44-in-progress"></a>
+### Beta.44 in progress
+
+Beta.44/code 86 retains browser v116. Its legacy mirror event socket is a
+compatibility attempt; it also adds privacy-preserving audio ICE and Bluetooth
+profile diagnostics. Mirror playback and CarPlay recovery, navigation audio and
+Bluetooth microphone routing require vehicle verification. Release validation and
+publication are in progress. Beta.43 remains the latest published APK until then.
+
 <a id="published-beta43"></a>
 ### Published beta.43
 

@@ -114,6 +114,12 @@ One iPhone capture sent `timingProtocol=NTP` together with the legacy FairPlay
 `ekey` and `eiv` in its initial SETUP; beta.40 rejected that combination before
 starting media. Legacy SETUP accepts it, with one NTP clock and the existing
 authorization and pairing checks. Real iPhone picture and audio remain unverified.
+For an initial legacy SETUP explicitly marked as a screen-mirroring session,
+the receiver supplies a separate peer-restricted event socket before the screen
+stream SETUP. It drains events without taking screen ownership or granting media
+consent and closes with the control connection. This follows the connectable event
+port used by [PhairPlay](https://github.com/mazer666/PhairPlay/blob/bdc51c8e25a0fe4658ed61669c89e907765cdcaf/app/src/main/kotlin/com/phairplay/airplay/AirPlayMirrorSession.kt).
+Whether this resolves the observed iPhone stall still requires a device test.
 Independent SRP-client and loopback socket tests cover encrypted control, events,
 audio delivery and unsupported transport rejection. These checks do not establish
 iOS picker selection, interoperability with every sender or physical output timing.

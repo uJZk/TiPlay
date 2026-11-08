@@ -52,6 +52,7 @@ internal class NativeRtcAudioPeer(
         try {
             val answer = nativeAnswer(ptr, offer)
             check(!closed.get()) { "audio-peer-closed" }
+            runCatching { diagnostic("stage=ice-candidates peer=$diagnosticId ${BrowserRtcAudioCandidates.describe(offer, answer)}") }
             answered = true
             return answer
         } finally { answering.set(false); deleteClosed() }

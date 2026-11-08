@@ -743,6 +743,55 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             return port
         }
 
+        /** Legacy mirror events are unencrypted and must not acquire media ownership. */
+        private fun legacyMirrorEventPort(): Int {
+            eventServer?.let { return it.localPort }
+            val server = ServerSocket().apply { bind(InetSocketAddress(InetAddress.getByName("::"), 0)) }
+            val port = server.localPort
+            eventServer = server
+            listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=listening")
+            Thread({
+                var accepted: Socket? = null
+                try {
+                    while (!socket.isClosed && !closed.get()) {
+                        val candidate = server.accept()
+                        if (candidate.inetAddress != peer) { candidate.close(); continue }
+                        accepted = candidate
+                        eventSocket = candidate
+                        if (socket.isClosed || closed.get()) { candidate.close(); break }
+                        listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=connected")
+                        var bytes = 0L
+                        var reason = "control-closed"
+                        try {
+                            candidate.soTimeout = 120_000
+                            val input = candidate.getInputStream()
+                            val buffer = ByteArray(4096)
+                            while (!socket.isClosed && !closed.get()) {
+                                val count = input.read(buffer)
+                                if (count < 0) { reason = "eof"; break }
+                                bytes += count
+                            }
+                        } catch (_: java.net.SocketTimeoutException) {
+                            reason = "timeout"
+                        } catch (_: Exception) {
+                            reason = "error"
+                            // A sender can reopen the event connection during the same session.
+                        } finally {
+                            listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=closed reason=$reason bytes=$bytes")
+                            runCatching { candidate.close() }
+                            eventSocket = null
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Closing the owning control connection also closes this listener.
+                } finally {
+                    runCatching { accepted?.close() }
+                    runCatching { server.close() }
+                }
+            }, "tiplay-legacy-mirror-events").apply { isDaemon = true; start() }
+            return port
+        }
+
         fun closeMedia() {
             retireRemote()
             audioProgress = null; audioSampleRate = 0; currentAudioSample = null
@@ -1392,8 +1441,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 val timingPort = (dict["timingPort"] as? Number)?.toInt() ?: 0
                 require(timingPort in 0..65535)
                 clock.start(peer, timingPort)
-                // Legacy mirroring has no separate event channel; do not point it at the control listener.
-                response["eventPort"] = 0
+                // The sender may connect an event channel before requesting its
+                // screen stream; never point it at the RTSP control listener.
+                response["eventPort"] = if (dict["isScreenMirroringSession"] == true && config.mirrorEnabled)
+                    legacyMirrorEventPort() else 0
             }
             requestedStreams?.let { streams ->
                 response["streams"] = streams.mapNotNull { entry ->

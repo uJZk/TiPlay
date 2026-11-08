@@ -310,9 +310,13 @@ Android's `native-audio stage=sender-failure` also records its native `connectio
 and `ice` states and state-callback counts at failure. ICE connected with the peer
 still connecting points to a later transport stage; checking or failed ICE does
 not by itself identify which candidate or network caused the failure. No address
-or candidate contents are included. If no SCO communication device is available,
+or candidate contents are included. At SDP negotiation, `stage=ice-candidates`
+records host UDP address counts by type for the offer and answer and the count of
+matching IPv4 /24 prefixes. A matching prefix does not prove connectivity, and
+mDNS addresses cannot be compared this way. These counts do not include addresses,
+ports or credentials. If no SCO communication device is available,
 `bluetooth route ... stage=headset-diagnostic` records the Android HFP profile
-state, connected headset count and whether the selected car matches. These do
+state, A2DP state, connected headset count and whether the selected car matches. These do
 not establish microphone routing or distinguish all platform Bluetooth failures.
 
 RTP packet reception alone also does not establish decoded samples. The local
@@ -793,3 +797,7 @@ stop/connection-retirement wakeup and stale-connection isolation.
 Vehicle receive-backpressure results and their implementation implications are
 recorded in the [WebRTC roadmap](WebRTC-roadmap.md#tcp-背压实测). The probe is a
 diagnostic experiment, not the production congestion-control policy.
+
+Legacy mirror intent logs `LEGACY_MIRROR_EVENT` listening, connected and closed
+states, including a close reason and byte count. This does not record event payloads
+or establish that a mirror stream was requested or decoded.
