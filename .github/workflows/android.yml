@@ -23,7 +23,13 @@ jobs:
       - name: Install pinned build tools
         run: python3 -m pip install cmake==4.1.2 ninja==1.13.0
       - name: Verify pinned WASI SDK and Binaryen
-        run: python3 scripts/soxr/prepare-toolchain.py work/wasm-toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p work/wasm-toolchain
+          # Official wasi-sdk-34.0-x86_64-linux.tar.gz; prepare-toolchain verifies its pinned SHA-256.
+          gh api -H 'Accept: application/octet-stream' repos/WebAssembly/wasi-sdk/releases/assets/528366474 > work/wasm-toolchain/wasi-sdk.tar.gz
+          python3 scripts/soxr/prepare-toolchain.py work/wasm-toolchain
       - name: Reproduce shipped WASM libraries
         run: >-
           python3 scripts/build_wasm.py --check
