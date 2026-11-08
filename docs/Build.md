@@ -498,14 +498,29 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
-<a id="beta44-in-progress"></a>
-### Beta.44 in progress
+<a id="published-beta44"></a>
+### Published beta.44
 
-Beta.44/code 86 retains browser v116. Its legacy mirror event socket is a
-compatibility attempt; it also adds privacy-preserving audio ICE and Bluetooth
-profile diagnostics. Mirror playback and CarPlay recovery, navigation audio and
-Bluetooth microphone routing require vehicle verification. Release validation and
-publication are in progress. Beta.43 remains the latest published APK until then.
+[Beta.44](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.44), code 86,
+was built from `34f1d730d433ca8b9a9e8adeda6ca4be233effdc`. It retains browser
+v116 and adds a legacy mirror event socket as a compatibility attempt, along with
+privacy-preserving audio ICE and Bluetooth profile diagnostics. Mirror playback,
+CarPlay recovery, navigation audio and Bluetooth microphone routing require
+vehicle verification. Browser v116 was not deployed again.
+
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42465135050) and the
+[signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/42465136735)
+passed. The CI downloads the same pinned WASI SDK through the GitHub assets API
+and verifies its SHA-256 before building. Local Android checks and 694 browser tests
+passed. The signed APK has package `com.ujzk.tiplay`, version code 86, the same
+signer as beta.43 and 16 KiB ZIP alignment. Its source ZIP matches the build
+commit, and published asset digests match the independently checked build artifact.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.44.apk` | 114,547,535 | `481e4e6c15da4d074382807dee46fd9d64fb65b191170f1f5ced88b76daff9a1` |
+| `TiPlay-0.2.20-beta.44-source.zip` | 70,193,796 | `835de21d54e5618eba4f36fc2f6d8027f9bb3c67eabccd716e605291d7d286e4` |
+| `SHA256SUMS.txt` | 191 | `250a8698969f841d245435c7958c5eee9780a4da980acc7bdec713a5162d1e0e` |
 
 <a id="published-beta43"></a>
 ### Published beta.43
