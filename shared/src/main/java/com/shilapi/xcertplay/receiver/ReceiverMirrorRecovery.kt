@@ -78,6 +78,10 @@ internal class ReceiverMirrorRecovery(
         if (!accepted) { candidate.close(); return "control-closed" }
         var reason = "eof"
         try {
+            // Event sockets are persistent reverse-command channels, often silent while video
+            // flows elsewhere. Their owning control session closes them; ACK/write deadlines
+            // still bound commands without retiring a healthy idle connection.
+            socket.soTimeout = 0
             val raw = BufferedInputStream(RawTraffic.input(
                 "iphone/ReceiverMirrorEvent/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
             val input = cipher?.input(raw) ?: raw

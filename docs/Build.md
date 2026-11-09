@@ -484,8 +484,9 @@ The user explicitly waived the complete CI run for this beta. A fresh full local
 run was stopped; it must not be reported as a completed final-source check. Before
 the later mirror-command change, the independent recovery validation passed the
 required Android command with 4,579 unit cases and 700 browser tests. Focused
-final-source validation passed 137 shared unit tests in 16 classes, including all
-ten mirror-command regressions, plus 700 browser tests. Python checks passed nine
+final-source validation passed 138 shared unit tests in 16 classes, including all
+eleven mirror-command regressions and quiet plaintext/encrypted event connections,
+plus 700 browser tests. Python checks passed nine
 release-draft, sixteen native-symbol and two site cases; public-tree/cache/diff
 checks passed. The signed release workflow and public artifact checks are still
 pending, separate from that CI waiver. See [Testing](Testing.md#current-release-source).

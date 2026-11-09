@@ -159,10 +159,33 @@ class ReceiverMirrorRecoveryTest {
         }
     }
 
-    private class Channel(recovery: ReceiverMirrorRecovery, encrypted: Boolean = false) : Closeable {
+    @Test fun idleEventConnectionOutlivesItsInheritedReadTimeoutInPlainAndEncryptedSessions() {
+        for (encrypted in listOf(false, true)) {
+            val token = Any()
+            ReceiverMirrorRecovery({}, requestIntervalMillis = 1).use { recovery ->
+                recovery.begin(token)
+                recovery.frameReady(token)
+                Channel(recovery, encrypted, acceptedReadTimeoutMillis = 50).use { channel ->
+                    // A real feedback round trip proves serve() has installed its read policy.
+                    channel.feedback(1)
+                    channel.feedbackAcknowledgement(1)
+                    // Waiting for quiet wire bytes crosses the inherited 50 ms deadline without
+                    // invoking the authenticated decoder (a cipher read timeout is terminal).
+                    channel.assertSilent()
+                    recovery.request(token)
+                    channel.acknowledge(channel.command())
+                    channel.feedback(2)
+                    channel.feedbackAcknowledgement(2)
+                }
+            }
+        }
+    }
+
+    private class Channel(recovery: ReceiverMirrorRecovery, encrypted: Boolean = false,
+                          acceptedReadTimeoutMillis: Int = 0) : Closeable {
         private val listener = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         private val peer = Socket(InetAddress.getByName("127.0.0.1"), listener.localPort).apply { soTimeout = 3000 }
-        private val accepted = listener.accept()
+        private val accepted = listener.accept().apply { soTimeout = acceptedReadTimeoutMillis }
         private val readKey = ByteArray(32) { (it + 10).toByte() }
         private val writeKey = ByteArray(32) { (it + 80).toByte() }
         private val serverCipher = if (encrypted) ReceiverAirPlay2Cipher(readKey, writeKey) else null
@@ -185,9 +208,8 @@ class ReceiverMirrorRecoveryTest {
             assertEquals(sequence.toString(), response.headers["cseq"])
         }
         fun assertSilent() {
-            check(peerCipher == null) { "A read timeout would retire the peer's authenticated cipher" }
             peer.soTimeout = 100
-            try { assertThrows(SocketTimeoutException::class.java) { readReceiverRequest(input) } }
+            try { assertThrows(SocketTimeoutException::class.java) { peer.getInputStream().read() } }
             finally { peer.soTimeout = 3000 }
         }
         private fun write(bytes: ByteArray) {

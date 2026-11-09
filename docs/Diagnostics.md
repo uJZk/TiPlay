@@ -811,6 +811,8 @@ diagnostic experiment, not the production congestion-control policy.
 Legacy mirror intent logs `LEGACY_MIRROR_EVENT` listening, connected and closed
 states, with a `reason` on close. These connection states do not establish that a
 mirror stream was requested or decoded; event-reader failures are reported separately.
+The persistent event connection has no idle-read timeout and closes with its owner;
+two-second command write/acknowledgement limits still apply during quiet video.
 
 `MIRROR_KEYFRAME` records `sent`, `acknowledged`, `rejected`, `timeout` or `failure`.
 Command sends, replies and timeouts include `cseq`; acknowledgement/rejection also

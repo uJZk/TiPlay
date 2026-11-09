@@ -719,7 +719,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         if (socket.isClosed || closed.get()) { candidate.close(); return@Thread }
                         server.close()
                         candidate.tcpNoDelay = true
-                        candidate.soTimeout = 120_000
                         cipher = requireNotNull(pairing2.takeEventCipher())
                         val eventCipher = requireNotNull(cipher)
                         mirrorRecovery.serve(candidate, eventCipher)
@@ -756,7 +755,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         var reason = "control-closed"
                         try {
                             candidate.tcpNoDelay = true
-                            candidate.soTimeout = 120_000
                             reason = mirrorRecovery.serve(candidate)
                         } catch (_: java.net.SocketTimeoutException) {
                             reason = "timeout"

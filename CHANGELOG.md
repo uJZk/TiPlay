@@ -10,7 +10,7 @@ Version code 87. Browser source/cache revision v117.
 
 - Reject repeated video timestamps without retiming original frames, request a fresh IDR, and bound missing-keyframe recovery. Keep later CarPlay sources recoverable after a video-only failure.
 - Keep a mirror's current original access unit at ingress until its exact video track is ready, with a bounded and cancellable wait instead of an added key-frame cache. Require browser presentation before completing startup; a sender that never produces a picture releases its mirror session after the startup deadline.
-- Request a fresh mirror IDR through the session's event connection after the first source picture. Coalesce recovery requests, retain encrypted event counters, and distinguish command acknowledgement from actual picture recovery.
+- Request a fresh mirror IDR through the session's event connection after the first source picture. Coalesce recovery requests, retain encrypted event counters, and distinguish command acknowledgement from actual picture recovery. Keep quiet event connections open for their owning session while retaining bounded command deadlines.
 - Gate native audio readiness on connected ICE, Worklet binding and silent playout activation. Retain complete host candidate gathering, bound disconnected-peer recovery, and allow a new audio demand to retry an exhausted peer without replaying expired speech.
 - Retry a lost working wireless session with the bounded 1/2/4/8/16-second sequence, and wake a continuing Bluetooth voice demand when the selected SCO device arrives.
 

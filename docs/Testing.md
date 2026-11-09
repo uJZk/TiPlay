@@ -13,7 +13,7 @@ The user explicitly requested skipping full CI for this beta. The fresh complete
 run was stopped, so it is not a final-source pass. Earlier independent recovery
 validation passed the required Android command with 4,579 unit cases and 700
 browser tests before the later `forceKeyFrame` changes. Current focused protocol
-validation passed **137 shared unit tests across 16 classes**, including all ten
+validation passed **138 shared unit tests across 16 classes**, including all eleven
 new mirror-command tests, with no failures, errors or skips:
 
 ```sh
@@ -723,7 +723,8 @@ these synthetic checks do not replace the device checklist below.
 
 `ReceiverMirrorRecoveryTest` exercises real event sockets, CSeq matching,
 coalescing, rejection/timeout, feedback replies, legacy reconnect and retired mirror
-tokens. Its encrypted-event fixture checks command/feedback write ordering with
+tokens. Quiet plaintext/encrypted connections remain usable without an idle-read
+timeout. Its encrypted-event fixture checks command/feedback write ordering with
 continuing nonce counters; it does not establish an AirPlay 2 iPhone mirror session.
 `ReceiverMirrorKeyFrameTest` drives legacy FairPlay/CTR mirror setup, first-picture
 gating before browser-readiness waits, SEI-only input that leaves recovery pending,

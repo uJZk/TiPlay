@@ -41,7 +41,7 @@ Resume current release work at [Build](docs/Build.md#beta45-release).
 Beta.45/code87 and browser/cache v117 are prepared for publication. The user
 explicitly waived full CI for this beta; keep earlier complete recovery checks,
 current focused mirror-command checks and signed artifact verification separate.
-The final focused run passed 137 shared tests and 700 browser tests; signed release
+The final focused run passed 138 shared tests and 700 browser tests; signed release
 packaging/public artifact verification is pending. This waiver does not apply to
 later work. The last published APK is beta.44/code86;
 browser/cache v116 is deployed separately. iPhone mirror picture/command compatibility,

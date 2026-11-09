@@ -118,6 +118,8 @@ For an initial legacy SETUP explicitly marked as a screen-mirroring session,
 the receiver supplies a separate peer-restricted event socket before the screen
 stream SETUP. It carries mirror recovery commands and sender feedback without taking
 screen ownership or granting media consent, and closes with the control connection.
+Quiet event connections have no idle-read timeout; command write/reply deadlines
+remain bounded independently.
 This follows the connectable event
 port used by [PhairPlay](https://github.com/mazer666/PhairPlay/blob/bdc51c8e25a0fe4658ed61669c89e907765cdcaf/app/src/main/kotlin/com/phairplay/airplay/AirPlayMirrorSession.kt).
 Sender compatibility and actual mirror recovery still require a device test.
