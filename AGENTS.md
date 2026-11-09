@@ -38,13 +38,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#beta45-release).
-Beta.45/code87 and browser/cache v117 are prepared for publication. The user
+Beta.45/code87 is published from `db558c4e97674b4f7ca57d835c20cf1fafb50ff1`;
+browser/cache v117 is deployed from the byte-identical web tree at
+`9245a36423263f883e543faf9a6380d98eaf64e2`. The user
 explicitly waived full CI for this beta; keep earlier complete recovery checks,
 current focused mirror-command checks and signed artifact verification separate.
-The final focused run passed 138 shared tests and 700 browser tests; signed release
-packaging/public artifact verification is pending. This waiver does not apply to
-later work. The last published APK is beta.44/code86;
-browser/cache v116 is deployed separately. iPhone mirror picture/command compatibility,
+The final focused run passed 138 shared tests and 700 browser tests; signed release,
+independent public-artifact and 226-file/19-route site checks passed. This waiver
+does not apply to later work. iPhone mirror picture/command compatibility,
 navigation audio and Bluetooth microphone still need physical verification.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.

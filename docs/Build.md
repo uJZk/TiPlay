@@ -452,9 +452,18 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v117
+
+Browser/cache **v117** and app version **0.2.20-beta.45** are deployed by
+[Pages run 42591587017](https://github.com/uJZk/TiPlay/actions/runs/42591587017)
+from `9245a36423263f883e543faf9a6380d98eaf64e2`.
+The later APK build commit has an identical site, generation inputs and Pages
+workflow. Independent public checks matched all 226 files (37,811,110 bytes)
+and 19 routes byte for byte. The retired `/update/` route remains 404.
+
 ### Browser v116
 
-Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`
+Browser/cache v116 was deployed from `9963fbb3816c49d5caa74693c309397354705748`
 by [Pages run 41874214446](https://github.com/uJZk/TiPlay/actions/runs/41874214446).
 It removes the one-time `u.html` entry and preserves page-load update checks.
 Both `/u` and `/u.html` return 404 from the public site; the published worker and
@@ -473,27 +482,36 @@ Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
 <a id="beta45-release"></a>
-### Beta.45 preparation
+### Published beta.45
 
-Version **0.2.20-beta.45/code87** includes event-channel `forceKeyFrame` mirror
-recovery, original-AU readiness gating, duplicate-PTS recovery, native-audio
-readiness/retry fixes and selected-car Bluetooth/wireless recovery. Browser/cache
-source is **v117**. Signed publication and public browser deployment remain pending.
+[Beta.45/code87](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.45)
+was published as a prerelease at **2026-11-09 09:40:49 UTC** from
+`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`.
+[Signed workflow 42593488156](https://github.com/uJZk/TiPlay/actions/runs/42593488156)
+passed all three jobs. It includes mirror `forceKeyFrame`, persistent event
+connections, original-AU readiness gating, duplicate-PTS recovery, native-audio
+readiness/retry fixes and selected-car Bluetooth/wireless recovery.
 
-The user explicitly waived the complete CI run for this beta. A fresh full local
-run was stopped; it must not be reported as a completed final-source check. Before
-the later mirror-command change, the independent recovery validation passed the
-required Android command with 4,579 unit cases and 700 browser tests. Focused
-final-source validation passed 138 shared unit tests in 16 classes, including all
-eleven mirror-command regressions and quiet plaintext/encrypted event connections,
-plus 700 browser tests. Python checks passed nine
-release-draft, sixteen native-symbol and two site cases; public-tree/cache/diff
-checks passed. The signed release workflow and public artifact checks are still
-pending, separate from that CI waiver. See [Testing](Testing.md#current-release-source).
+The user explicitly waived complete CI. Final focused checks passed 138 shared
+tests in 16 classes, including eleven mirror-command regressions, and 700 browser
+tests; [Testing](Testing.md#current-release-source) separates these from earlier
+complete checks and Python/source checks. Physical mirror-command compatibility
+and vehicle picture/audio/ICE/HFP behavior remain unverified.
 
-Actual iPhone mirror-command compatibility and vehicle picture/audio/ICE/HFP
-behavior remain unverified. A command write or successful RTSP acknowledgement
-does not establish a new source IDR or restored Canvas output.
+Independent verification downloaded APK/source from the same-build release draft:
+non-debug `com.ujzk.tiplay`, code87, signer continuity, exactly two pinned runtime
+containers, 51 indexed native libraries, WebRTC identity and 16 KiB alignment all
+passed. The source ZIP is byte-identical to the build commit's `git archive`.
+Matched native symbols remain in the persistent archive draft, separate from the
+public prerelease. Anonymous downloads at **09:41:20 UTC** matched all three
+verified files byte for byte, including API digests/checksums; the release tag
+resolves to the build commit. [Browser v117](#browser-v117) has separate Pages provenance.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.45.apk` | 114,547,535 | `40efab9407ce0597f7a2726e7c93721c862b2901df2d228d3f2f0700cbb50cf6` |
+| `TiPlay-0.2.20-beta.45-source.zip` | 70,219,375 | `9189aa720536256992eb53f58b07f88509cf61b33eb641a11e443159e046629f` |
+| `SHA256SUMS.txt` | 191 | `2ee5c364f8ad347683255c34e8ebbebf5e7ad32ddb36196642d0eb3a7e247f4d` |
 
 <a id="published-beta44"></a>
 ### Published beta.44

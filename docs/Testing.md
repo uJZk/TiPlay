@@ -7,8 +7,9 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-**Beta.45/code87 source is prepared**, with browser/cache **v117**; signed
-publication and public-site identity are tracked in [Build](Build.md#beta45-release).
+**Beta.45/code87 is published** from
+`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`, with browser/cache **v117**.
+[Build](Build.md#beta45-release) records the separate APK and Pages provenance.
 The user explicitly requested skipping full CI for this beta. The fresh complete
 run was stopped, so it is not a final-source pass. Earlier independent recovery
 validation passed the required Android command with 4,579 unit cases and 700
@@ -24,8 +25,11 @@ new mirror-command tests, with no failures, errors or skips:
 
 All **700 browser tests** passed. Python checks passed nine release-draft,
 sixteen native-symbol and two site cases; public-tree/cache/diff checks passed.
-Signed packaging/public asset verification is pending and is separate from the
-CI waiver. Physical mirror, audio/ICE and Bluetooth routing acceptance remains open.
+The signed release workflow passed; independent package/runtime/native/source
+checks and anonymous public-download byte comparisons passed. Public-site checks
+matched 226 files and 19 routes from the separate, byte-identical Pages tree.
+These results are separate from the CI waiver. Physical mirror, audio/ICE and
+Bluetooth routing acceptance remains open.
 
 ### Beta.41 reference
 
