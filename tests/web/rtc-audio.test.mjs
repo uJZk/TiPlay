@@ -10,7 +10,7 @@ const record = (fields = {}) => ({ type: 0, mode: 'carplay', epoch: 1, channels:
   config: { codec: 'opus', audioTransport: 'webrtc-track-v1', rtpSlot: 'slot0', rtcGeneration: 1, semanticType: 0 }, ...fields });
 
 test('SDP completion does not cancel the ICE connection deadline', async () => {
-  const h = harness({ timeoutMs: 20 });
+  const h = harness({ timeoutMs: 20, connectionState: 'connecting' });
   try {
     await h.audio.start(1);
     h.peers[0].connectionState = 'connecting'; h.peers[0].iceConnectionState = 'checking';
@@ -19,12 +19,55 @@ test('SDP completion does not cancel the ICE connection deadline', async () => {
     assert.equal(h.peers[0].closed, true);
   } finally { h.audio.close(); }
 });
+
+test('a prepared Worklet waits for ICE without spending the graph-only timeout or releasing original packets', async () => {
+  const sent = [], h = harness({ connectionState: 'connecting', timeoutMs: 250, trackTimeoutMs: 20,
+    ready: value => sent.push(value) });
+  try {
+    await h.audio.start(1); h.peers[0].track(0);
+    const pending = h.audio.configure(record());
+    while (!h.messages.some(message => message.nativeAudioGraph)) await new Promise(resolve => setImmediate(resolve));
+    h.audio.bound(h.messages.find(message => message.nativeAudioGraph).nativeAudioGraph);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    assert.equal(h.audio.stats().state, 'connecting'); assert.equal(sent.length, 0); assert.equal(h.errors.length, 0);
+    h.peers[0].connectionState = 'connected'; h.peers[0].iceConnectionState = 'connected';
+    h.peers[0].oniceconnectionstatechange();
+    await pending;
+    assert.equal(sent.length, 1); assert.equal(h.audio.stats().state, 'ready');
+  } finally { h.audio.close(); }
+});
+
+test('a connected peer still bounds an owner whose track never arrives', async () => {
+  const h = harness({ ready() {}, trackTimeoutMs: 20 });
+  try {
+    await h.audio.start(1);
+    await assert.rejects(h.audio.configure(record()), /graph preparation timed out/);
+    assert.equal(h.peers[0].closed, true); assert.equal(h.sources.length, 0);
+  } finally { h.audio.close(); }
+});
+
+test('ICE-only disconnect recovers within its budget or retires the audio peer without a terminal connection event', async () => {
+  const h = harness({ disconnectTimeoutMs: 20 });
+  try {
+    await h.audio.start(1); const peer = h.peers[0];
+    peer.iceConnectionState = 'disconnected'; peer.oniceconnectionstatechange();
+    assert.equal(h.audio.stats().state, 'connecting');
+    peer.iceConnectionState = 'connected'; peer.oniceconnectionstatechange();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(h.errors.length, 0); assert.equal(h.audio.stats().state, 'ready');
+    peer.iceConnectionState = 'disconnected'; peer.oniceconnectionstatechange();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.match(h.errors[0].message, /recovery timed out/); assert.equal(peer.closed, true);
+  } finally { h.audio.close(); }
+});
 function harness(options = {}) {
   const peers = [], sources = [], messages = [], exchanges = [], errors = [], anchors = [], abort = new AbortController();
   class PeerConnection {
     constructor(configuration) {
       if (options.failPeerConstruction?.()) throw Error('Native peer construction failed.');
       this.configuration = configuration; this.transceivers = []; peers.push(this);
+      this.connectionState = options.connectionState ?? 'connected';
+      this.iceConnectionState = this.connectionState === 'connected' ? 'connected' : 'checking';
     }
     addTransceiver(kind, options) {
       const transceiver = { kind, options, mid: null, setCodecPreferences(value) { this.codecs = value; } };
@@ -58,7 +101,9 @@ function harness(options = {}) {
 test('RTP audio advertises actual codecs and negotiates sixteen receive-only audio slots without capture', async () => {
   assert.deepEqual(rtcAudioCodecs(Receiver), codecs.slice(0, 2));
   assert.deepEqual(rtcAudioCodecs({ getCapabilities() { throw Error('no API'); } }), []);
-  const h = harness();
+  const h = harness({ gather: async (peer, signal, options) => {
+    assert.deepEqual(options, { waitForComplete: true }); return 'gathered offer';
+  } });
   try {
     await h.audio.start(1);
     assert.deepEqual(h.peers[0].configuration.iceServers, []);
@@ -278,7 +323,7 @@ test('late signaling completion cannot revive an aborted audio graph', async () 
 });
 
 test('native peer diagnostics distinguish negotiation, ICE and graph readiness without implementation text', async () => {
-  const h = harness({ ready() {} });
+  const h = harness({ ready() {}, connectionState: 'connecting' });
   try {
     assert.equal(h.audio.stats().state, 'idle');
     const initial = h.audio.start(1);
@@ -286,7 +331,7 @@ test('native peer diagnostics distinguish negotiation, ICE and graph readiness w
     await initial;
     const peer = h.peers[0];
     peer.connectionState = 'connecting'; peer.iceConnectionState = 'checking'; peer.iceGatheringState = 'complete';
-    assert.equal(h.audio.stats().state, 'ready', 'ready only describes SDP installation');
+    assert.equal(h.audio.stats().state, 'connecting', 'SDP installation alone cannot establish transport readiness');
     assert.equal(h.audio.stats().peerState, 'connecting'); assert.equal(h.audio.stats().iceState, 'checking');
     assert.equal(h.audio.stats().gatheringState, 'complete');
     assert.equal(h.audio.stats().tracks, 0); assert.equal(h.audio.stats().boundSlots, 0); assert.equal(h.audio.stats().readySlots, 0);
@@ -296,9 +341,9 @@ test('native peer diagnostics distinguish negotiation, ICE and graph readiness w
     assert.equal(h.audio.stats().tracks, 1); assert.equal(h.audio.stats().streams, 1);
     assert.equal(h.audio.stats().readySlots, 0);
     h.audio.bound(h.messages.find(message => message.nativeAudioGraph).nativeAudioGraph);
+    peer.connectionState = 'connected'; peer.iceConnectionState = 'completed'; peer.oniceconnectionstatechange();
     await pending;
     assert.equal(h.audio.stats().boundSlots, 1); assert.equal(h.audio.stats().readySlots, 1);
-    peer.connectionState = 'connected'; peer.iceConnectionState = 'completed';
     assert.equal(h.audio.stats().peerState, 'connected'); assert.equal(h.audio.stats().iceState, 'completed');
     h.audio.end(record());
     assert.equal(h.audio.stats().readySlots, 0); assert.equal(h.audio.stats().streams, 0); assert.equal(h.audio.stats().drainUnknown, true);

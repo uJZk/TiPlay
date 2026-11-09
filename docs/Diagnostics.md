@@ -293,12 +293,14 @@ it does not run the retired PD/SoundTouch or browser libsoxr controller. The bun
 NetEq Opus API is exercised by library tests, while product Opus requires native
 RTP negotiation. A retained schema/allowlist field does not prove a retired path runs.
 
-`nativeAudio.state=ready` means the independent native-audio SDP was installed.
-Check its separate `peerState`, `iceState` and `gatheringState` before inferring a
-connected transport. `rtcGeneration` fences replacements; `tracks`, `boundSlots`,
+Before browser v117, `nativeAudio.state=ready` meant the independent native-audio
+SDP was installed, even if ICE was still checking. Current source requires both
+the peer and ICE transport to be connected for `ready`; read the separate
+`peerState`, `iceState` and `gatheringState` when analyzing older captures.
+`rtcGeneration` fences replacements; `tracks`, `boundSlots`,
 `readySlots` and `streams` distinguish received tracks, Worklet graph application,
 announced ready active slots and active owners. Ready slots require successful
-playout-anchor `play()` as well as Worklet binding. The Standard summary retains the
+playout-anchor `play()`, Worklet binding and connected transport. The Standard summary retains the
 main state/counts; Debug audio records retain all ten bounded fields. Missing
 native-audio fields remain unknown. Failed, retired and closed peers report zero
 live track/slot/owner counts and no pending drain. `drainUnknown=true` means an ended owner's
@@ -496,6 +498,14 @@ input loss. The `mode=source-rate` field identifies the source-rate factory; an
 allocation is unavailable until a callback has actually occurred, and is not a
 network-capacity measurement. Compare intervals within one peer/video generation and use the receiver
 statistics below for the downstream boundary.
+
+`duplicateTimestampFrames` counts rejected access units whose source PTS equals
+the previous one. It is distinct from a backward PTS failure: the unit is not
+retimed or submitted, and the prediction chain waits for a new source IDR.
+`video-keyframe-timeout` bounds a wait after received deltas or a known chain
+loss; it is not an idle timeout on an already displayed static picture.
+`video-source-ready-timeout` identifies a mirror input that exhausted its bounded
+wait for its current subscription's video track to become ready.
 
 `sourceObservedFrames`, `sourceAdaptationDrops` and `sourceForwardedFrames` observe
 the public SDK source-adaptation boundary. The processor keeps normal adaptation
@@ -799,5 +809,16 @@ recorded in the [WebRTC roadmap](WebRTC-roadmap.md#tcp-背压实测). The probe 
 diagnostic experiment, not the production congestion-control policy.
 
 Legacy mirror intent logs `LEGACY_MIRROR_EVENT` listening, connected and closed
-states, including a close reason and byte count. This does not record event payloads
-or establish that a mirror stream was requested or decoded.
+states, with a `reason` on close. These connection states do not establish that a
+mirror stream was requested or decoded; event-reader failures are reported separately.
+
+`MIRROR_KEYFRAME` records `sent`, `acknowledged`, `rejected`, `timeout` or `failure`.
+Command sends, replies and timeouts include `cseq`; acknowledgement/rejection also
+records RTSP `status`.
+These are event-connection outcomes, not proof of a new source IDR or restored
+picture. Compare them with the mirror's `keyFrames`, bridge submission/output and
+first-frame Canvas acknowledgement in the same session. H.264 `keyFrames` counts
+recognized NAL type-5 IDR access units, not all I pictures or recovery-point SEI.
+Requests wait for a source picture with a valid VCL NAL header and connected event
+socket; SEI-only access units do not activate requests. An initially quiet log alone
+does not distinguish those prerequisites.

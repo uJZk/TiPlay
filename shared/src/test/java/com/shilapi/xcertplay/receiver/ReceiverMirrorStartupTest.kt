@@ -48,7 +48,7 @@ class ReceiverMirrorStartupTest {
         next.complete()
     }
 
-    @Test fun realFirstFrameCancelsStartupDeadlineForStaticPicture() {
+    @Test fun forwardingADeltaWithoutBrowserOutputDoesNotCancelStartupDeadline() {
         val ended = CountDownLatch(1)
         val forwarded = CountDownLatch(1)
         val address = InetAddress.getByName("127.0.0.1")
@@ -67,9 +67,47 @@ class ReceiverMirrorStartupTest {
                 ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN).putInt(payload.size)
                 socket.getOutputStream().apply { write(header); write(payload); flush() }
                 assertTrue("test frame must reach the sink", forwarded.await(3, TimeUnit.SECONDS))
-                assertFalse("no later frame is required for a static picture", ended.await(1300, TimeUnit.MILLISECONDS))
+                assertTrue("forwarding is not proof that the browser can display a picture", ended.await(3, TimeUnit.SECONDS))
             }
         } finally { stream.close() }
+    }
+
+    @Test fun browserFirstPresentationCancelsStartupDeadlineForStaticPicture() {
+        val ended = CountDownLatch(1)
+        val forwarded = CountDownLatch(1)
+        val address = InetAddress.getByName("127.0.0.1")
+        val hub = WebVideoHub(Executor { it.run() })
+        val stream = ReceiverMirrorStream(ByteArray(16), 1, address,
+            WebMediaSink(hub, 1280, 720, 60), NtpClock(),
+            log = { if (it.contains("stage=FORWARDED")) forwarded.countDown() },
+            startupTimeoutMillis = 1000, listenAddress = address) { ended.countDown() }
+        val subscription = hub.subscribe(reliable = true)
+        try {
+            Socket(address, stream.start()).use { socket ->
+                val output = socket.getOutputStream()
+                fun packet(type: Int, body: ByteArray) {
+                    val header = ByteArray(128)
+                    ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN).apply {
+                        putInt(body.size)
+                        putFloat(56, 1280f)
+                        putFloat(60, 720f)
+                    }
+                    header[4] = type.toByte()
+                    output.write(header); output.write(body); output.flush()
+                }
+                packet(1, ReceiverSdrFixtures.avcc(profile = 66))
+                val cipher = aesCtr(
+                    AirPlayCrypto.sha512("AirPlayStreamKey1".toByteArray(), ByteArray(16)).copyOf(16),
+                    AirPlayCrypto.sha512("AirPlayStreamIV1".toByteArray(), ByteArray(16)).copyOf(16))
+                packet(0, cipher.update(byteArrayOf(0, 0, 0, 2, 0x65, 1)))
+                assertTrue(forwarded.await(3, TimeUnit.SECONDS))
+                val config = requireNotNull(subscription.take(1000))
+                assertEquals(com.shilapi.xcertplay.web.WebVideoRecords.KIND_CONFIG, config.kind)
+                assertTrue(requireNotNull(subscription.take(1000)).keyFrame)
+                hub.browserDecoded(config.epoch)
+                assertFalse("a displayed static picture needs no later frame", ended.await(1300, TimeUnit.MILLISECONDS))
+            }
+        } finally { subscription.close(); stream.close() }
     }
 
     private fun stream(ended: CountDownLatch) = ReceiverMirrorStream(

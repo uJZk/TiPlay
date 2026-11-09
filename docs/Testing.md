@@ -7,6 +7,28 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+**Beta.45/code87 source is prepared**, with browser/cache **v117**; signed
+publication and public-site identity are tracked in [Build](Build.md#beta45-release).
+The user explicitly requested skipping full CI for this beta. The fresh complete
+run was stopped, so it is not a final-source pass. Earlier independent recovery
+validation passed the required Android command with 4,579 unit cases and 700
+browser tests before the later `forceKeyFrame` changes. Current focused protocol
+validation passed **137 shared unit tests across 16 classes**, including all ten
+new mirror-command tests, with no failures, errors or skips:
+
+```sh
+./gradlew :shared:testDebugUnitTest --tests '*ReceiverMirror*' \
+  --tests '*ReceiverAirPlay2*' --tests '*WebVideoMirrorIngressTest' \
+  --tests '*ReceiverServerTest*'
+```
+
+All **700 browser tests** passed. Python checks passed nine release-draft,
+sixteen native-symbol and two site cases; public-tree/cache/diff checks passed.
+Signed packaging/public asset verification is pending and is separate from the
+CI waiver. Physical mirror, audio/ICE and Bluetooth routing acceptance remains open.
+
+### Beta.41 reference
+
 **Beta.41/code83 is published** from `424ed6c8fa8a44349183364c69f975a3fb2dadd6`.
 Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`;
 [Build](Build.md#browser-v116) records its checks and browser update behavior.
@@ -699,6 +721,15 @@ audio/mirror copy, layout and readability. Pure-audio fixtures exercise sender
 metadata/artwork, Video.js controls, DACP command delivery and CarPlay hiding;
 these synthetic checks do not replace the device checklist below.
 
+`ReceiverMirrorRecoveryTest` exercises real event sockets, CSeq matching,
+coalescing, rejection/timeout, feedback replies, legacy reconnect and retired mirror
+tokens. Its encrypted-event fixture checks command/feedback write ordering with
+continuing nonce counters; it does not establish an AirPlay 2 iPhone mirror session.
+`ReceiverMirrorKeyFrameTest` drives legacy FairPlay/CTR mirror setup, first-picture
+gating before browser-readiness waits, SEI-only input that leaves recovery pending,
+late event connection and invalid-frame retirement. These protocol regressions do
+not establish sender compatibility or actual browser picture recovery.
+
 URL acceptance uses the actual AVPlayer pipeline and local MP4/HLS resources under
 the production CSP. Verify Canvas output without creating video elements, operation
 without SharedArrayBuffer, pause/resume, seek, completion, source replacement,
@@ -708,6 +739,13 @@ Range bandwidth, long playback memory and authenticated iPhone resources still
 require integration/device evidence; do not infer those passes from old tests.
 
 Use unprotected content from an actual iPhone. Check discovery and device approval, mirroring, audio-only playback, JPEG/PNG photos, and URL MP4/HLS playback with seeking, subtitles, buffering and iPhone controls. Test stopping/replacing a cast and returning the browser display to CarPlay while retained CarPlay audio continues as designed. Exercise authentication/resource expiry and recovery after network loss.
+
+For mirror recovery, retire/recreate the browser video track while the source stays
+static. Check that a `forceKeyFrame` request follows the first source picture,
+then observe a fresh source IDR and actual Canvas output without rotating the
+iPhone. Record rejected or unanswered commands separately. Repeat after a sender
+event reconnect and mirror replacement; an old request must not affect the successor.
+These sender/version compatibility checks remain physical acceptance.
 
 Check advertised audio codecs in the actual browser: ALAC/AAC-LC/AAC-ELD follow reported libav.js software support; fallback PCM enters NetEq at 48 kHz without WebCodecs audio. Negotiated original codecs use native RTP and the shared mixer; Opus without negotiation must fail explicitly. Verify clear failures when no implemented decoder can handle the format. HDR content is subject to TiPlay's SDR policy. DRM services and apps that prohibit AirPlay are outside acceptance. See [AirPlay](AirPlay.md) for receiver boundaries.
 

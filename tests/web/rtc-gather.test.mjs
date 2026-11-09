@@ -44,3 +44,23 @@ test('aborting the candidate window releases timers and later candidate events c
 test('a complete candidate-free browser fails explicitly instead of starting unauthenticated signaling', async () => {
   await assert.rejects(gatherLocalOffer(new Peer('v=0\r\n')), /no-local-candidates/);
 });
+
+test('one-shot audio signaling retains a host candidate arriving after the main-peer collection window', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const peer = new Peer(OFFER, 'gathering'); let settled = false;
+  const pending = gatherLocalOffer(peer, null, { waitForComplete: true }).then(value => { settled = true; return value; });
+  t.mock.timers.tick(600); await Promise.resolve();
+  assert.equal(settled, false);
+  peer.localDescription.sdp += 'a=candidate:2 1 udp 1 192.168.1.2 5556 typ host\r\n';
+  peer.dispatchEvent(new Event('icecandidate'));
+  peer.iceGatheringState = 'complete'; peer.dispatchEvent(new Event('icegatheringstatechange'));
+  assert.equal(await pending, peer.localDescription.sdp);
+});
+
+test('complete audio gathering still has a finite deadline when the browser never completes', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const peer = new Peer(OFFER, 'gathering');
+  const pending = gatherLocalOffer(peer, null, { waitForComplete: true });
+  t.mock.timers.tick(12000);
+  assert.equal(await pending, OFFER);
+});

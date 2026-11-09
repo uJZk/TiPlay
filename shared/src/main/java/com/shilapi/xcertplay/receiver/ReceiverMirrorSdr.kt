@@ -35,9 +35,11 @@ internal object ReceiverMirrorSdr {
         require(found) { "missing SDR sequence parameter set" }
     }
 
-    fun frame(annexB: ByteArray, codec: VideoCodec) {
+    /** Validates metadata and reports whether a complete VCL header is present. */
+    fun frame(annexB: ByteArray, codec: VideoCodec): Boolean {
         var start = -1
         var cursor = 0
+        var videoSlice = false
         while (cursor + 3 <= annexB.size) {
             val prefix = when {
                 annexB[cursor] != 0.toByte() || annexB[cursor + 1] != 0.toByte() -> 0
@@ -46,21 +48,25 @@ internal object ReceiverMirrorSdr {
                 else -> 0
             }
             if (prefix == 0) { cursor++; continue }
-            if (start >= 0) inspectFrameNal(annexB, start, cursor, codec)
+            if (start >= 0 && inspectFrameNal(annexB, start, cursor, codec)) videoSlice = true
             cursor += prefix; start = cursor
         }
-        if (start >= 0) inspectFrameNal(annexB, start, annexB.size, codec)
+        if (start >= 0 && inspectFrameNal(annexB, start, annexB.size, codec)) videoSlice = true
+        return videoSlice
     }
 
-    private fun inspectFrameNal(bytes: ByteArray, start: Int, end: Int, codec: VideoCodec) {
+    private fun inspectFrameNal(bytes: ByteArray, start: Int, end: Int, codec: VideoCodec): Boolean {
         require(end > start)
-        val type = if (codec == VideoCodec.H264) bytes[start].toInt() and 31 else bytes[start].toInt() ushr 1 and 63
+        val header = bytes[start].toInt() and 255
+        val type = if (codec == VideoCodec.H264) header and 31 else header ushr 1 and 63
         val metadata = if (codec == VideoCodec.H264) type == 6 || type == 7 else type in HEVC_METADATA_TYPES
         // Large VCL picture slices need no allocation; only small parameter sets/SEI are parsed.
         if (metadata) {
             require(end - start <= MAX_METADATA_NAL_BYTES) { "oversized SDR metadata NAL" }
             inspect(bytes.copyOfRange(start, end), codec)
         }
+        return header and 0x80 == 0 && if (codec == VideoCodec.H264) type in 1..5
+            else end - start >= 2 && bytes[start + 1].toInt() and 7 != 0 && type in 0..31
     }
 
     private fun inspect(nal: ByteArray, codec: VideoCodec) {

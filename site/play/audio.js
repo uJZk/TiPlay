@@ -627,7 +627,12 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
       rtcPeerGeneration = 0; rtcRetryAttempts = 0; rtcLastFailure = null; rtcLastError = null;
       rtcUnsubscribe = native?.subscribe?.(event => {
         if (connection !== signal || signal.aborted || event.generation !== rtcPeerGeneration) return;
-        if (event.k === 'audio-restart-required') startRtcAudio(rtcPeerGeneration + 1);
+        if (event.k === 'audio-restart-required') {
+          if (event.reason === 'audio-new-demand') {
+            if (rtcRetryTimer === null && rtcRetryAttempts >= RTC_AUDIO_RETRY_DELAYS_MS.length) rtcRetryAttempts = 0;
+            retryRtcAudio(rtcPeerGeneration);
+          } else startRtcAudio(rtcPeerGeneration + 1);
+        }
         else if (event.k === 'audio-error') {
           const cause = Error(event.reason || 'Native audio failed.');
           rtcAudio?.fail(cause);

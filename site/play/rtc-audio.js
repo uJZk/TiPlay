@@ -26,7 +26,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     if (!globalThis.document?.createElement) throw Error('Native audio playout is unavailable.');
     return document.createElement('audio');
   },
-  gather = gatherLocalOffer, timeoutMs = 20000, ready = null, trackTimeoutMs = 5000 } = {}) {
+  gather = gatherLocalOffer, timeoutMs = 20000, disconnectTimeoutMs = 5000, ready = null, trackTimeoutMs = 5000 } = {}) {
   let current = null, closed = false;
   const codecs = rtcAudioCodecs(Receiver);
   const ownerEpoch = record => record.rtcOwnerEpoch ?? record.config?.rtcOwnerEpoch ?? record.epoch;
@@ -83,11 +83,17 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
       slot.source.connect(node, 0, slot.index);
       startPlayout(peer, slot.track);
       node.port.postMessage({ nativeAudioGraph: { ...slot.owner, generation: playbackGeneration } });
+      prepareSlotDeadline(peer, slot);
       announceReady(peer, slot);
     } catch (cause) { fail(peer, cause); }
   }
+  function prepareSlotDeadline(peer, slot) {
+    if (typeof ready !== 'function' || !slot.owner || slot.readySent || slot.readyTimer || !peer.transportReady) return;
+    slot.readyTimer = setTimeout(() => fail(peer, Error('Native audio graph preparation timed out.')), trackTimeoutMs);
+  }
   function announceReady(peer, slot) {
-    if (typeof ready !== 'function' || slot.readySent || !slot.bindingConfirmed || !slot.source || !peer.playoutReady || peer.closed) return;
+    if (typeof ready !== 'function' || slot.readySent || !slot.bindingConfirmed || !slot.source || !peer.playoutReady
+      || !peer.transportReady || peer.closed) return;
     slot.readySent = true;
     const owner = slot.owner;
     Promise.resolve().then(() => {
@@ -98,6 +104,26 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
       if (current !== peer || peer.closed) return;
       clearTimeout(slot.readyTimer); slot.resolveReady();
     }, cause => fail(peer, cause));
+  }
+  function transportChanged(peer) {
+    if (current !== peer || peer.closed) return;
+    const { connectionState, iceConnectionState } = peer.pc;
+    if (['failed', 'closed'].includes(connectionState) || ['failed', 'closed'].includes(iceConnectionState)) {
+      fail(peer, Error('Native audio connection failed.')); return;
+    }
+    const connected = connectionState === 'connected' && ['connected', 'completed'].includes(iceConnectionState);
+    if (connected) {
+      clearTimeout(peer.timer); peer.timer = null;
+      const changed = !peer.transportReady;
+      peer.transportReady = true; peer.connected = true;
+      for (const slot of peer.slots) { prepareSlotDeadline(peer, slot); announceReady(peer, slot); }
+      if (changed) onConnected(peer.generation);
+    } else {
+      peer.transportReady = false;
+      for (const slot of peer.slots) { clearTimeout(slot.readyTimer); slot.readyTimer = null; }
+      if (peer.connected && peer.timer === null) peer.timer = setTimeout(() =>
+        fail(peer, Error('Native audio connection recovery timed out.')), disconnectTimeoutMs);
+    }
   }
   function start(generation = 1) {
     if (closed || signal?.aborted) return Promise.reject(stopped());
@@ -136,14 +162,12 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
           }, { once: true });
           connectSlot(peer, slot);
         };
-        pc.onconnectionstatechange = () => {
-          if (current !== peer || peer.closed) return;
-          if (pc.connectionState === 'connected') { clearTimeout(peer.timer); onConnected(generation); }
-          if (['failed', 'closed'].includes(pc.connectionState)) fail(peer, Error('Native audio connection failed.'));
-        };
+        pc.onconnectionstatechange = pc.oniceconnectionstatechange = () => transportChanged(peer);
         await pc.setLocalDescription(await pc.createOffer());
         peer.stage = 'local-ice';
-        const sdp = await gather(pc, peer.abort.signal);
+        // This peer has one-shot signaling. Keep late host interfaces in the
+        // authentic offer instead of discarding them after the first candidate.
+        const sdp = await gather(pc, peer.abort.signal, { waitForComplete: true });
         peer.stage = 'signaling';
         const answer = await exchange({ k: 'audio-offer', sdp, generation });
         if (closed || current !== peer || peer.closed) throw stopped();
@@ -155,6 +179,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
         peer.ready = true;
         peer.stage = 'transport';
         for (const slot of peer.slots) connectSlot(peer, slot);
+        transportChanged(peer);
         if (peer.closed) throw peer.error ?? stopped();
       } catch (cause) { fail(peer, cause); throw cause; }
     })();
@@ -190,9 +215,9 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     if (typeof ready === 'function' && !slot.readyPromise) {
       slot.readyPromise = new Promise((resolve, reject) => { slot.resolveReady = resolve; slot.rejectReady = reject; });
       slot.readyPromise.catch(() => {});
-      slot.readyTimer = setTimeout(() => fail(peer, Error('Native audio graph preparation timed out.')), trackTimeoutMs);
     }
     node.port.postMessage({ nativeAudio: { ...slot.owner, generation: playbackGeneration, awaitGraph: typeof ready === 'function' } });
+    prepareSlotDeadline(peer, slot);
     connectSlot(peer, slot);
     if (peer.closed) throw peer.error ?? stopped();
     if (slot.readyPromise) await slot.readyPromise;
@@ -229,7 +254,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
       const live = current && !closed && !current.closed;
       return { audioTransport: RTC_AUDIO_TRANSPORT, rtcGeneration: current?.generation ?? null,
         state: closed ? 'closed' : current?.error ? 'failed' : current?.closed ? 'closed'
-          : current?.ready ? 'ready' : current ? 'connecting' : 'idle',
+          : current?.ready && current?.transportReady ? 'ready' : current ? 'connecting' : 'idle',
         peerState: observedState(current?.pc.connectionState, peerStates),
         iceState: observedState(current?.pc.iceConnectionState, iceStates),
         gatheringState: observedState(current?.pc.iceGatheringState, gatheringStates),

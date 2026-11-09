@@ -129,6 +129,7 @@ internal class NativeRtcAudioPeer(
     private fun fail(reason: String) { if (failed.compareAndSet(false, true)) { try { onFailure(reason) } finally { close() } } }
     override fun ready(): Boolean = synchronized(pointerLock) {
         !closed.get() && !failed.get() && answered && handle != 0L && !nativeFailed(handle)
+            && nativeAudioTransportConnected(nativeStates(handle))
     }
     override fun snapshot(): Map<String, Any?> = mapOf("backend" to "libdatachannel", "peer" to diagnosticId, "ready" to ready(),
         "queuedPackets" to packets.size, "queuedBytes" to bytes.get().coerceAtLeast(0), "tracks" to slots.size,
@@ -163,6 +164,9 @@ internal class NativeRtcAudioPeer(
         @JvmStatic private external fun nativeSend(handle: Long, slot: Int, timestamp: Long, payload: ByteArray)
     }
 }
+
+internal fun nativeAudioTransportConnected(value: Long): Boolean = (value and 15L) == 3L &&
+    ((value ushr 4) and 15L) in 3L..4L
 
 internal fun formatNativeAudioStates(value: Long): String {
     val connections = listOf("new", "connecting", "connected", "disconnected", "failed", "closed")

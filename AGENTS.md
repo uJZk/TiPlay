@@ -37,11 +37,15 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#published-beta44).
-Beta.43/code85 is published from `47cf959ce3741bd15c00f3c9202daac81b65c759`;
-iPhone mirror picture, navigation audio and Bluetooth microphone still need physical verification.
-Browser/cache v116 is deployed separately; see Build for update behavior,
-verified release artifacts, checks and remaining physical validation.
+Resume current release work at [Build](docs/Build.md#beta45-release).
+Beta.45/code87 and browser/cache v117 are prepared for publication. The user
+explicitly waived full CI for this beta; keep earlier complete recovery checks,
+current focused mirror-command checks and signed artifact verification separate.
+The final focused run passed 137 shared tests and 700 browser tests; signed release
+packaging/public artifact verification is pending. This waiver does not apply to
+later work. The last published APK is beta.44/code86;
+browser/cache v116 is deployed separately. iPhone mirror picture/command compatibility,
+navigation audio and Bluetooth microphone still need physical verification.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

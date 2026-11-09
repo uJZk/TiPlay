@@ -19,10 +19,12 @@ internal class BrowserRtcAudioRouter(
         var slot: String? = null
         var generation = 0
         var receiverReady = false
+        var expired = false
         var ended: ByteArray? = null
         val packets = ArrayDeque<ByteArray>()
         var bytes = 0
         var since = 0L
+        var pendingSince: Long? = null
     }
     private val lock = Any()
     private val owners = linkedMapOf<Key, Owner>()
@@ -40,6 +42,7 @@ internal class BrowserRtcAudioRouter(
     private var stagedPackets = 0
     private var closed = false
     private var failure: String? = null
+    private var demandRecoveryRequested = false
     private val watchdog = Executors.newSingleThreadScheduledExecutor { run -> Thread(run, "tiplay-audio-route-watch").apply { isDaemon = true } }
     init { watchdog.scheduleWithFixedDelay({ checkWaiting() }, 250, 250, TimeUnit.MILLISECONDS) }
 
@@ -50,7 +53,7 @@ internal class BrowserRtcAudioRouter(
         synchronized(lock) {
             check(!closed && nextGeneration > generation && nextGeneration > 0) { "stale-audio-generation" }
             previous = listOfNotNull(peer, pendingPeer); peer = null; pendingPeer = null
-            generation = nextGeneration; negotiating = true; failure = null; slots = offered; assigned = 0
+            generation = nextGeneration; negotiating = true; failure = null; demandRecoveryRequested = false; slots = offered; assigned = 0
             metadata.clear()
             // Completed slots never revive on a replacement peer. Active owners retain only
             // packets admitted after the replacement starts; already-sent RTP is never replayed.
@@ -141,7 +144,7 @@ internal class BrowserRtcAudioRouter(
                 // A slot is a once-only owner binding, including an ended owner. Late
                 // configuration cannot reactivate that slot in the same generation.
                 if (existing != null) {
-                    if (existing.ended != null) return null
+                    if (existing.ended != null || existing.expired) return null
                     if (listOf("codec", "sampleRate", "channels", "semanticType").any { existing.fields[it] != fields[it] }) {
                         failLocked("audio-format-changed-without-epoch"); return null
                     }
@@ -154,6 +157,17 @@ internal class BrowserRtcAudioRouter(
                 val owner = Owner(key, record, fields).also { it.since = nanoTime() }
                 active[type]?.let(owners::get)?.let(::discardPending)
                 owners[key] = owner; active[type] = key; latestNative[type to key.mode] = key.epoch; suppressedNativeTypes.remove(type)
+                // A later utterance is a new bounded recovery opportunity after
+                // background retries have stopped. Repeated packets/configuration
+                // for the failed owner must not create an endless retry loop.
+                if (failure != null && failure != "audio-slots-exhausted" && !demandRecoveryRequested) {
+                    demandRecoveryRequested = true
+                    val failedGeneration = generation
+                    watchdog.execute {
+                        if (synchronized(lock) { !closed && generation == failedGeneration && failure != null && demandRecoveryRequested })
+                            onFailure("audio-new-demand")
+                    }
+                }
                 if (peer != null && !negotiating && failure == null) {
                     bind(owner, emit = false)
                     return if (owner.slot != null) annotate(record, fields, owner) else null
@@ -168,7 +182,7 @@ internal class BrowserRtcAudioRouter(
             if (record.size < 37 || record.size - 36 > MAX_PACKET_BYTES || !wire.getDouble(28).isFinite()) {
                 failLocked("invalid-native-audio-packet"); return null
             }
-            if (failure != null && failure != "audio-slots-exhausted") return null
+            if (failure != null && failure != "audio-slots-exhausted" && !demandRecoveryRequested) return null
             val backend = peer
             if (backend != null && !negotiating && owner.slot != null && owner.receiverReady) {
                 submit(backend, owner, record); return null
@@ -178,6 +192,7 @@ internal class BrowserRtcAudioRouter(
                 failLocked("audio-native-staging-overflow"); return null
             }
             owner.packets.addLast(record); owner.bytes += record.size
+            if (owner.pendingSince == null) owner.pendingSince = nanoTime()
             stagedBytes += record.size; stagedPackets++
             return null
         }
@@ -185,7 +200,20 @@ internal class BrowserRtcAudioRouter(
 
     private fun discardPending(owner: Owner) {
         stagedBytes -= owner.bytes; stagedPackets -= owner.packets.size
-        owner.packets.clear(); owner.bytes = 0
+        owner.packets.clear(); owner.bytes = 0; owner.pendingSince = null
+    }
+    private fun expirePending(owner: Owner) {
+        discardPending(owner)
+        owner.expired = true
+        if (active[owner.key.type] == owner.key) active.remove(owner.key.type)
+        // Retain latestNative's watermark: late configuration/packets cannot
+        // revive the timed-out utterance after a replacement peer is installed.
+    }
+    private fun expireStalePending(): Boolean {
+        val now = nanoTime()
+        val expired = owners.values.filter { it.pendingSince?.let { since -> now - since >= PACKET_WAIT_NANOS } == true }
+        expired.forEach(::expirePending)
+        return expired.isNotEmpty()
     }
     private fun bind(owner: Owner, emit: Boolean) {
         if (assigned >= slots.size) { failLocked("audio-slots-exhausted"); return }
@@ -223,6 +251,11 @@ internal class BrowserRtcAudioRouter(
         val owner = owners[Key(type, mode, epoch)] ?: return false
         if (owner.generation != requestedGeneration || owner.slot != slot) return false
         if (owner.receiverReady) return true
+        // Rebinding a source to a new peer does not make old speech fresh.
+        // Fail explicitly before releasing any original packet from a stale queue.
+        if (expireStalePending()) {
+            failLocked("audio-native-packet-timeout"); return false
+        }
         val backend = peer ?: return false
         owner.receiverReady = true
         while (owner.packets.isNotEmpty()) {
@@ -230,6 +263,7 @@ internal class BrowserRtcAudioRouter(
             stagedBytes -= record.size; stagedPackets--
             submit(backend, owner, record)
         }
+        owner.pendingSince = null
         true
     }
     fun drainMetadata(): List<ByteArray> = synchronized(lock) { buildList { while (metadata.isNotEmpty()) add(metadata.removeFirst()) } }
@@ -240,8 +274,12 @@ internal class BrowserRtcAudioRouter(
             "queuedPackets" to stagedPackets, "failure" to failure, "native" to peer?.snapshot())
     }
     private fun checkWaiting() = synchronized(lock) {
-        if (!closed && failure == null && owners.values.any { !it.receiverReady && nanoTime() - it.since >= WAIT_NANOS })
-            failLocked("audio-native-negotiation-timeout")
+        if (!closed && failure == null) {
+            if (expireStalePending()) {
+                failLocked("audio-native-packet-timeout")
+            } else if (owners.values.any { !it.receiverReady && !it.expired && nanoTime() - it.since >= WAIT_NANOS })
+                failLocked("audio-native-negotiation-timeout")
+        }
     }
     private fun fail(nextGeneration: Int, reason: String) = synchronized(lock) {
         if (!closed && generation == nextGeneration) { negotiating = false; failLocked(reason) }
@@ -259,7 +297,7 @@ internal class BrowserRtcAudioRouter(
     fun reset() {
         val retired = synchronized(lock) {
             val old = listOfNotNull(peer, pendingPeer); peer = null; pendingPeer = null; negotiating = false; slots = emptyList(); assigned = 0
-            owners.clear(); active.clear(); latestNative.clear(); suppressedNativeTypes.clear(); metadata.clear(); stagedBytes = 0; stagedPackets = 0; failure = null
+            owners.clear(); active.clear(); latestNative.clear(); suppressedNativeTypes.clear(); metadata.clear(); stagedBytes = 0; stagedPackets = 0; failure = null; demandRecoveryRequested = false
             old
         }
         retired.forEach { it.close() }
@@ -276,9 +314,13 @@ internal class BrowserRtcAudioRouter(
         private const val MAX_STAGED_BYTES = 1024 * 1024
         private const val MAX_TRACK_BYTES = 256 * 1024
         private const val MAX_STAGED_PACKETS = 1024
-        private const val MAX_TRACK_PACKETS = 128
+        private const val MAX_TRACK_PACKETS = 1024
         private const val MAX_PACKET_BYTES = 65479
-        private const val WAIT_NANOS = 5_000_000_000L
+        // Browser gathering/signaling/ICE has a 20-second budget, followed by
+        // the exact Worklet/playout barrier's five seconds. Byte/packet caps
+        // remain independent of this elapsed-time bound.
+        private const val WAIT_NANOS = 25_000_000_000L
+        private const val PACKET_WAIT_NANOS = 5_000_000_000L
 
         private fun supportedConfig(fields: Map<*, *>?, record: ByteArray): Boolean = fields?.get("codec") == "opus"
             && (fields["sampleRate"] as? Number)?.toDouble() == 48000.0

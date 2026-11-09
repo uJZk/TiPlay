@@ -549,6 +549,7 @@ private class AndroidBrowserRtcPeer(
             sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.end(reason)))
         }
         fun pauseVideo(next: WebVideoRecord?) {
+            (next?.epoch ?: config?.epoch)?.let { videoSubscription?.videoPaused(it) }
             val announce = videoSource.pause(next) {
                 // Source updates and offer snapshot selection share this lock.
                 // Only retire the active old bridge, not a replacement bridge.
@@ -563,25 +564,35 @@ private class AndroidBrowserRtcPeer(
         }
         fun configureVideo(record: WebVideoRecord): Boolean {
             config = record; videoSource.update(record)
-            if (videoTrack?.configure(record) != true) {
+            val owner = videoTrack
+            val generation = videoLease.generation
+            if (owner?.configure(record) != true) {
                 val sourceCodec = (WebJson.parse(String(record.payload, Charsets.UTF_8)) as? Map<*, *>)?.get("codec") as? String
                 // The first source can appear after initial signaling. Replace just video once
                 // its real codec is known instead of transcoding or using a DataChannel fallback.
                 val changedDuringOffer = videoLease.sourceChangedSinceOffer(record.epoch) &&
-                    videoTrack?.failure == "codec-profile-not-negotiated"
+                    owner?.failure == "codec-profile-not-negotiated"
                 if ((videoLease.generation == 1 || changedDuringOffer) && sourceCodec != null && videoCodecOffers.any { BrowserRtcVideoPolicy.matches(sourceCodec, it) }) {
                     pauseVideo(record); return true
                 }
-                endVideo(videoTrack?.failure ?: "video-codec-not-negotiated"); return false
+                endVideo(owner?.failure ?: "video-codec-not-negotiated")
+                awaitingNewSourceAfterFailure = true
+                return true
             }
             sendRecord("video", sequence++, BrowserRtcRecord.video(BrowserRtcVideoPolicy.metadata(record,
-                BrowserRtcVideoPolicy.TRACK, generation = videoLease.generation)))
+                BrowserRtcVideoPolicy.TRACK, generation = generation)))
+            // A mirror's first original AU can arrive before authenticated video-ready.
+            // Release ingress only after this exact receiver/bridge has its metadata;
+            // initial compatible peers use this same path without a replacement RPC.
+            videoLease.runIfReady(generation) {
+                if (!closed.get() && videoTrack === owner) videoSubscription?.videoReady(record.epoch)
+            }
             return true
         }
         try {
             awaitAuthentication()
             if (videoTrack == null) { endVideo("video-track-not-negotiated"); return }
-            var subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+            var subscription = video.subscribe(reliable = true, awaitVideoReady = true).also { videoSubscription = it }
             while (!closed.get()) {
                 val record = deferredSourceRateRecord ?: subscription.take(1_000) ?: WebVideoRecords.HEARTBEAT
                 deferredSourceRateRecord = null
@@ -590,6 +601,17 @@ private class AndroidBrowserRtcPeer(
                 val previousFailure = videoFailure
                 if (previousFailure != null) {
                     if (!awaitingNewSourceAfterFailure) { endVideo(previousFailure); return }
+                    if (record.kind == WebVideoRecords.KIND_END) {
+                        if (String(record.payload, Charsets.UTF_8) == "replaced") return
+                        subscription.close()
+                        when (video.awaitNextConfiguration(subscription, config?.epoch, 1_000)) {
+                            WebVideoHub.SourceWait.CONFIGURED ->
+                                subscription = (video.resumeAfterFailure(subscription) ?: return).also { videoSubscription = it }
+                            WebVideoHub.SourceWait.REPLACED -> return
+                            WebVideoHub.SourceWait.WAITING -> Unit
+                        }
+                        continue
+                    }
                     if (BrowserRtcSourceRateRecovery.recoverOnNewSource(previousFailure, config?.epoch,
                             record.kind == WebVideoRecords.KIND_CONFIG, record.epoch)) {
                         videoFailure = null
@@ -668,6 +690,10 @@ private class AndroidBrowserRtcPeer(
                     if (scopedFailure != null) {
                         reportCodec(force = true)
                         publishVideoError(scopedFailure!!, checkedGeneration)
+                        if (config != null) {
+                            awaitingNewSourceAfterFailure = true
+                            continue
+                        }
                         break
                     }
                 }
@@ -693,7 +719,7 @@ private class AndroidBrowserRtcPeer(
                             continue
                         }
                         endVideo(failure)
-                        if (failure == "video-encoder-selection-timeout" && config != null) {
+                        if (config != null) {
                             awaitingNewSourceAfterFailure = true
                             continue
                         }
@@ -716,7 +742,7 @@ private class AndroidBrowserRtcPeer(
                         pauseVideo(null)
                         sendRecord("video", sequence++, BrowserRtcRecord.video(WebVideoRecords.IDLE))
                         subscription.close()
-                        subscription = video.subscribe(reliable = true).also { videoSubscription = it }
+                        subscription = video.subscribe(reliable = true, awaitVideoReady = true).also { videoSubscription = it }
                         continue
                     } else { endVideo(reason); break }
                 }
@@ -757,6 +783,10 @@ private class AndroidBrowserRtcPeer(
                         // END could retire a replacement; blocked video credit must also
                         // leave audio/control free to use the send lock.
                         publishVideoError(inputFailure!!, ownerGeneration)
+                        if (config != null) {
+                            awaitingNewSourceAfterFailure = true
+                            continue
+                        }
                         break
                     }
                 } else sendRecord("video", sequence++, BrowserRtcRecord.video(record))
@@ -780,7 +810,7 @@ private class AndroidBrowserRtcPeer(
         val snapshot = audioRouter.snapshot()
         val native = snapshot["native"] as? Map<*, *>
         val generation = (snapshot["generation"] as? Number)?.toInt()?.coerceAtLeast(1) ?: 1
-        val event = if (reason == "audio-slots-exhausted") "audio-restart-required" else "audio-error"
+        val event = if (reason in setOf("audio-slots-exhausted", "audio-new-demand")) "audio-restart-required" else "audio-error"
         log("Browser RTC: stage=native-audio epoch=$epoch generation=$generation peer=${native?.get("peer")} reason=$reason failed=true " +
             listOf("negotiating", "slots", "owners", "receiverReadySlots", "queuedPackets", "queuedBytes")
                 .joinToString(" ") { "$it=${snapshot[it]}" })

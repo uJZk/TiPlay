@@ -17,7 +17,8 @@ public final class EncodedAudioPeerProbe {
         Matcher mids = Pattern.compile("(?m)^a=mid:([^\\r\\n]+)").matcher(offer);
         while (mids.find()) slots.add(new BrowserRtcAudioSlot(mids.group(1), 111));
         NativeRtcAudioPeer peer = new NativeRtcAudioPeer(slots,
-            reason -> { System.err.println("native-audio-failure:" + reason); return Unit.INSTANCE; }, System::nanoTime);
+            reason -> { System.err.println("native-audio-failure:" + reason); return Unit.INSTANCE; },
+            ignored -> Unit.INSTANCE, System::nanoTime);
         try {
             String answer = peer.answer(offer);
             System.out.println(Base64.getEncoder().encodeToString(answer.getBytes(StandardCharsets.UTF_8)));

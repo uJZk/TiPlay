@@ -11,20 +11,24 @@ import org.webrtc.VideoFrame
 class BrowserRtcVideoFlowTest {
     private val codec = BrowserRtcVideoPolicy.Codec("H264", mapOf(
         "packetization-mode" to "1", "profile-level-id" to "42e02a"))
-    private fun frame(timeUs: Long, key: Boolean = false) = WebVideoRecord(
+    private fun frame(timeUs: Long, key: Boolean = false, bytes: ByteArray? = null) = WebVideoRecord(
         WebVideoRecords.KIND_FRAME, if (key) WebVideoRecords.FLAG_KEY_FRAME else 0,
         WebVideoRecords.CODEC_H264, 0, 1, timeUs,
-        byteArrayOf(0, 0, 0, 1, if (key) 0x65 else 0x41, 0xe0.toByte()))
+        bytes ?: byteArrayOf(0, 0, 0, 1, if (key) 0x65 else 0x41, 0xe0.toByte()))
 
     private inner class Fixture : AutoCloseable {
         var requestCount = 0
         val output = mutableListOf<ByteArray>()
+        val timestamps = mutableListOf<Long>()
         var capture: (VideoFrame) -> Unit = { encoder.encode(it, VideoEncoder.EncodeInfo(emptyArray())) }
         val bridge = BrowserRtcVideoTrack(listOf(codec), { requestCount++ }, captureFrame = { capture(it) })
         val encoder: VideoEncoder = requireNotNull(bridge.createEncoder(VideoCodecInfo(codec.name, codec.parameters, emptyList())))
         init {
             assertEquals(VideoCodecStatus.OK, encoder.initEncode(VideoEncoder.Settings(1, 640, 360, 4_000, 60, 1, false),
-                VideoEncoder.Callback { image, _ -> output.add(ByteArray(image.buffer.remaining()).also { image.buffer.duplicate().get(it) }) }))
+                VideoEncoder.Callback { image, _ ->
+                    output.add(ByteArray(image.buffer.remaining()).also { image.buffer.duplicate().get(it) })
+                    timestamps.add(image.captureTimeNs)
+                }))
             assertTrue(bridge.configure(WebVideoRecord(WebVideoRecords.KIND_CONFIG, 0, WebVideoRecords.CODEC_H264, 0, 1, 0,
                 WebJson.write(mapOf("codec" to "avc1.42e028", "width" to 640, "height" to 360, "fps" to 60)).toByteArray())))
         }
@@ -124,5 +128,45 @@ class BrowserRtcVideoFlowTest {
         assertTrue(f.bridge.offer(frame(0, true)))
         assertEquals(1L, f.counter("duplicateEncoderInputs")); assertEquals(1L, f.counter("outputFrames"))
         assertEquals(0L, f.counter("lossEvents")); assertEquals(1, f.output.size)
+    }
+
+    @Test fun equalSourceTimestampDropsItsDependencyChainAndRecoversOnlyOnALaterOriginalIdr() = Fixture().use { f ->
+        val first = frame(0, true)
+        val delta = frame(16_667)
+        assertTrue(f.bridge.offer(first))
+        assertTrue(f.bridge.offer(delta))
+        val requests = f.requestCount
+        // Distinct source AUs can share a PTS during keyframe recovery. Neither
+        // the repeated delta nor a repeated-PTS IDR may enter the native sender.
+        assertTrue(f.bridge.offer(frame(16_667, bytes = byteArrayOf(0, 0, 0, 1, 0x41, 0xe0.toByte(), 1))))
+        assertTrue(f.bridge.offer(frame(16_667, true)))
+        assertTrue(f.bridge.offer(frame(33_333)))
+        assertNull(f.bridge.failure)
+        assertTrue(f.requestCount > requests)
+        assertEquals(2L, f.counter("duplicateTimestampFrames"))
+        assertEquals(1L, f.counter("awaitingKeyFrames"))
+        assertEquals(2L, f.counter("submittedFrames"))
+        assertEquals(2, f.output.size)
+        val recovery = frame(50_000, true)
+        val following = frame(66_667)
+        assertTrue(f.bridge.offer(recovery))
+        assertTrue(f.bridge.offer(following))
+        assertEquals(4, f.output.size)
+        listOf(first, delta, recovery, following).forEachIndexed { index, original ->
+            assertArrayEquals(original.payload, f.output[index])
+        }
+        assertEquals(listOf(0L, 16_667_000L, 50_000_000L, 66_667_000L), f.timestamps.map { it - f.timestamps.first() })
+        assertFalse(f.bridge.flowDiagnostics()["waitingForKey"] as Boolean)
+        assertEquals(0L, f.counter("pendingFrames"))
+    }
+
+    @Test fun trueBackwardSourceTimestampStillFailsClosedAfterDuplicateRecovery() = Fixture().use { f ->
+        assertTrue(f.bridge.offer(frame(16_667, true)))
+        assertTrue(f.bridge.offer(frame(16_667)))
+        assertFalse(f.bridge.offer(frame(0, true)))
+        assertEquals("reordered-video-timestamp", f.bridge.failure)
+        assertFalse(f.bridge.offer(frame(33_333, true)))
+        assertEquals(1, f.output.size)
+        assertEquals(1L, f.counter("duplicateTimestampFrames"))
     }
 }

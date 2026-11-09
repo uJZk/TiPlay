@@ -43,6 +43,8 @@ internal class BrowserRtcVideoTrack(
     @Volatile private var active = false
     @Volatile private var closed = false
     @Volatile private var waitingForKey = true
+    private var keyFrameWaitStartedNanos: Long? = null
+    private var sourceFrameObserved = false
     @Volatile var failure: String? = null; private set
     private var configuredEpoch: Int? = null
     private var configuration: Map<*, *>? = null
@@ -68,6 +70,7 @@ internal class BrowserRtcVideoTrack(
     private val chainRejectedFrames = AtomicLong()
     private val codecMismatchFrames = AtomicLong()
     private val duplicateEncoderInputs = AtomicLong()
+    private val duplicateTimestampFrames = AtomicLong()
     private val lossEvents = AtomicLong()
     private val rateUpdates = AtomicLong()
     private val allocatedBitrateBps = AtomicLong()
@@ -161,6 +164,7 @@ internal class BrowserRtcVideoTrack(
         "queueRejectedFrames" to queueRejectedFrames.get(), "releasedUnencodedFrames" to releasedUnencodedFrames.get(),
         "nativeKeyFrameRequests" to nativeKeyFrameRequests.get(), "chainRejectedFrames" to chainRejectedFrames.get(),
         "codecMismatchFrames" to codecMismatchFrames.get(), "duplicateEncoderInputs" to duplicateEncoderInputs.get(),
+        "duplicateTimestampFrames" to duplicateTimestampFrames.get(),
         "lossEvents" to lossEvents.get(), "pendingFrames" to pending.get(), "pendingBytes" to pendingBytes.get(),
         "encoderInputsInFlight" to synchronized(inputGate) { inFlightInputs },
         // Values describe callbacks, not a measured network capacity. Source-rate mode
@@ -185,6 +189,8 @@ internal class BrowserRtcVideoTrack(
         if (width !in 1..8192 || height !in 1..8192) { disable("invalid-video-size"); return false }
         configuredEpoch = record.epoch; configuration = fields; sourceCodec = codec
         active = true; waitingForKey = true; lastTimestampUs = null; clock = BrowserRtcVideoPolicy.SourceClock()
+        keyFrameWaitStartedNanos = null
+        sourceFrameObserved = false
         updateSelectionWait()
         return true
     }
@@ -195,19 +201,33 @@ internal class BrowserRtcVideoTrack(
         receivedBytes.addAndGet(record.payloadLength.toLong())
         if (!active || closed || failure != null) return false
         if (record.epoch != configuredEpoch) { disable("source-changed"); return false }
+        sourceFrameObserved = true
         if (record.flags and WebVideoRecords.FLAG_DECODE_ONLY != 0) { disable("decode-only-video"); return false }
         if (record.codec == WebVideoRecords.CODEC_H264 && BrowserRtcVideoPolicy.hasH264BSlice(record.payload)) {
             disable("reordered-video"); return false
         }
         val last = lastTimestampUs
-        if (last != null && record.timestampUs <= last) { disable("reordered-video-timestamp"); return false }
+        if (last != null && record.timestampUs < last) { disable("reordered-video-timestamp"); return false }
+        if (last != null && record.timestampUs == last) {
+            // Repeated source PTS is a lost original AU, never a new native capture time.
+            // Reject it and its dependent chain until a later source IDR arrives.
+            duplicateTimestampFrames.incrementAndGet()
+            lost()
+            return true
+        }
         lastTimestampUs = record.timestampUs
-        if (waitingForKey && !record.keyFrame) { awaitingKeyFrames.incrementAndGet(); requestKeyFrame(); return true }
+        if (waitingForKey && !record.keyFrame) {
+            if (keyFrameWaitStartedNanos == null) keyFrameWaitStartedNanos = nowNanos()
+            awaitingKeyFrames.incrementAndGet(); requestKeyFrame(); return true
+        }
         if (pending.get() >= MAX_PENDING || record.payloadLength > WebVideoRecords.MAX_PAYLOAD ||
             pendingBytes.get() + record.payloadLength > MAX_PENDING_BYTES) {
             queueRejectedFrames.incrementAndGet(); lost(); return true
         }
-        if (record.keyFrame) waitingForKey = false
+        if (record.keyFrame) {
+            waitingForKey = false
+            keyFrameWaitStartedNanos = null
+        }
         val fields = configuration ?: return false
         val width = (fields["width"] as Number).toInt()
         val height = (fields["height"] as Number).toInt()
@@ -266,6 +286,11 @@ internal class BrowserRtcVideoTrack(
             disable("video-encoder-selection-timeout")
         if (active && !everEncoded.get() && firstSubmittedNanos?.let { nowNanos() - it >= START_TIMEOUT_NANOS } == true)
             disable("video-encoder-start-timeout")
+        // Mirror senders may emit their only IDR while the replacement track is not
+        // ready. Receiving deltas must not leave an apparently healthy idle encoder
+        // waiting forever; configuration alone or a displayed static picture is idle.
+        if (active && waitingForKey && keyFrameWaitStartedNanos?.let { nowNanos() - it >= START_TIMEOUT_NANOS } == true)
+            disable("video-keyframe-timeout")
         // An initial burst can exhaust the source's key-request rate limit. A
         // static screen needs an idle retry after that limit opens again.
         if (active && !closed && waitingForKey) requestKeyFrame()
@@ -276,9 +301,10 @@ internal class BrowserRtcVideoTrack(
         if (markLost()) requestKeyFrame()
     }
 
-    private fun markLost(): Boolean {
+    @Synchronized private fun markLost(): Boolean {
         if (!active || closed) return false
         lossEvents.incrementAndGet()
+        if (sourceFrameObserved && keyFrameWaitStartedNanos == null) keyFrameWaitStartedNanos = nowNanos()
         waitingForKey = true; lossGeneration.incrementAndGet()
         return true
     }

@@ -24,44 +24,18 @@ URL. Debug APK metadata retains its diagnostic suffix.
 
 ### Browser v86 release
 
-v86 adds held SoundTouch catch-up: above 200 ms it ramps toward 20%, locks the
-previously applied tempo when decline is confirmed, and returns to adaptive
-control when contiguous PCM reserve is insufficient, progress stalls, timing is
-unavailable or braking is needed near the target. DSP-owned input contributes to
-the same contiguous source frontier as queued PCM without double counting.
-
-The source passes **919 browser tests**, including real 250 ms SoundTouch
-catch-up, hold/exit behavior and preservation of the live filter, plus cache,
-public-tree and deployment assembly checks. Android CI is explicitly skipped at
-the user's request for this web-only release. The signed beta.17/code59 APK and
-its source/checksums retain their published bytes; v86 is a separate webpage build.
+Historical v86 added held SoundTouch catch-up and passed 919 browser tests plus
+cache/public-tree/deployment checks. Android CI was skipped at the user's request
+for this web-only release; the beta.17/code59 APK retained its published bytes.
 The [Pages workflow](https://github.com/uJZk/TiPlay/actions/runs/40159166211)
-succeeded for `d9af73b082afc8db094c11ecdae9475d53501828`; public byte verification
-is recorded in [the current deployment](#current-browser-deployment).
+succeeded for `d9af73b082afc8db094c11ecdae9475d53501828`.
 
 ### Beta.17 verification
 
-The implementation uses a three-second error-history PD controller without integral
-accumulation. A 200 ms phase-error soft limit blends toward the 20% tempo ceiling
-over the next 100 ms of error; temporal slew and contiguous PCM reserve remain
-mandatory. SoundTouch controls tempo independently of libsoxr clock conversion.
-Every controlled audio cut retains a non-renewable 5 ms published-sample fade,
-which may overlap fresh fade-in. Screen-loan commands use LIVI-compatible
-`VideoPlayback` borrow IDs and constraint 500 while retaining owner confirmation.
-
-Local verification: 914 browser tests, 13 capture/trace Python tests, two deployment
-tests, nine release-draft tests, public-tree/cache checks, reproducible SoundTouch
-WASM binaries, real Chromium capture replay and frozen-currentTime playback.
-A desktop audio-only 30-second mixed replay recorded approximately 3.41% of one
-core for AudioWorklet and 2.16–2.18% for renderer main tasks. This excludes vehicle
-CPU, original video/rendering and acoustic output; it does not prove crackles are
-fixed. Logs remain outside the public repository. Vehicle screen return, tempo
-quality and actual speaker timing still require acceptance.
-
-Local Android compilation was unavailable. Full Android checks and the signed
-release ran in isolated GitHub runners; CI, signing and independent APK checks
-all succeeded before publication. The deployment test now compares cache and
-diagnostic versions instead of pinning a stale v84 constant.
+The [frozen verification record](https://github.com/uJZk/TiPlay/blob/81adbf35d564649113cf3d9ae61f139c358e73fc/docs/Build.md#beta17-verification)
+retains beta.17's 914 browser tests, capture replay, historical DSP measurements,
+runner Android/signing checks and evidence limits. Its retired PD/SoundTouch
+implementation does not describe the current audio path in [Audio tempo](Audio-tempo.md).
 
 ### Check the source build
 
@@ -497,6 +471,28 @@ deployment the public update page, worker, app and diagnostics matched the sourc
 checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
+
+<a id="beta45-release"></a>
+### Beta.45 preparation
+
+Version **0.2.20-beta.45/code87** includes event-channel `forceKeyFrame` mirror
+recovery, original-AU readiness gating, duplicate-PTS recovery, native-audio
+readiness/retry fixes and selected-car Bluetooth/wireless recovery. Browser/cache
+source is **v117**. Signed publication and public browser deployment remain pending.
+
+The user explicitly waived the complete CI run for this beta. A fresh full local
+run was stopped; it must not be reported as a completed final-source check. Before
+the later mirror-command change, the independent recovery validation passed the
+required Android command with 4,579 unit cases and 700 browser tests. Focused
+final-source validation passed 137 shared unit tests in 16 classes, including all
+ten mirror-command regressions, plus 700 browser tests. Python checks passed nine
+release-draft, sixteen native-symbol and two site cases; public-tree/cache/diff
+checks passed. The signed release workflow and public artifact checks are still
+pending, separate from that CI waiver. See [Testing](Testing.md#current-release-source).
+
+Actual iPhone mirror-command compatibility and vehicle picture/audio/ICE/HFP
+behavior remain unverified. A command write or successful RTSP acknowledgement
+does not establish a new source IDR or restored Canvas output.
 
 <a id="published-beta44"></a>
 ### Published beta.44
@@ -1027,39 +1023,18 @@ The later documentation-only commit does not change the build/source provenance.
 Published [TiPlay 0.2.20-beta.24](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24),
 code **66**, browser **v97**, at **2026-10-27 00:48:47 UTC+08:00**.
 Build commit: `637e2ecdb2c96d38d92504fd8a395c65b9cb05d3`.
-This repairs the native sender's actual encoder selection. The user's v96 capture shows an authenticated High4.2
-offer and active CarPlay source, followed by `encoder-codec-mismatch` during the
-real JNI encoder callback. Unlike the earlier SDP3.1 rejection, source admission
-now succeeds. The old bridge conflated answer format with allocated encoder
-format, while the SDK's actual sender selection can follow remote codec order.
-The capture did not include the actual factory format, so it does not prove
-which other profile was selected.
-
-The bridge now uses the public encoder selector to request the source-compatible
-negotiated format. Initial source frames still reach the source so its resolution
-callback can trigger selection; switching is asynchronous. Mismatched frames
-produce no output while resolution/bitrate callbacks request the correct sender,
-then a fresh IDR resumes the chain. A six-second deadline bounds failed selection.
-The source remains subject to offer/answer profile, level and packetization-mode
-checks. No SDP, SPS, compressed payload or frame-rate policy is rewritten by this
-native repair.
-
-Selector and encoder ownership, callback/release serialization and a final
-access-unit chain check protect replacement and reinitialization. Safe codec
-diagnostics distinguish source, answer, factory request, announced format and
-initialized encoder. Fourteen new JVM regressions pass without loading Android
-JNI. Local validation passes **598 browser tests**, **4,335 Android tests**
-(2,466 shared, 1,863 common, six home; no failures/errors/skips), all three debug
-lint/build targets and site/draft/cache/public-tree checks. Physical iPhone/Tesla
-playback remains pending.
+It repairs native sender encoder selection while preserving original compressed
+frames and strict admission. Local checks passed 598 browser and 4,335 Android
+tests, lint/debug builds and site/draft/cache/public-tree checks.
 
 [Full Android CI 40358971686](https://github.com/uJZk/TiPlay/actions/runs/40358971686)
-passes unit tests, lint, debug builds, native DSP checks and WASM reproduction.
+passed unit tests, lint/debug builds, native DSP checks and WASM reproduction.
 [Signed workflow 40358976659](https://github.com/uJZk/TiPlay/actions/runs/40358976659)
-passes Release lint/build, signing, runtime checks and draft upload. The draft
-assets were independently downloaded and verified before publication; all three
-published assets were downloaded again and match exactly. The release tag resolves
-to the build commit above.
+passed Release lint/build, signing, runtime checks and draft upload. Independent
+artifact checks confirmed matching public bytes, source identity, signer/runtime
+continuity and 16 KiB alignment. The
+[frozen record](https://github.com/uJZk/TiPlay/blob/81adbf35d564649113cf3d9ae61f139c358e73fc/docs/Build.md#beta24-release)
+retains detailed validation and device limits.
 
 | Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -1067,17 +1042,5 @@ to the build commit above.
 | `TiPlay-0.2.20-beta.24-source.zip` | 40,825,229 | `943ff5b47c3b744f306c704ae920ef8869c3d8d6c2ee47a7b43b114dd9be6173` |
 | `SHA256SUMS.txt` | 191 | `fec39126c47003da5694bebaa7305388600daa16c12e65ad131ee9e1d21035dd` |
 
-Independent checks confirm non-debug `com.ujzk.tiplay`, code66, signer continuity
-(`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
-exact committed source, the new selection/diagnostic DEX markers and the two
-unchanged runtime identity containers. All four supported ABIs and 51 native
-libraries match the expected set, including three unchanged legacy JNA stubs.
-All 25 ELF64 libraries and the APK ZIP pass 16 KiB alignment; the four
-libdatachannel payloads match beta.23.
-
 [Pages 40362871807](https://github.com/uJZk/TiPlay/actions/runs/40362871807) succeeds
-from the same build commit. All 217 public files (31,811,644 bytes) match the local
-assembly with correct MIME types and no redirects. Reports and downloaded
-artifacts remain outside Git under `/tmp/tiplay-beta24/` and
-`/tmp/tiplay-beta24-public-verification.json`. Later documentation-only changes
-do not change the APK/source or webpage build provenance.
+from the same build commit; all 217 public files matched the local assembly.

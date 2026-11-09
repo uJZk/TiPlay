@@ -116,10 +116,11 @@ starting media. Legacy SETUP accepts it, with one NTP clock and the existing
 authorization and pairing checks. Real iPhone picture and audio remain unverified.
 For an initial legacy SETUP explicitly marked as a screen-mirroring session,
 the receiver supplies a separate peer-restricted event socket before the screen
-stream SETUP. It drains events without taking screen ownership or granting media
-consent and closes with the control connection. This follows the connectable event
+stream SETUP. It carries mirror recovery commands and sender feedback without taking
+screen ownership or granting media consent, and closes with the control connection.
+This follows the connectable event
 port used by [PhairPlay](https://github.com/mazer666/PhairPlay/blob/bdc51c8e25a0fe4658ed61669c89e907765cdcaf/app/src/main/kotlin/com/phairplay/airplay/AirPlayMirrorSession.kt).
-Whether this resolves the observed iPhone stall still requires a device test.
+Sender compatibility and actual mirror recovery still require a device test.
 Independent SRP-client and loopback socket tests cover encrypted control, events,
 audio delivery and unsupported transport rejection. These checks do not establish
 iOS picker selection, interoperability with every sender or physical output timing.
@@ -333,9 +334,20 @@ input and does not flush/reset codec overlap state. Only silence blocked by miss
 earlier output starts the 2-second failure timer; new silence does not extend it.
 
 An externally revoked display can still replace the browser decoder epoch. Ordinary
-mirroring has no confirmed sender keyframe-request implementation, so the local
-recovery callback cannot guarantee a new independently decodable frame. Continuing
-prediction frames alone cannot restore a decoder whose initial keyframe was lost.
+mirror recovery sends `POST /command RTSP/1.0` with binary plist
+`{type: "forceKeyFrame"}` on that session's event connection, following the
+[UxPlay fork's command](https://github.com/regulad/UxPlay/blob/aef802e2cab833c7f12ae13f2bc5eddebac4901d/lib/raop_events.c#L132-L157).
+It waits for a source picture with a valid VCL NAL header and the event connection
+before sending; SEI-only access units do not activate requests. The
+[upstream caller](https://github.com/regulad/RosellaView/blob/9b0b6e14810b5ef3fb60063db4af47c59501c9ab/native/src/receiver.c#L1016-L1023)
+also waits for stream frames before requesting. Requests coalesce within a 500 ms
+limit and permit one outstanding reply.
+Legacy events are plaintext; authenticated events retain their existing cipher and
+nonce sequence. Mirror retirement cancels its pending request. A rejected command or
+two-second acknowledgement timeout disables further requests on that event connection;
+sender feedback still receives replies. Writing a command or receiving a successful
+reply does not establish a new IDR or browser picture. Sender compatibility remains
+unverified, and continuing prediction frames alone cannot restore a lost reference chain.
 Read native RTP/Canvas evidence separately from URL buffering. The
 [live diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish current
 receiver behavior from the retired application video policy.

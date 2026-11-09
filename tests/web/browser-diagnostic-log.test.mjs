@@ -107,6 +107,8 @@ test('video format and numeric failures give useful bounded detail without raw i
   log.observe({ videoError: 'rtc-video-first-frame-timeout' });
   log.observe({ videoError: 'rtc-video-first-presentation-timeout' });
   log.observe({ videoError: 'video-source-configuration-invalid' });
+  log.observe({ videoError: 'video-keyframe-timeout' });
+  log.observe({ videoError: 'video-source-ready-timeout' });
   log.observeSummary({ 'video.decodeErrors': 2, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
   log.observeSummary({ 'video.decodeErrors': 4, 'video.droppedFrames': 5, 'transport.iceState': 'connected', 'transport.selectedProtocol': 'udp' });
   assert.ok(log.lines().includes('连接中断，正在重试（连接超时）'));
@@ -114,6 +116,8 @@ test('video format and numeric failures give useful bounded detail without raw i
   assert.ok(log.lines().includes('视频错误：rtc-video-first-frame-timeout（等待首帧超时）'));
   assert.ok(log.lines().includes('视频错误：rtc-video-first-presentation-timeout（等待画面首次显示超时）'));
   assert.ok(log.lines().includes('视频错误：video-source-configuration-invalid（源视频配置无效）'));
+  assert.ok(log.lines().includes('视频错误：video-keyframe-timeout（等待源视频关键帧超时）'));
+  assert.ok(log.lines().includes('视频错误：video-source-ready-timeout（等待镜像视频就绪超时）'));
   assert.ok(log.lines().includes('视频解码错误增加：累计 4（+2）'));
   assert.ok(log.lines().includes('网络传输：UDP'));
   assert.equal(log.lines().filter(line => line === '网络传输：UDP').length, 1);

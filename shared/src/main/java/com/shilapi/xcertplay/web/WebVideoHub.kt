@@ -18,16 +18,17 @@ import kotlin.concurrent.withLock
  * other owner are ignored, so an old session's sink cannot touch a newer stream. At most one subscriber (a
  * `/video` response); the latest wins and the previous one ends with `replaced`.
  *
- * The producer calls run on the screen thread and never block, copy or modify a frame. The key-frame request
- * is a blocking network write, so it runs on [keyFrameExecutor].
+ * Producers keep original frame bytes. CarPlay delivery never waits here; the separate AirPlay mirror reader
+ * may hold its current AU at a bounded video-ready barrier. Key-frame network writes run on [keyFrameExecutor].
  *
  * Epochs: the first config of every stream, and every config that differs from the previous one, starts a new
  * epoch. The iPhone repeats a byte-identical config whenever it honours a key-frame request; that keeps the epoch.
  */
-class WebVideoHub(
+class WebVideoHub @JvmOverloads constructor(
     private val keyFrameExecutor: Executor = defaultKeyFrameExecutor,
     private val nanoTime: () -> Long = System::nanoTime,
     private val log: (String) -> Unit = {},
+    private val videoReadyTimeoutMillis: Long = 6_000L,
 ) {
     /** The current stream: the negotiated canvas and, once configured, the codec string and epoch. */
     data class StreamInfo(val width: Int, val height: Int, val fps: Int, val codec: String?, val epoch: Int?,
@@ -51,6 +52,8 @@ class WebVideoHub(
     )
 
     internal val lock = ReentrantLock()
+    private val configured = lock.newCondition()
+    private var subscriptionGeneration = 0L
     private val performance = VideoPerformance(nanoTime)
     private var owner: Any? = null
     private val displayOwner = BrowserDisplayOwner()
@@ -96,6 +99,7 @@ class WebVideoHub(
                 // A new producer is an explicit stream boundary, never a silent compressed gap.
                 if (it.reliable && replacingStream) it.offerIdle() else it.queue.requireKeyFrame(nanoTime())
             }
+            configured.signalAll()
         }
         log("Web video: stream started source=$source size=${width}x$height fps=$fps")
     }
@@ -122,6 +126,7 @@ class WebVideoHub(
             )
             val next = Config(epoch, codec, codecString, parameterSets, WebVideoRecords.config(epoch, codec, payload))
             config = next
+            configured.signalAll()
             configurationFailure = null
             sequence = 0
             origin = false
@@ -140,7 +145,6 @@ class WebVideoHub(
         val force = lock.withLock {
             if (owner !== this.owner) return
             val config = config ?: return
-            val now = nanoTime()
             val sequence = sequence++
             if (!origin) {
                 origin = true
@@ -152,22 +156,39 @@ class WebVideoHub(
             else (arrivalNanos - originArrivalNanos) / 1000
             performance.count("input")
             val subscription = subscription ?: return
+            if (stream?.mode == BrowserPlaybackMode.AIRPLAY_MIRROR && subscription.awaitVideoReady) {
+                // The mirror reader owns exactly this current original AU. Do not
+                // drain its initial IDR during asynchronous SDP replacement, or add
+                // a separate prediction-chain cache. Condition waits release the hub
+                // lock; this path is never used by CarPlay's shared delivery lock.
+                var remaining = TimeUnit.MILLISECONDS.toNanos(videoReadyTimeoutMillis.coerceAtLeast(0))
+                while (!subscription.isVideoReady(config.epoch)) {
+                    if (this.owner !== owner || this.config !== config || this.subscription !== subscription) return
+                    if (remaining <= 0L) {
+                        subscription.endLocked("video-source-ready-timeout")
+                        throw VideoReadyTimeoutException()
+                    }
+                    remaining = configured.awaitNanos(remaining)
+                }
+                if (this.owner !== owner || this.config !== config || this.subscription !== subscription) return
+            }
+            val queuedAt = nanoTime()
             val outputFlags = if (decodeOnly) WebVideoRecords.FLAG_DECODE_ONLY else 0
             val record = if (WebVideoCodecs.isKeyFrame(config.codec, annexB)) {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, WebVideoRecords.FLAG_KEY_FRAME or WebVideoRecords.FLAG_PARAMETER_SETS or outputFlags,
                     WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs, annexB, config.parameterSets,
-                    now, captureNanos, RawTraffic.videoReference(annexB),
+                    queuedAt, captureNanos, RawTraffic.videoReference(annexB),
                 )
             } else {
                 WebVideoRecord(
                     WebVideoRecords.KIND_FRAME, outputFlags, WebVideoRecords.codecId(config.codec), sequence, config.epoch, timestampUs,
-                    annexB, null, now, captureNanos, RawTraffic.videoReference(annexB),
+                    annexB, null, queuedAt, captureNanos, RawTraffic.videoReference(annexB),
                 )
             }
-            if (subscription.queue.offer(record, now)) subscription.signal()
+            if (subscription.queue.offer(record, queuedAt)) subscription.signal()
             subscription.queue.failureReason?.let(subscription::endLocked)
-            keyFrameDue(subscription, now)
+            keyFrameDue(subscription, queuedAt)
         } ?: return
         requestKeyFrame(force)
     }
@@ -184,6 +205,7 @@ class WebVideoHub(
             lastCodec = null
             lastRecord = null
             subscription?.offerIdle()
+            configured.signalAll()
         }
         log("Web video: stream ended")
     }
@@ -279,23 +301,67 @@ class WebVideoHub(
     }
 
     /** Starts a subscription: it gets the current config first, then frames from the next key frame, which is requested now. */
-    internal fun subscribe(reliable: Boolean = false): WebVideoSubscription {
-        val subscription = lock.withLock {
-            val now = nanoTime()
-            subscription?.endLocked("replaced")
-            WebVideoSubscription(this, lock.newCondition(), now, reliable).also { next ->
-                subscription = next
-                val failure = configurationFailure
-                if (reliable && failure != null) next.endLocked(failure)
-                else config?.let { next.offerConfig(it.message, now) }
-            }
-        }
+    internal fun subscribe(reliable: Boolean = false, awaitVideoReady: Boolean = false): WebVideoSubscription {
+        val subscription = lock.withLock { newSubscriptionLocked(reliable, awaitVideoReady) }
         requestKeyFrame(force = true)
         return subscription
     }
 
+    internal fun resumeAfterFailure(previous: WebVideoSubscription): WebVideoSubscription? {
+        val next = lock.withLock {
+            if (previous.ownerGeneration != subscriptionGeneration) return null
+            newSubscriptionLocked(reliable = true, awaitVideoReady = previous.awaitVideoReady)
+        }
+        requestKeyFrame(force = true)
+        return next
+    }
+
+    private fun newSubscriptionLocked(reliable: Boolean, awaitVideoReady: Boolean): WebVideoSubscription {
+        val now = nanoTime()
+        subscription?.endLocked("replaced")
+        return WebVideoSubscription(this, lock.newCondition(), now, reliable, ++subscriptionGeneration, awaitVideoReady).also { next ->
+            subscription = next
+            val failure = configurationFailure
+            if (reliable && failure != null) next.endLocked(failure)
+            else config?.let { next.offerConfig(it.message, now) }
+            configured.signalAll()
+        }
+    }
+
+    /** Wait off the sender/native locks after a terminal subscription record. */
+    internal fun awaitNextConfiguration(previous: WebVideoSubscription, failedEpoch: Int?, timeoutMillis: Long): SourceWait {
+        lock.withLock {
+            var remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMillis.coerceAtLeast(0))
+            while (true) {
+                if (previous.ownerGeneration != subscriptionGeneration) return SourceWait.REPLACED
+                if (config?.epoch?.let { it != failedEpoch } == true) return SourceWait.CONFIGURED
+                if (remaining <= 0L) return SourceWait.WAITING
+                remaining = configured.awaitNanos(remaining)
+            }
+        }
+    }
+
+    internal enum class SourceWait { CONFIGURED, REPLACED, WAITING }
+
+    internal class VideoReadyTimeoutException : IllegalStateException("video-source-ready-timeout")
+
+    internal fun videoReady(subscription: WebVideoSubscription, epoch: Int): Boolean = lock.withLock {
+        if (this.subscription !== subscription || config?.epoch != epoch) return false
+        subscription.markVideoReady(epoch)
+        configured.signalAll()
+        true
+    }
+
+    internal fun videoPaused(subscription: WebVideoSubscription, epoch: Int): Boolean = lock.withLock {
+        if (this.subscription !== subscription || config?.epoch != epoch) return false
+        subscription.markVideoReady(null)
+        configured.signalAll()
+        true
+    }
+
     internal fun unsubscribe(subscription: WebVideoSubscription) = lock.withLock {
         if (this.subscription === subscription) this.subscription = null
+        configured.signalAll()
     }
 
     /** Re-asks for a key frame while [subscription] waits for one; the writer calls it at least once per second. */
@@ -342,7 +408,14 @@ internal class WebVideoSubscription(
     private val available: Condition,
     now: Long,
     val reliable: Boolean = false,
+    val ownerGeneration: Long = 0L,
+    val awaitVideoReady: Boolean = false,
 ) : Closeable {
+    private var readyEpoch: Int? = null // guarded by the hub lock
+    internal fun isVideoReady(epoch: Int): Boolean = !awaitVideoReady || readyEpoch == epoch
+    internal fun markVideoReady(epoch: Int?) { readyEpoch = epoch }
+    fun videoReady(epoch: Int): Boolean = hub.videoReady(this, epoch)
+    fun videoPaused(epoch: Int): Boolean = hub.videoPaused(this, epoch)
     val queue = (if (reliable) WebFrameQueue(maxAgeNanos = 200_000_000L,
         maxBytes = WebVideoRecords.MAX_PAYLOAD, maxFrames = 120, reliable = true)
         else WebFrameQueue()).apply { requireKeyFrame(now) }
@@ -388,6 +461,7 @@ internal class WebVideoSubscription(
 
     internal fun offerConfig(record: WebVideoRecord, now: Long) {
         if (end != null) return
+        readyEpoch = null
         idle = false
         if (!queue.offerConfig(record, now)) endLocked(queue.failureReason ?: "slow-consumer") else signal()
     }

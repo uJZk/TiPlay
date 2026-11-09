@@ -13,7 +13,7 @@ public final class RoutedAudioPeerProbe {
     private static final Object outputLock = new Object();
     private static final BrowserRtcAudioRouter router = new BrowserRtcAudioRouter(
         reason -> { nativeFailure(reason); return Unit.INSTANCE; },
-        (slots, failed) -> new NativeRtcAudioPeer(slots, failed, System::nanoTime),
+        (slots, failed) -> new NativeRtcAudioPeer(slots, failed, ignored -> Unit.INSTANCE, System::nanoTime),
         (record, submit) -> { submit.invoke(); return Unit.INSTANCE; },
         System::nanoTime);
 
@@ -27,7 +27,7 @@ public final class RoutedAudioPeerProbe {
     private static void nativeFailure(String reason) {
         failures.add(reason);
         int generation = Math.max(1, ((Number)router.snapshot().get("generation")).intValue());
-        String event = reason.equals("audio-slots-exhausted") ? "audio-restart-required" : "audio-error";
+        String event = Set.of("audio-slots-exhausted", "audio-new-demand").contains(reason) ? "audio-restart-required" : "audio-error";
         synchronized(outputLock) {
             System.out.println(WebJson.INSTANCE.write(Map.of("event", event, "k", event, "reason", reason, "generation", generation)));
             System.out.flush();

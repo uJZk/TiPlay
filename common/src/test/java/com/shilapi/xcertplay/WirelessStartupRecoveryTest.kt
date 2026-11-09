@@ -94,6 +94,17 @@ class WirelessStartupRecoveryTest {
         assertEquals(2, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
     }
 
+    @Test fun aLostWorkingBrowserSessionRetriesAfterOneSecondWithoutAnotherAclEvent() {
+        ReflectionHelpers.getField<BrowserCarPlayRetry>(activity, "browserCarPlayRetry").sessionConnected()
+        report(status = CarPlayStatus.Failed("iAP2 link ended"))
+        report(status = CarPlayStatus.Failed("AirPlay session ended"))
+        assertEquals(1, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(999))
+        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+    }
+
     // No further attempt can make a head unit's Bluetooth reach the phone.
     @Test fun bluetoothThatReachesNoPhoneDoesNotAutomaticallyRetry() {
         useHeadUnitMode()

@@ -10,9 +10,9 @@ export function createBrowserDiagnosticLog({ language = 'en', limit = 100 } = {}
   const videoReasons = new Set(['rtc-video-failed', 'rtc-video-first-frame-timeout', 'rtc-video-first-presentation-timeout', 'rtc-video-codecs-unavailable',
     'rtc-video-track-ended', 'rtc-video-frame-transfer-failed', 'rtc-video-worker-failed', 'rtc-video-processor-unavailable',
     'rtc-video-track-transfer-failed', 'rtc-video-renegotiation-failed', 'rtc-video-unavailable',
-    'video-source-configuration-invalid',
+    'video-source-configuration-invalid', 'video-source-ready-timeout',
     'codec-profile-not-negotiated', 'video-codec-not-negotiated', 'encoder-codec-mismatch', 'reordered-video-timestamp',
-    'video-encoder-input-timeout', 'video-encoder-selection-timeout', 'video-encoder-start-timeout', 'video-ready-timeout',
+    'video-encoder-input-timeout', 'video-encoder-selection-timeout', 'video-encoder-start-timeout', 'video-keyframe-timeout', 'video-ready-timeout',
     'encoded-video-rejected', 'native-buffer-not-preserved', 'pixel-adaptation-requested', 'pixel-conversion-requested']);
   const failureReasons = new Set(['fetch', 'missing-interface', 'android-signaling', 'pairing', 'bad-response', 'ice', 'unsupported', 'timeout', 'connection', 'throttled', 'bad-code', 'replaced']);
   const reason = (value, allowed) => typeof value === 'string' && allowed.has(value) ? value : null;
@@ -33,6 +33,8 @@ export function createBrowserDiagnosticLog({ language = 'en', limit = 100 } = {}
     'video-codec-not-negotiated': say('video codec was not negotiated', '视频编码未协商成功'),
     'rtc-video-renegotiation-failed': say('video renegotiation failed', '视频重新协商失败'),
     'video-ready-timeout': say('video readiness timed out', '等待视频就绪超时'),
+    'video-keyframe-timeout': say('source key frame timed out', '等待源视频关键帧超时'),
+    'video-source-ready-timeout': say('mirror video readiness timed out', '等待镜像视频就绪超时'),
     'rtc-video-track-ended': say('video track ended', '视频轨道已结束'),
     'rtc-video-processor-unavailable': say('video frame reader unavailable', '视频画面读取接口不可用'),
   };

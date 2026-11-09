@@ -194,10 +194,145 @@ class BrowserRtcAudioRouterTest {
         val failed = CountDownLatch(1); val router = BrowserRtcAudioRouter({ failed.countDown() }, { slots, _ -> Backend(slots) })
         try {
             router.route(config())
-            repeat(129) { router.route(packet(payload = ByteArray(1000))) }
+            repeat(65) { router.route(packet(payload = ByteArray(4096))) }
             assertTrue(failed.await(1, TimeUnit.SECONDS))
-            val snapshot = router.snapshot(); assertTrue((snapshot["queuedPackets"] as Int) <= 128)
+            val snapshot = router.snapshot(); assertTrue((snapshot["queuedPackets"] as Int) <= 64)
+            assertTrue((snapshot["queuedBytes"] as Int) <= 256 * 1024)
             val fallback = config(type = 2, codec = "aac-eld"); assertSame(fallback, router.route(fallback))
+        } finally { router.close() }
+    }
+
+    @Test fun freshSourceBeginningSurvivesIceWithoutExceedingItsByteOrPacketCaps() {
+        val now = AtomicLong(1L); val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+        val peers = mutableListOf<Backend>()
+        val router = BrowserRtcAudioRouter(failures::add, { slots, _ -> Backend(slots).also(peers::add) }, nanoTime = now::get)
+        try {
+            router.answer(offer, 1)
+            val metadata = requireNotNull(router.route(config()))
+            repeat(400) { router.route(packet(payload = ByteArray(80) { it.toByte() })) }
+            now.set(TimeUnit.SECONDS.toNanos(4))
+            assertNull(failures.poll(700, TimeUnit.MILLISECONDS))
+            assertEquals(400, router.snapshot()["queuedPackets"])
+            assertTrue(router.readyTrack(readyFields(metadata)))
+            assertEquals(400, peers.single().sent.size)
+            assertTrue(peers.single().sent.all { it.second.contentEquals(ByteArray(80) { it.toByte() }) })
+        } finally { router.close() }
+    }
+
+    @Test fun staleSourceCannotBecomeFreshByRebindingToAReplacementPeer() {
+        val now = AtomicLong(1L); val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+        val peers = mutableListOf<Backend>()
+        val router = BrowserRtcAudioRouter(failures::add, { slots, _ -> Backend(slots).also(peers::add) }, nanoTime = now::get)
+        try {
+            router.answer(offer, 1); router.route(config()); router.route(packet())
+            now.set(TimeUnit.SECONDS.toNanos(4)); router.answer(offer, 2)
+            val metadata = router.drainMetadata().single()
+            now.set(TimeUnit.SECONDS.toNanos(6))
+            assertFalse(router.readyTrack(readyFields(metadata)))
+            assertEquals("audio-native-packet-timeout", failures.poll(1, TimeUnit.SECONDS))
+            assertTrue(peers.all { it.sent.isEmpty() })
+        } finally { router.close() }
+    }
+
+    @Test fun waitingForIceWithoutAnySourcePacketsUsesTheSeparateMetadataBudget() {
+        val now = AtomicLong(1L); val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+        val router = BrowserRtcAudioRouter(failures::add, { slots, _ -> Backend(slots) }, nanoTime = now::get)
+        try {
+            router.answer(offer, 1); router.route(config())
+            now.set(TimeUnit.SECONDS.toNanos(10))
+            assertNull(failures.poll(700, TimeUnit.MILLISECONDS))
+            now.set(TimeUnit.SECONDS.toNanos(26))
+            assertEquals("audio-native-negotiation-timeout", failures.poll(1, TimeUnit.SECONDS))
+        } finally { router.close() }
+    }
+
+    @Test fun expiredActiveAndEndedUtterancesCannotPoisonFreshDemandOrResumeTheirOldSuffix() {
+        for (ended in listOf(false, true)) {
+            val now = AtomicLong(1L); val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+            val peers = mutableListOf<Backend>()
+            val router = BrowserRtcAudioRouter(failures::add, { slots, _ -> Backend(slots).also(peers::add) }, nanoTime = now::get)
+            try {
+                router.answer(offer, 1)
+                val oldMetadata = requireNotNull(router.route(config(epoch = 1)))
+                router.route(packet(epoch = 1, payload = byteArrayOf(7)))
+                if (ended) router.route(config(epoch = 2, ended = true))
+                now.set(TimeUnit.SECONDS.toNanos(6))
+                if (ended) assertEquals("audio-native-packet-timeout", failures.poll(1, TimeUnit.SECONDS))
+                else {
+                    assertFalse(router.readyTrack(readyFields(oldMetadata)))
+                    assertEquals("audio-native-packet-timeout", failures.poll(1, TimeUnit.SECONDS))
+                }
+                assertEquals(0, router.snapshot()["queuedPackets"])
+                assertNull(router.route(config(epoch = 1)))
+                assertNull(router.route(packet(epoch = 1)))
+                router.route(config(epoch = 3)); router.route(packet(epoch = 3, payload = byteArrayOf(9)))
+                assertEquals("audio-new-demand", failures.poll(1, TimeUnit.SECONDS))
+                router.answer(offer, 2)
+                val metadata = router.drainMetadata().single()
+                assertEquals(3L, fields(metadata)["rtcOwnerEpoch"])
+                assertTrue(router.readyTrack(readyFields(metadata)))
+                assertEquals(1, peers[1].sent.size)
+                assertArrayEquals(byteArrayOf(9), peers[1].sent.single().second)
+                assertNull(router.route(packet(epoch = 1)))
+                assertEquals(1, peers[1].sent.size)
+                assertNull(failures.poll(300, TimeUnit.MILLISECONDS))
+            } finally { router.close() }
+        }
+    }
+
+    @Test fun readinessExpiryRetiresAllStaleStreamsBeforeTheyCanConsumeReplacementRetries() {
+        val now = AtomicLong(1L); val failures = java.util.concurrent.LinkedBlockingQueue<String>()
+        val peers = mutableListOf<Backend>()
+        val router = BrowserRtcAudioRouter(failures::add, { slots, _ -> Backend(slots).also(peers::add) }, nanoTime = now::get)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        // Hold the watchdog so readyTrack wins the expiry race deterministically.
+        val watchdog = router.javaClass.getDeclaredField("watchdog").apply { isAccessible = true }
+            .get(router) as java.util.concurrent.ExecutorService
+        watchdog.execute { entered.countDown(); release.await() }
+        try {
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            router.answer(offer, 1)
+            val metadata = (0..2).map { type ->
+                requireNotNull(router.route(config(type = type))).also {
+                    router.route(packet(type = type, payload = byteArrayOf(7)))
+                }
+            }
+            now.set(TimeUnit.SECONDS.toNanos(4))
+            router.route(config(type = 3)); router.route(packet(type = 3, payload = byteArrayOf(9)))
+            now.set(TimeUnit.SECONDS.toNanos(6))
+            assertFalse(router.readyTrack(readyFields(metadata.first())))
+            assertEquals("only the fresh stream may survive expiry", 1, router.snapshot()["queuedPackets"])
+            release.countDown()
+            assertEquals("audio-native-packet-timeout", failures.poll(1, TimeUnit.SECONDS))
+            router.answer(offer, 2)
+            val fresh = router.drainMetadata().single()
+            assertEquals(3, fresh[5].toInt() and 255)
+            assertTrue(router.readyTrack(readyFields(fresh)))
+            assertArrayEquals(byteArrayOf(9), peers[1].sent.single().second)
+            assertNull(failures.poll(300, TimeUnit.MILLISECONDS))
+        } finally { release.countDown(); router.close() }
+    }
+
+    @Test fun aNewUtteranceRearmsRecoveryOnceAndRetainsItsOriginalBeginning() {
+        val failures = java.util.concurrent.LinkedBlockingQueue<String>(); val peers = mutableListOf<Backend>()
+        lateinit var failPeer: (String) -> Unit
+        val router = BrowserRtcAudioRouter(failures::add, { slots, fail -> failPeer = fail; Backend(slots).also(peers::add) })
+        try {
+            router.answer(offer, 1); router.route(config(epoch = 1))
+            failPeer("audio-native-open-timeout")
+            assertEquals("audio-native-open-timeout", failures.poll(1, TimeUnit.SECONDS))
+            router.route(config(epoch = 1)); router.route(packet(epoch = 1))
+            assertNull(failures.poll(100, TimeUnit.MILLISECONDS))
+            router.route(config(epoch = 2)); router.route(packet(epoch = 2))
+            assertEquals("audio-new-demand", failures.poll(1, TimeUnit.SECONDS))
+            router.route(config(epoch = 2)); router.route(packet(epoch = 2))
+            assertNull(failures.poll(100, TimeUnit.MILLISECONDS))
+            router.answer(offer, 2)
+            val metadata = router.drainMetadata().single()
+            assertEquals(2L, fields(metadata)["rtcOwnerEpoch"])
+            assertTrue(router.readyTrack(readyFields(metadata)))
+            assertEquals(2, peers[1].sent.size)
+            assertTrue(peers[1].sent.all { it.second.contentEquals(byteArrayOf(0x78, 2, 3)) })
         } finally { router.close() }
     }
 }

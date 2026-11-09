@@ -12,7 +12,7 @@ export const RTC_FRAGMENT_BYTES = 16 * 1024;
 const LIMITS = { video: { record: 8 * 1024 * 1024 + 24, pending: 16 * 1024 * 1024 },
   audio: { record: 1024 * 1024, pending: 2 * 1024 * 1024 } };
 
-export function gatherLocalOffer(peer, signal) {
+export function gatherLocalOffer(peer, signal, { waitForComplete = false } = {}) {
   return new Promise((resolve, reject) => {
     let deadline = null, candidateWindow = null, settled = false;
     const finish = (error, sdp) => {
@@ -31,7 +31,7 @@ export function gatherLocalOffer(peer, signal) {
       const sdp = snapshot();
       if (!sdp) { if (peer.iceGatheringState === 'complete') finish(transportError('no-local-candidates')); return; }
       if (peer.iceGatheringState === 'complete') { finish(null, sdp); return; }
-      if (candidateWindow === null) candidateWindow = setTimeout(() => {
+      if (!waitForComplete && candidateWindow === null) candidateWindow = setTimeout(() => {
         const current = snapshot();
         if (current) finish(null, current);
       }, 500);

@@ -14,7 +14,7 @@ function frame(kind, payload, { type = 0, epoch = 1, rate = 48000, flags = 0 } =
 }
 const setup = (config = opus, fields = {}) => frame(6, new TextEncoder().encode(JSON.stringify(config)), { flags: 2, ...fields });
 const pcm = () => frame(2, new Uint8Array(new Int16Array([123, 456]).buffer), { type: 2 });
-async function harness(t, { exchange, play } = {}) {
+async function harness(t, { exchange, play, connectionState = 'connected' } = {}) {
   const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream', 'document'];
   const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
   const peers = [], nodes = [], contexts = [], sources = [], messages = [], offers = [], modes = [], ready = [];
@@ -22,7 +22,8 @@ async function harness(t, { exchange, play } = {}) {
   globalThis.MediaStream = class { constructor(tracks) { this.tracks = tracks; } };
   globalThis.RTCRtpReceiver = { getCapabilities: () => ({ codecs: [{ mimeType: 'audio/opus', clockRate: 48000, channels: 2 }] }) };
   globalThis.RTCPeerConnection = class extends EventTarget {
-    constructor(config) { super(); this.config = config; this.transceivers = []; peers.push(this); }
+    constructor(config) { super(); this.config = config; this.transceivers = []; this.connectionState = connectionState;
+      this.iceConnectionState = connectionState === 'connected' ? 'connected' : 'checking'; peers.push(this); }
     addTransceiver(kind, options) {
       const receiver = { kind, options, mid: String(this.transceivers.length), setCodecPreferences(codecs) { this.codecs = codecs; } };
       this.transceivers.push(receiver); return receiver;
@@ -154,6 +155,25 @@ test('stopping audio cancels the pending independent peer retry', async t => {
   h.audio.stop();
   await new Promise(resolve => setTimeout(resolve, 1100));
   assert.equal(h.offers.length, 1);
+});
+
+test('new source demand can rearm exhausted audio retries without retrying the same failed demand forever', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = await harness(t, { exchange: async () => { throw Error('Native audio network unavailable.'); } });
+  await until(() => h.audio.stats().error);
+  for (const delay of [1000, 2000, 4000]) {
+    const previous = h.offers.length;
+    t.mock.timers.tick(delay); await until(() => h.offers.length > previous && h.peers.at(-1).closed);
+  }
+  assert.equal(h.offers.length, 4);
+  t.mock.timers.tick(10000); await turn(); assert.equal(h.offers.length, 4);
+  h.send(pcm()); await until(() => h.messages.some(record => record.type === 2 && record.pcm?.byteLength));
+  h.event({ k: 'audio-restart-required', reason: 'audio-new-demand', generation: 4 });
+  h.event({ k: 'audio-restart-required', reason: 'audio-new-demand', generation: 4 });
+  t.mock.timers.tick(1000); await until(() => h.offers.length === 5);
+  assert.deepEqual(h.offers.map(value => value.generation), [1, 2, 3, 4, 5]);
+  h.event({ k: 'audio-restart-required', reason: 'audio-new-demand', generation: 4 });
+  assert.equal(h.offers.length, 5, 'a retired demand cannot rearm the replacement peer');
 });
 
 test('failed native configuration does not abort PCM and can rebind the same owner in the replacement peer', async t => {

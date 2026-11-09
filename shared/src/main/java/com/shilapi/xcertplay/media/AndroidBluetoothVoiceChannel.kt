@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioFormat as AndroidAudioFormat
@@ -46,6 +47,8 @@ private val retryableFailures = setOf("car-bluetooth-unavailable", "car-bluetoot
     "bluetooth-route-failed", "bluetooth-duplex-failed", "bluetooth-output-failed", "communication-route-busy",
     "audio-focus-unavailable")
 private val nextVoiceDiagnosticId = java.util.concurrent.atomic.AtomicLong()
+private val deviceUnavailableFailures = setOf("car-bluetooth-unavailable", "car-bluetooth-disconnected",
+    "bluetooth-input-unavailable", "bluetooth-output-unavailable")
 
 /** Android is the HFP audio gateway. Device selection never substitutes the handset microphone. */
 @Suppress("DEPRECATION")
@@ -83,6 +86,7 @@ class AndroidBluetoothVoiceChannel(
     private var failure: String? = null
     private var legacySco = false
     private var receiverRegistered = false
+    private var deviceObserverRegistered = false
     private var profilePending = false
     private var profileAttempt = 0L
     private var profileDiagnosticRequested = false
@@ -151,6 +155,33 @@ class AndroidBluetoothVoiceChannel(
         }
     }
     private val poll = Runnable { tick() }
+    private val deviceObserver = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            // HFP can connect while a continuing voice demand is in backoff. A
+            // matching arrival permits a fresh attempt without waiting 30s;
+            // acquisition still validates the live route and focus ownership.
+            if (closed || wanted == null || acquired || workerRetiring || profilePending ||
+                releasingAt != 0L || failure !in deviceUnavailableFailures) return
+            val address = runCatching { selectedCarAddress?.invoke() }.getOrNull() ?: return
+            if (addedDevices.none { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO &&
+                    sameBluetoothSelection(address, audioAddress(it)) }) return
+            retryAt = SystemClock.elapsedRealtime()
+            tick()
+        }
+    }
+
+    private fun observeDevices() {
+        if (deviceObserverRegistered) return
+        runCatching { manager.registerAudioDeviceCallback(deviceObserver, main) }
+            .onSuccess { deviceObserverRegistered = true }
+            .onFailure { report("stage=device-observer result=unavailable exception=${it.javaClass.simpleName}") }
+    }
+
+    private fun stopObservingDevices() {
+        if (!deviceObserverRegistered) return
+        runCatching { manager.unregisterAudioDeviceCallback(deviceObserver) }
+        deviceObserverRegistered = false
+    }
 
     override fun start(config: MicrophoneConfig) { main.post {
         if (closed) return@post
@@ -158,6 +189,7 @@ class AndroidBluetoothVoiceChannel(
         profileDiagnosticRequested = false
         val replacing = wanted != null && wanted !== config
         wanted = config; failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
+        observeDevices()
         if (replacing) { state(BluetoothVoiceState("connecting")); release(); return@post }
         retireDevices()
         mixer.clear()
@@ -165,8 +197,8 @@ class AndroidBluetoothVoiceChannel(
         if (releasingAt != 0L) schedule()
         else if (!acquired && !focusWaiting) acquire() else { connectingAt = SystemClock.elapsedRealtime(); tick() }
     } }
-    override fun stop() { main.post { wanted = null; failure = null; release() } }
-    override fun close() { main.post { closed = true; wanted = null; failure = null; release() } }
+    override fun stop() { main.post { wanted = null; failure = null; stopObservingDevices(); release() } }
+    override fun close() { main.post { closed = true; wanted = null; failure = null; stopObservingDevices(); release() } }
     override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray, discontinuity: Boolean, deadlineNanos: Long) {
         mixer.offer(id, sampleRate, channels, pcm, discontinuity, deadlineNanos)
     }

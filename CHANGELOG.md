@@ -4,6 +4,21 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.45
+
+Version code 87. Browser source/cache revision v117.
+
+- Reject repeated video timestamps without retiming original frames, request a fresh IDR, and bound missing-keyframe recovery. Keep later CarPlay sources recoverable after a video-only failure.
+- Keep a mirror's current original access unit at ingress until its exact video track is ready, with a bounded and cancellable wait instead of an added key-frame cache. Require browser presentation before completing startup; a sender that never produces a picture releases its mirror session after the startup deadline.
+- Request a fresh mirror IDR through the session's event connection after the first source picture. Coalesce recovery requests, retain encrypted event counters, and distinguish command acknowledgement from actual picture recovery.
+- Gate native audio readiness on connected ICE, Worklet binding and silent playout activation. Retain complete host candidate gathering, bound disconnected-peer recovery, and allow a new audio demand to retry an exhausted peer without replaying expired speech.
+- Retry a lost working wireless session with the bounded 1/2/4/8/16-second sequence, and wake a continuing Bluetooth voice demand when the selected SCO device arrives.
+
+Mirror sender compatibility, vehicle audio/ICE reachability and HFP routing still need physical verification;
+source recovery cannot create a missing platform communication device.
+Full CI is skipped for this beta at the user's request; focused regression checks
+and signed packaging are recorded in [Build](docs/Build.md#beta45-release).
+
 ## 0.2.20-beta.44
 
 Version code 86. Browser revision remains v116.

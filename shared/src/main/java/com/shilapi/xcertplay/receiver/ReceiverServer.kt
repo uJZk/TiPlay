@@ -395,6 +395,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private var controlCipher: ReceiverAirPlay2Cipher? = null
         private var eventServer: ServerSocket? = null
         private var eventSocket: Socket? = null
+        private val mirrorRecovery = ReceiverMirrorRecovery(log = { listener.log("c=$diagnosticId $it") })
         private var handshake: ByteArray? = null
         private var key: ByteArray? = null
         private var mirror: ReceiverMirrorStream? = null
@@ -541,6 +542,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             synchronized(ownership) { attachReverse() }
             diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
             events.shutdownNow()
+            mirrorRecovery.close()
             runCatching { socket.close() }
             runCatching { eventServer?.close() }; eventServer = null
             runCatching { eventSocket?.close() }; eventSocket = null
@@ -720,16 +722,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         candidate.soTimeout = 120_000
                         cipher = requireNotNull(pairing2.takeEventCipher())
                         val eventCipher = requireNotNull(cipher)
-                        val input = eventCipher.input(BufferedInputStream(candidate.getInputStream()))
-                        val output = candidate.getOutputStream()
-                        while (!socket.isClosed && !closed.get()) {
-                            val request = readReceiverRequest(input) ?: break
-                            // This channel carries keepalive/control acknowledgements, never a
-                            // second media lease or an unauthenticated ownership handoff.
-                            if (request.method.startsWith("RTSP/") || request.method.startsWith("HTTP/")) continue
-                            output.write(eventCipher.encrypt(RtspMessage.buildResponse(request, RtspMessage.Response())))
-                            output.flush()
-                        }
+                        mirrorRecovery.serve(candidate, eventCipher)
                         break
                     }
                 } catch (_: Exception) {
@@ -760,24 +753,18 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         eventSocket = candidate
                         if (socket.isClosed || closed.get()) { candidate.close(); break }
                         listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=connected")
-                        var bytes = 0L
                         var reason = "control-closed"
                         try {
+                            candidate.tcpNoDelay = true
                             candidate.soTimeout = 120_000
-                            val input = candidate.getInputStream()
-                            val buffer = ByteArray(4096)
-                            while (!socket.isClosed && !closed.get()) {
-                                val count = input.read(buffer)
-                                if (count < 0) { reason = "eof"; break }
-                                bytes += count
-                            }
+                            reason = mirrorRecovery.serve(candidate)
                         } catch (_: java.net.SocketTimeoutException) {
                             reason = "timeout"
                         } catch (_: Exception) {
                             reason = "error"
                             // A sender can reopen the event connection during the same session.
                         } finally {
-                            listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=closed reason=$reason bytes=$bytes")
+                            listener.log("c=$diagnosticId stage=LEGACY_MIRROR_EVENT state=closed reason=$reason")
                             runCatching { candidate.close() }
                             eventSocket = null
                         }
@@ -1464,6 +1451,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     listener.prepareMirror()
                     val token = Any()
                     mirrorToken = token
+                    mirrorRecovery.begin(token)
                     val previous = mirror
                     mirror = null
                     var output: WebMediaSink? = null
@@ -1472,7 +1460,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         val sink = listener.mirrorSink()
                         output = sink
                         val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, sink, clock,
-                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled) {
+                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled,
+                            requestKeyFrame = { mirrorRecovery.request(token) },
+                            frameReady = { mirrorRecovery.frameReady(token) },
+                            recoveryClosed = { mirrorRecovery.end(token) }) {
                             synchronized(ownership) {
                                 if (owner === this && mirrorToken === token) {
                                     timing?.reportVideoEnd()
@@ -1492,6 +1483,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         mapOf("type" to 110, "dataPort" to dataPort)
                     } catch (error: Exception) {
                         if (mirrorToken === token) {
+                            mirrorRecovery.end(token)
                             // Sink approval and port binding can fail after the preceding stream was
                             // retired. Its old EOF callback has an obsolete token and cannot clean up.
                             mirrorToken = null
@@ -1533,7 +1525,7 @@ internal fun receiverMediaType(request: RtspMessage.Request, path: String = rece
 internal class ReceiverRequestBodyTooLarge(val request: RtspMessage.Request) : IllegalArgumentException("receiver body too large")
 
 /** Bound allocation by endpoint before passing framing to the shared RTSP parser. */
-internal fun readReceiverRequest(input: java.io.InputStream): RtspMessage.Request? {
+internal fun readReceiverRequest(input: java.io.InputStream, maximumBodyBytes: Int = Int.MAX_VALUE): RtspMessage.Request? {
     val header = ByteArrayOutputStream()
     var end = 0
     while (end != 0x0d0a0d0a) {
@@ -1548,11 +1540,11 @@ internal fun readReceiverRequest(input: java.io.InputStream): RtspMessage.Reques
     val length = lengths.firstOrNull()?.substringAfter(':')?.trim()?.toIntOrNull() ?: if (lengths.isEmpty()) 0 else error("invalid content length")
     require(length >= 0)
     val target = bytes.toString(Charsets.US_ASCII).substringBefore("\r\n").split(' ').getOrNull(1).orEmpty()
-    val limit = when (receiverRequestPath(target)) {
+    val limit = minOf(maximumBodyBytes, when (receiverRequestPath(target)) {
         "/photo" -> ReceiverPhotos.MAX_IMAGE_BYTES
         "/action" -> 32 * 1024 * 1024
         else -> 1024 * 1024
-    }
+    })
     if (length > limit) {
         // Header-only parse with zero length preserves protocol/CSeq for the explicit 413 reply.
         val emptyHeader = bytes.toString(Charsets.US_ASCII).replace(Regex("(?im)^Content-Length:[^\r\n]*"), "Content-Length: 0")

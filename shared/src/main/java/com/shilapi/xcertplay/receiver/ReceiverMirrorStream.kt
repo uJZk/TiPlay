@@ -7,6 +7,7 @@ import com.shilapi.xcertplay.airplay.NtpClock
 import com.shilapi.xcertplay.airplay.VideoCodec
 import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.WebVideoCodecs
+import com.shilapi.xcertplay.web.WebVideoHub
 import com.shilapi.xcertplay.network.TcpLiveness
 import java.io.Closeable
 import java.net.InetAddress
@@ -29,6 +30,9 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                            private val hevcEnabled: Boolean = false,
                            private val startupTimeoutMillis: Long = STARTUP_MILLIS,
                            private val listenAddress: InetAddress = InetAddress.getByName("::"),
+                           private val requestKeyFrame: () -> Unit = {},
+                           private val frameReady: () -> Unit = {},
+                           private val recoveryClosed: () -> Unit = {},
                            private val ended: () -> Unit) : Closeable {
     private val closed = AtomicBoolean(false)
     private val server = ServerSocket()
@@ -40,6 +44,9 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
         try { log("mirror stage=STARTUP_TIMEOUT") } finally {
             runCatching { server.close() }
             runCatching { socket?.close() }
+            // A reader can be waiting at the original-AU video-ready barrier,
+            // rather than in socket.read(). Retire its sink to wake that wait.
+            runCatching { sink.close() }
         }
     }
     private val cipher = aesCtr(
@@ -50,6 +57,10 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
     fun start(): Int {
         server.bind(InetSocketAddress(listenAddress, 0))
         sink.setVideoClockHandler(110, clock::mediaTimeNanos)
+        sink.setVideoRecoveryHandler(110) { if (!closed.get()) requestKeyFrame() }
+        sink.setVideoDiagnosticHandler(110) { event ->
+            if (event == WebVideoHub.FIRST_FRAME_RENDERED) startupDeadline.complete()
+        }
         diagnostics.listening()
         startupDeadline.start()
         Thread(::run, "tiplay-airplay-mirror").apply { isDaemon = true; start() }
@@ -64,6 +75,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
         var suspended = false
         var configuredWidth: Int? = null
         var configuredHeight: Int? = null
+        var firstFrame = true
         try {
             var input: InputStream? = null
             var reconnectDeadline = 0L
@@ -115,12 +127,17 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
                         if (plain != null && plain.isNotEmpty()) {
                             stage = ReceiverMirrorDiagnostics.Stage.FRAME_VALIDATE
                             val frame = ReceiverMirrorCodec.annexB(plain, lengthBytes)
-                            ReceiverMirrorCodec.requireSdrFrame(frame, codec)
+                            val videoSlice = ReceiverMirrorCodec.requireSdrFrame(frame, codec)
+                            if (firstFrame && videoSlice) {
+                                firstFrame = false
+                                // Publishing may wait for browser readiness. Release any pending reverse
+                                // command now that the sender has produced a validated video AU.
+                                frameReady()
+                            }
                             stage = ReceiverMirrorDiagnostics.Stage.PUBLISH
                             val senderNanos = ScreenCodec.senderNanos(header)
                             val publishStart = System.nanoTime()
                             sink.onVideoFrame(110, frame, senderNanos, arrivalNanos, decodeOnly = suspended)
-                            if (!suspended) startupDeadline.complete()
                             val publishNanos = System.nanoTime() - publishStart
                             val annexB = frame.size >= 5 && frame[0] == 0.toByte() && frame[1] == 0.toByte() &&
                                 (frame[2] == 1.toByte() || (frame[2] == 0.toByte() && frame[3] == 1.toByte()))
@@ -176,6 +193,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
     override fun close() {
         startupDeadline.complete()
         if (!closed.compareAndSet(false, true)) return
+        runCatching { recoveryClosed() }
         runCatching { server.close() }
         runCatching { socket?.close() }
         sink.close()
@@ -187,7 +205,7 @@ class ReceiverMirrorStream(key: ByteArray, connectionId: Long, private val peer:
     }
 }
 
-/** One deadline per mirror stream; it is retired permanently after the first live frame. */
+/** One deadline per mirror stream; only browser presentation establishes successful startup. */
 internal class ReceiverMirrorStartupDeadline(private val timeoutMillis: Long, private val onTimeout: () -> Unit) {
     private var complete = false
     private var task: ScheduledFuture<*>? = null

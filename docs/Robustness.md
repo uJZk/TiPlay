@@ -70,6 +70,74 @@ The candidate concerning an Activity losing the only session-end recovery event
 was withdrawn after tracing the normal type-130 close through `Failed` and the
 retained reporter. It is not part of the remediation count.
 
+## Media and wireless recovery
+
+The beta.44 field capture exposes a repeated source PTS followed by a terminal
+video writer, and non-silent original Opus packets without browser output while
+the independent audio ICE peer remains disconnected. Older retained metadata
+also records a mirror receiving deltas for minutes while awaiting a usable IDR.
+These are separate from expected source idle, ordinary AirPlay teardown and a
+missing car Bluetooth communication device.
+
+The current source rejects an equal-PTS access unit without rewriting its time
+or feeding it to the native encoder. It invalidates the prediction chain and
+requests a new source IDR. The keyframe wait has a six-second deadline from the
+first rejected delta or prediction-chain loss; later rejected frames cannot
+refresh it. True backward PTS, reordered slices and incompatible codec/profile
+remain explicit video failures. A failed source is drained until a different
+source configuration arrives, so it cannot permanently kill later CarPlay video.
+Mirror ingress waits up to six seconds for the exact source configuration and
+subscription to have an admitted, ready native track before publishing its current
+original access unit. The condition releases the hub lock and applies only to
+ordinary mirroring; it does not hold CarPlay's delivery lock or add a keyframe
+cache. Source/subscription replacement and shutdown cancel that wait. Mirror
+startup completes only on the browser's first presentation acknowledgment;
+forwarding an incoming frame alone does not cancel its startup deadline.
+
+The independent audio offer waits for complete host-candidate gathering within
+the existing finite budget. A slot announces readiness only after transport,
+Worklet binding and silent playout activation are ready; SDP installation alone
+does not authorize sending. Initial transport setup has a twenty-second budget,
+graph readiness a separate five seconds, and a disconnected established peer a
+five-second recovery window. Metadata negotiation is bounded by 25 seconds;
+original-packet staging has a separate five-second age limit, 256 KiB per stream,
+1 MiB globally and 1,024 packets. Rebinding a source does not refresh its packet
+age. An expired source fails explicitly before releasing stale navigation audio;
+retaining a short source beginning does not establish low speaker latency.
+After background retries stop, a new source owner can request one further bounded
+recovery burst; repeated packets for the same owner cannot reset it. No address
+filter infers reachability merely from matching private subnets.
+
+A working wireless session earns the existing bounded 1/2/4/8/16-second recovery
+burst after loss. Failed attempts and duplicate Bluetooth events do not reset
+that burst. The two-second cleanup wait remains a budget, with radio ownership
+retained until asynchronous cleanup really completes.
+
+For a continuing Bluetooth voice demand, a matching SCO device arrival wakes
+acquisition without waiting for the remaining retry backoff. Acquisition still
+validates the selected address, available communication route, permissions and
+audio focus. An unrelated headset or permanent focus loss cannot trigger it;
+stop and close remove the observer. A saved/paired car is not necessarily a
+connected HFP audio device, and this recovery cannot create a missing system
+route or substitute the handset microphone. The recorded microphone foreground
+service exception is covered by the existing permission/type fallback; current
+successful service starts do not reproduce that historical crash.
+
+The required Android command passes with 4,579 zero-failure, zero-skip JUnit
+report cases (2,652 shared, 1,921 common, six home), all three Debug lint and
+assembly targets, and 700 browser cases. Unchanged tasks can reuse Gradle results.
+Actual Kotlin/JNI/libdatachannel forwarding preserves both tracks' 80 original
+Opus payloads and RTP timestamps. Real Chromium software AAC-LC, AAC-ELD and ALAC
+reach nonzero Worklet output and release their owners after EOS.
+
+The Chromium original-audio interoperability attempt remains blocked before
+signaling: audio, video and DataChannel controls all gather zero local ICE
+candidates in this executor. It does not invalidate the native byte/timestamp
+check or establish vehicle connectivity. Physical navigation audio, car HFP/SCO,
+routed independent-audio ICE, mirror picture and repeated reconnects remain
+device acceptance; counters alone do not establish speaker output or a fix for
+the target network's connectivity. See [Testing](Testing.md) for those boundaries.
+
 ## Matched post-stop native crash
 
 The November 2 beta.37/code79 capture contains a real Android tombstone whose

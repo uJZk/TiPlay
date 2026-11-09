@@ -54,9 +54,9 @@ internal class BrowserRtcPendingVideoSource<T : Any> {
 internal class BrowserRtcSourceRateRecovery {
     private var attempted = false
     companion object {
-        /** A failed encoder belongs to its source; a later source gets a fresh video track. */
+        /** A stream failure belongs to its source; a later source gets a fresh video contract. */
         fun recoverOnNewSource(reason: String, failedEpoch: Int?, nextIsConfig: Boolean, nextEpoch: Int): Boolean =
-            reason == "video-encoder-selection-timeout" && failedEpoch != null && nextIsConfig && nextEpoch != failedEpoch
+            reason.isNotEmpty() && failedEpoch != null && nextIsConfig && nextEpoch != failedEpoch
 
         fun sourceTransition(config: Boolean, idle: Boolean, end: Boolean,
                              currentEpoch: Int?, nextEpoch: Int, reason: String?): Boolean =

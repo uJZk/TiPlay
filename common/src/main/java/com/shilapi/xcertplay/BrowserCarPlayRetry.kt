@@ -1,6 +1,6 @@
 package com.shilapi.xcertplay
 
-/** A Bluetooth arrival gets one short retry burst; repeated ACL events cannot keep resetting it. */
+/** A working session or Bluetooth arrival earns one bounded recovery burst. */
 internal class BrowserCarPlayRetry {
     private var burst = false
     private var attempt = 0
@@ -9,7 +9,9 @@ internal class BrowserCarPlayRetry {
         burst = true
         attempt = 0
     }
-    fun sessionConnected() { burst = false; attempt = 0 }
+    // A lost working session can recover while the selected iPhone is still reachable;
+    // do not wait for another ACL edge after the Wi-Fi handoff released Bluetooth.
+    fun sessionConnected() { burst = true; attempt = 0 }
     fun nextDelayMillis(): Long {
         if (!burst) return 16_000L
         return DELAYS[attempt.coerceAtMost(DELAYS.lastIndex)].also {

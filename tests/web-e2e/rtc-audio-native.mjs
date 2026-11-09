@@ -168,4 +168,12 @@ try {
   console.log(JSON.stringify({ browser: browser.version(), backend: 'product Router + Kotlin/JNI + libdatachannel', owners: 17,
     slotsPerPeer: 16, firstPeerPeak, replacementPeerPeak: result.peak, received: result.received, peerGeneration: snapshot.snapshot.generation,
     silentAnchors: result.anchors.length, readyBarrierVerified: true, originalFixturePayloads: true, physicalOutputMeasured: false }));
+} catch (cause) {
+  const diagnostics = await page?.evaluate(() => ({ native: globalThis.audio?.stats().nativeAudio,
+    error: globalThis.audio?.stats().error,
+    peers: (globalThis.testPeers ?? []).map(peer => ({ connection: peer.connectionState, ice: peer.iceConnectionState,
+      gathering: peer.iceGatheringState, localCandidates: (peer.localDescription?.sdp.match(/^a=candidate:/gm) ?? []).length,
+      remoteCandidates: (peer.remoteDescription?.sdp.match(/^a=candidate:/gm) ?? []).length })) })).catch(() => null);
+  console.error(JSON.stringify({ diagnostics, nativeErrors: stderr }));
+  throw cause;
 } finally { child?.kill(); await browser?.close(); await new Promise(resolve => server.close(resolve)); }
