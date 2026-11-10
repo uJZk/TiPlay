@@ -79,6 +79,13 @@ also records a mirror receiving deltas for minutes while awaiting a usable IDR.
 These are separate from expected source idle, ordinary AirPlay teardown and a
 missing car Bluetooth communication device.
 
+The beta.45 follow-up reached only ordinary-AirPlay transport SETUP, event and
+feedback traffic; it contained no mirror media SETUP or picture access units.
+Consequently it did not exercise `forceKeyFrame`. Combined SETUP information and
+preparation observations address protocol/diagnostic gaps, not a proven cause of
+the missing stream. Observation expiry leaves that control session available for
+late media SETUP.
+
 The current source rejects an equal-PTS access unit without rewriting its time
 or feeding it to the native encoder. It invalidates the prediction chain and
 requests a new source IDR. The keyframe wait has a six-second deadline from the
@@ -102,7 +109,11 @@ graph readiness a separate five seconds, and a disconnected established peer a
 five-second recovery window. Metadata negotiation is bounded by 25 seconds;
 original-packet staging has a separate five-second age limit, 256 KiB per stream,
 1 MiB globally and 1,024 packets. Rebinding a source does not refresh its packet
-age. An expired source fails explicitly before releasing stale navigation audio;
+age. Each packet retains its original enqueue time; expiry discards that packet
+without failing a freshly negotiated peer. A continuing live owner retains its
+slot so a fresh tail or later same-epoch packets can proceed. Ended/retired owners
+cannot revive, EOS watermarks remain monotonic and replacement peers cannot revive
+their ended slots. Genuine metadata/transport readiness deadlines still fail;
 retaining a short source beginning does not establish low speaker latency.
 After background retries stop, a new source owner can request one further bounded
 recovery burst; repeated packets for the same owner cannot reset it. No address
@@ -112,6 +123,13 @@ A working wireless session earns the existing bounded 1/2/4/8/16-second recovery
 burst after loss. Failed attempts and duplicate Bluetooth events do not reset
 that burst. The two-second cleanup wait remains a budget, with radio ownership
 retained until asynchronous cleanup really completes.
+
+An observed disabled Android phone Bluetooth radio blocks a new wireless controller
+before foreground-service startup. The host shows the existing Bluetooth hint and
+waits for radio-state changes, with the inexpensive periodic prerequisite check
+retained. Radio-on rechecks browser, permission, menu, ownership and AirPlay gates;
+it cannot bypass them. USB and TiPlay's intentional Bluetooth suspension are not
+blocked, and a working Wi-Fi session is not restarted merely because Bluetooth is off.
 
 For a continuing Bluetooth voice demand, a matching SCO device arrival wakes
 acquisition without waiting for the remaining retry backoff. Acquisition still
@@ -123,7 +141,7 @@ route or substitute the handset microphone. The recorded microphone foreground
 service exception is covered by the existing permission/type fallback; current
 successful service starts do not reproduce that historical crash.
 
-The required Android command passes with 4,579 zero-failure, zero-skip JUnit
+The earlier recovery validation passed the required Android command with 4,579 zero-failure, zero-skip JUnit
 report cases (2,652 shared, 1,921 common, six home), all three Debug lint and
 assembly targets, and 700 browser cases. Unchanged tasks can reuse Gradle results.
 Actual Kotlin/JNI/libdatachannel forwarding preserves both tracks' 80 original

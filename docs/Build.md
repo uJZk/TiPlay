@@ -481,6 +481,24 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta46-release"></a>
+### Beta.46 preparation
+
+**0.2.20-beta.46/code88** prepares native-audio packet-age isolation, combined
+receiver SETUP information, observation of missing mirror media SETUP, phone
+Bluetooth startup gating and selected-car/process-exit diagnostics. Browser/cache
+**v118** refreshes generated product-version metadata; browser playback logic is unchanged.
+
+The user's authorization to publish the completed beta and skip full CI remains
+in force for this follow-up. Final focused checks passed 411 tests (367 shared,
+44 common; no failures/errors/skips), 700 browser tests and Python/source checks.
+The real Chromium Service Worker lifecycle fixture passed; it is not complete
+production-resource offline acceptance. Signed packaging/public verification
+remain pending; see [Testing](Testing.md#current-release-source).
+The prior beta.45 results below do not certify this source. Actual mirror media
+startup, selected-car SCO routing and vehicle native-audio ICE remain physical
+acceptance, and the missing mirror SETUP's cause is not established.
+
 <a id="beta45-release"></a>
 ### Published beta.45
 
@@ -632,21 +650,15 @@ cache revision when next deploying these changed generated assets.
 
 [Beta.39](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.39), code 81,
 browser/cache v114, was published at **2026-11-04 00:37:42 Asia/Shanghai** from
-`17b43beaec4200ea7410b38a768fb55882d527fe`. It adds direct-first AirPlay URL
-loading with Android fallback, browser probes, recovery from an empty initial
-CarPlay screen configuration, shared Bluetooth pickers and bounded metadata
-failure details. Debug capture does not change URL routing.
+`17b43beaec4200ea7410b38a768fb55882d527fe`. It adds direct-first URL fallback,
+empty-screen recovery, shared Bluetooth pickers and bounded diagnostics.
 
 [Android checks 41670512557](https://github.com/uJZk/TiPlay/actions/runs/41670512557)
 and [signed release 41674103120](https://github.com/uJZk/TiPlay/actions/runs/41674103120)
-passed, including WASM reproduction, release lint/build, symbol archive and draft.
-The 692 web tests and public-tree checks pass. APK verification confirms package
-`com.ujzk.tiplay`, code 81, signature continuity
-`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`, WebRTC
-provenance and alignment. The source ZIP matches `git archive` of the build commit.
-All three anonymous public downloads match the independently verified draft bytes;
-the tag resolves to that commit. [Pages run 41670512475](https://github.com/uJZk/TiPlay/actions/runs/41670512475)
-passed, and the seven changed browser runtime files match public bytes.
+passed, alongside 692 browser tests and public-tree checks. Independent checks
+confirmed package/code81, signer continuity, WebRTC/alignment, exact source and all
+three anonymous public assets. [Pages run 41670512475](https://github.com/uJZk/TiPlay/actions/runs/41670512475)
+passed with matching changed runtime bytes.
 
 | Artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -659,37 +671,16 @@ software checks do not establish vehicle playback. The full prior
 [beta.38 record](https://github.com/uJZk/TiPlay/blob/c05baef56417a885a7e2f8e5f5e514b64dbfbda9/docs/Build.md#current-browser-deployment)
 is preserved in Git.
 
-The earlier browser **v104** was deployed from `c25e92d26d80e0d69b80dcfa61745222a747b4ec` by
-[Pages run 40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995).
-All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
-with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
-values identify v104 and application metadata identifies beta.29. The deployment
-changes version metadata; idle keyframe recovery is in the APK.
-[Beta.29](#beta29-release) records source/native and publication checks.
+Earlier metadata deployments each verified all 217 public files (31,820,348 bytes),
+page/cache identity, MIME types and no redirects. Native playback corrections
+belong to the linked APK releases, not these version-metadata deployments.
 
-The earlier browser **v103** was deployed from `50f94b322ddf3a79d7bf74e674800cba437b74fa` by
-[Pages run 40452502158](https://github.com/uJZk/TiPlay/actions/runs/40452502158).
-All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
-with JavaScript/WASM MIME types and no redirects verified. Actual downloaded
-page/cache values identify v103 and application metadata identifies beta.28.
-This deployment changes version metadata; the 16 Mbps startup estimate is in the APK.
-[Beta.28](#beta28-release) records source/native checks and published provenance.
-
-The earlier browser **v102** was deployed from `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` by
-[Pages run 40449503779](https://github.com/uJZk/TiPlay/actions/runs/40449503779).
-All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
-with JavaScript/WASM MIME types and no redirects verified. Downloaded page/cache
-values identify v102 and application metadata identifies beta.27. This deployment
-changes version metadata; the native video corrections are in the APK.
-[Beta.27](#beta27-release) records its validation and publication scope.
-
-The preceding browser **v101** was deployed from `a4cae7f30aee1fd263506e4a80b5f9d2967c2a40` by
-[Pages run 40444780537](https://github.com/uJZk/TiPlay/actions/runs/40444780537).
-All **217** public files (**31,820,348 bytes**) match the local assembly byte-for-byte,
-with WASM MIME types and no redirects verified. The page/cache identify v101 and
-the application metadata identifies beta.26. This deployment changes version
-metadata; the video correction is in the APK. [Beta.26](#beta26-release) records
-its validation and publication scope.
+| Browser | APK record | Build commit | Pages run |
+| --- | --- | --- | --- |
+| v104 | [Beta.29](#beta29-release) | `c25e92d26d80e0d69b80dcfa61745222a747b4ec` | [40458375995](https://github.com/uJZk/TiPlay/actions/runs/40458375995) |
+| v103 | [Beta.28](#beta28-release) | `50f94b322ddf3a79d7bf74e674800cba437b74fa` | [40452502158](https://github.com/uJZk/TiPlay/actions/runs/40452502158) |
+| v102 | [Beta.27](#beta27-release) | `6098d4ed5fc85f67cc7d290ec3d6ae2068cb4805` | [40449503779](https://github.com/uJZk/TiPlay/actions/runs/40449503779) |
+| v101 | [Beta.26](#beta26-release) | `a4cae7f30aee1fd263506e4a80b5f9d2967c2a40` | [40444780537](https://github.com/uJZk/TiPlay/actions/runs/40444780537) |
 
 The preceding browser **v100** was deployed from `41c03970e95763f9fc62df395658c1df8f5871ce` by
 [Pages run 40438289269](https://github.com/uJZk/TiPlay/actions/runs/40438289269).

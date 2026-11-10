@@ -157,6 +157,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private var reconnectTask: Runnable? = null
     private val browserCarPlayRetry = BrowserCarPlayRetry()
     private var browserCarPlayWatch: BrowserCarPlayWatch? = null
+    private var waitingForBrowserBluetooth = false
     private var reconnectAttempts = 0
     private val siriKey = WheelSiriKey()
     private val siriKeyPresses = WheelKeyPresses()
@@ -3620,6 +3621,12 @@ class CarPlayHostActivity : ComponentActivity() {
         if (headUnitIntegrations() || shuttingDown.get()) return
         // Valid settings resume enabled CarPlay even from idle; the opt-out blocks startup and retries.
         browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
+        if (!browserConnectionRequested) {
+            reconnectTask?.let(mainHandler::removeCallbacks)
+            reconnectTask = null
+            reconnectScheduled = false
+            waitingForBrowserBluetooth = false
+        }
         startupRetryStopped = false
         if (controller == null) {
             browserCarPlayPhase = "preparing"
@@ -5428,6 +5435,7 @@ class CarPlayHostActivity : ComponentActivity() {
                         installIphoneCornerMask(session, pending.second.first, pending.second.second)
                     } else clearIphoneCornerMask()
 
+                    clearBrowserBluetoothWait()
                     CarPlayBackgroundSession.active = true
                     if (!headUnitIntegrations()) CarBluetoothConnection.sessionActive(this@CarPlayHostActivity, session)
                     browserCarPlayPhase = "connected"
@@ -5706,9 +5714,17 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun startCarPlay(size: DisplaySize) {
         if (!browserReadyForCarPlay()) return
+        if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || controller != null) return
         if (deferCarPlayRecoveryForAirPlay()) return
+        if (!headUnitIntegrations() && wirelessEnabled && !hasRequiredWirelessPermissions()) {
+            wirelessPermissionsReady = false
+            updateDebugOverlays()
+            return
+        }
+        if (awaitBrowserBluetoothRadio()) return
+        clearBrowserBluetoothWait()
         recoveryPendingAfterAirPlay = false
         carPlayRebuildPendingAfterAirPlay = false
         browserCarPlayPhase = "preparing"
@@ -6118,6 +6134,32 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun browserReadyForCarPlay(): Boolean = headUnitIntegrations() || TeslaBrowserLink.readyViewport() != null
 
+    /** Wait before constructing a controller or starting its foreground service. */
+    private fun awaitBrowserBluetoothRadio(): Boolean {
+        if (headUnitIntegrations() || !wirelessEnabled || BrowserCarPlaySettings.disabled(this) ||
+            !DiPlayBluetooth.radioOff(this)) return false
+        reconnectTask?.let(mainHandler::removeCallbacks)
+        reconnectTask = null
+        reconnectScheduled = false
+        browserCarPlayPhase = "waiting"
+        browserConnectionProblem = BrowserConnectionProblem.BLUETOOTH
+        if (!waitingForBrowserBluetooth) {
+            waitingForBrowserBluetooth = true
+            appendLog("CarPlay waiting for Android phone Bluetooth; controller startup paused")
+            setConnectionStage(R.string.settings_hint_bluetooth)
+        } else updateDebugOverlays()
+        return true
+    }
+
+    private fun clearBrowserBluetoothWait(): Boolean {
+        if (!waitingForBrowserBluetooth) return false
+        waitingForBrowserBluetooth = false
+        if (browserConnectionProblem == BrowserConnectionProblem.BLUETOOTH) browserConnectionProblem = null
+        browserCarPlayPhase = "preparing"
+        appendLog("CarPlay Bluetooth wait cleared; rechecking connection prerequisites")
+        return true
+    }
+
     private fun checkBrowserCarPlay() {
         updateDebugOverlays()
         if (!browserReadyForCarPlay()) return
@@ -6130,14 +6172,22 @@ class CarPlayHostActivity : ComponentActivity() {
             applyBrowserSettings()
             return
         }
-        if (controller != null) return
+        // Bluetooth bootstrap is already retired after a healthy Wi-Fi handoff.
+        // Observe radio state only for a new start or a pending failed/reconfigured session.
+        if (controller != null && !waitingForBrowserBluetooth) return
         if (locationReportingEnabled && !hasFineLocationPermission()) return
         if ((wireless && BrowserConnectionDraft.load(this).validationError() != null) ||
             (wireless && DiPlayPreferences.phoneAddress(this).isNullOrBlank())) return
-        if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) return
-        browserConnectionRequested = true
         // Retry only with existing grants; do not repeatedly open permission dialogs.
         if (wireless && !hasRequiredWirelessPermissions()) return
+        if (awaitBrowserBluetoothRadio()) return
+        if (clearBrowserBluetoothWait() && controller != null) {
+            restartCarPlay("Android phone Bluetooth enabled; resuming the pending connection")
+            return
+        }
+        if (controller != null) return
+        if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isFailure) return
+        browserConnectionRequested = true
         if (!wireless && CarPlayVpnService.prepare(this) != null) return
         requestStartupPrerequisites()
     }
@@ -6178,6 +6228,7 @@ class CarPlayHostActivity : ComponentActivity() {
         ) {
             return
         }
+        if (awaitBrowserBluetoothRadio()) return
         // The first session must already carry the cluster stream; a later route reconnects CarPlay.
         if (clusterLaunchGate.holdsCarPlayStart(SystemClock.uptimeMillis(), ClusterActivityOutput.routeSettling())) {
             carPlayStartHeldForCluster = true
@@ -6286,6 +6337,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (menuOpen) recoveryPendingAfterMenu = true
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress || startupRetryStopped) return
+        if (awaitBrowserBluetoothRadio()) return
         if (deferCarPlayRecoveryForAirPlay()) return
         if (reconnectScheduled) return
         val startupDelay = if (headUnitIntegrations() && startupFailure != null && startupFailure.retryable)
@@ -6341,6 +6393,8 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun restartCarPlay(reason: String) {
         if (!CarPlayBackgroundSession.isOwner(this)) return
         if (shuttingDown.get() || menuOpen || handshakeResetInProgress) return
+        if (awaitBrowserBluetoothRadio()) return
+        clearBrowserBluetoothWait()
         if (deferCarPlayRecoveryForAirPlay()) {
             carPlayRebuildPendingAfterAirPlay = true
             return
@@ -6957,6 +7011,7 @@ class CarPlayHostActivity : ComponentActivity() {
         val phase = when {
             BrowserCarPlaySettings.disabled(this) -> "disabled"
             shuttingDown.get() -> "stopping"
+            waitingForBrowserBluetooth -> "blocked"
             screenReturnRecoveryTask != null || browserDisplayReconnectHost.pending -> "recovering"
             handshakeResetInProgress || reconnectScheduled -> "recovering"
             startupRetryStopped || browserCarPlayPhase == "failed" -> "failed"
@@ -6987,6 +7042,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     // The keywords are English; matching the English text keeps the result the same in every UI language.
     private fun friendlyStage(message: String, englishMessage: String = message): String = when {
+        message == getString(R.string.settings_hint_bluetooth) -> message
         message == getString(R.string.vpn_authorization_unavailable) -> message
         // It says where to look itself; its word "permissions" would turn it into the generic permission line.
         message == getString(R.string.could_not_start_carplay_return_to_diplay_and_check_app_per) -> message
@@ -6998,7 +7054,7 @@ class CarPlayHostActivity : ComponentActivity() {
             message.endsWith(getString(R.string.wireless_startup_retries_exhausted)) -> message
         englishMessage.contains("CarPlay configuration request", true) -> getString(R.string.iphone_usb_mode_rejected)
         englishMessage.contains("Turn on Wi-Fi", true) -> getString(R.string.turn_on_wi_fi_in_the_head_unit_s_settings_to_connect)
-        englishMessage.contains(BluetoothRadioCheck.RADIO_OFF_MARK, true) -> getString(R.string.turn_on_bluetooth_in_the_head_unit_s_settings_to_connect)
+        englishMessage.contains(BluetoothRadioCheck.RADIO_OFF_MARK, true) -> getString(R.string.settings_hint_bluetooth)
         englishMessage.contains("Allow precise Location", true) -> getString(R.string.allow_precise_location_for_diplay_in_the_head_unit_s_app_p)
         englishMessage.contains("Allow Nearby devices", true) -> getString(R.string.allow_nearby_devices_for_diplay_in_the_head_unit_s_app_per)
         englishMessage.contains("createGroup failed", true) -> getString(R.string.the_head_unit_couldn_t_start_carplay_wi_fi_check_wi_fi_and)

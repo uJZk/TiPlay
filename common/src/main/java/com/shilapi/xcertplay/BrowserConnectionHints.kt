@@ -4,6 +4,7 @@ import com.shilapi.xcertplay.host.R
 
 /** Facts supplied by the running host, never inferred from a wireless settings draft. */
 internal enum class BrowserConnectionProblem(val message: Int) {
+    BLUETOOTH(R.string.settings_hint_bluetooth),
     NEARBY(R.string.settings_hint_nearby),
     LOCATION(R.string.settings_hint_location),
     USB_VPN(R.string.settings_hint_usb_vpn),

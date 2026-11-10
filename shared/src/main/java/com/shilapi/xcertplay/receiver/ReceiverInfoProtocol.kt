@@ -6,6 +6,9 @@ import java.io.ByteArrayOutputStream
 
 /** Bonjour, BLE-style TXT queries and legacy RTSP /info use the same profile. */
 internal object ReceiverInfoProtocol {
+    /** Full /info and combined control SETUP always describe the same current receiver profile. */
+    fun fullInfo(config: ReceiverConfig): Map<String, Any?> = config.info()
+
     fun info(config: ReceiverConfig, request: RtspMessage.Request): Map<String, Any?> {
         val queryKeys = request.path.substringAfter('?', "").split('&').map { it.substringBefore('=') }
         val qualifier = if (request.body.isEmpty()) emptyList<Any?>() else {
@@ -16,7 +19,7 @@ internal object ReceiverInfoProtocol {
             (!request.headers.containsKey("cseq") && "txtAirPlay" in queryKeys)
         val txtOnly = request.body.isNotEmpty() && request.headers["content-type"]
             ?.substringBefore(';')?.trim()?.equals("application/x-apple-binary-plist", true) == true
-        val info: MutableMap<String, Any?> = if (txtOnly) mutableMapOf() else config.info().toMutableMap()
+        val info: MutableMap<String, Any?> = if (txtOnly) mutableMapOf() else fullInfo(config).toMutableMap()
         if (requestedTxt) {
             val bytes = ByteArrayOutputStream()
             for ((key, value) in config.txt) {

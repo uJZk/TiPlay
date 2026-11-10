@@ -58,5 +58,7 @@ class BluetoothRadioCheckTest {
     // CarPlayHostActivity shows the request in the app's language by finding these words.
     @Test fun theRequestCarriesTheWordsTheHostScreenLooksFor() {
         assertTrue(BluetoothRadioCheck.RADIO_OFF.contains(BluetoothRadioCheck.RADIO_OFF_MARK))
+        assertTrue(BluetoothRadioCheck.RADIO_OFF.contains("Android system settings"))
+        assertFalse(BluetoothRadioCheck.RADIO_OFF.contains("head unit"))
     }
 }

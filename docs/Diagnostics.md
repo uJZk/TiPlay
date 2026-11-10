@@ -84,6 +84,8 @@ exit history are marked explicitly. These records may predate the current sessio
 compare their age with the connection timeline before attributing a failure to a
 crash, memory pressure or a user-requested stop. Crash text uses the existing
 redaction policy even in Debug reports. Collection runs during background export.
+Reason 16 is `package_updated`, not a crash; 14/15 map to freezer/package-state
+changes, and unknown numeric reasons remain visible.
 
 <a id="native-crash-traces"></a>
 
@@ -307,6 +309,9 @@ live track/slot/owner counts and no pending drain. `drainUnknown=true` means an 
 receiver stays connected for its buffered tail; it does not certify drain completion
 or audible output. Music may use software AAC while guidance uses this separate
 Opus peer, so successful music alone cannot establish native guidance playback.
+Current packet-age expiry drops stale queued speech without failing a newly
+negotiated peer. Fresh packets from a continuing live owner keep the same epoch;
+transport/metadata readiness has its own deadline. This does not prove ICE connectivity.
 
 Android's `native-audio stage=sender-failure` also records its native `connection`
 and `ice` states and state-callback counts at failure. ICE connected with the peer
@@ -316,10 +321,12 @@ or candidate contents are included. At SDP negotiation, `stage=ice-candidates`
 records host UDP address counts by type for the offer and answer and the count of
 matching IPv4 /24 prefixes. A matching prefix does not prove connectivity, and
 mDNS addresses cannot be compared this way. These counts do not include addresses,
-ports or credentials. If no SCO communication device is available,
-`bluetooth route ... stage=headset-diagnostic` records the Android HFP profile
-state, A2DP state, connected headset count and whether the selected car matches. These do
-not establish microphone routing or distinguish all platform Bluetooth failures.
+ports or credentials. When the selected car has no matching SCO route,
+`communication-devices` records device `types`, `namedCandidates` and `validAddresses`
+as counts/types only. `headset-diagnostic` records adapter/profile state, proxy result,
+connected count and `selectedMatch`, at most once per profile per demand/selection.
+Names and addresses are omitted. Another connected headset does not establish a
+selected-car route, and these fields do not identify every platform Bluetooth failure.
 
 RTP packet reception alone also does not establish decoded samples. The local
 original-Opus reproduction received packets with zero Worklet output until a
@@ -756,6 +763,12 @@ After Bluetooth handoff, the 45-second watchdog requires a rendered frame before
 
 `browser display reconnect retaining wireless transport` denotes viewport renegotiation that retains Wi-Fi, listener, discovery and authentication resources. Expected old-display teardown is not a network failure. Bootstrap/start milestones cannot prove replacement rendering; report a missing first frame with the viewport change. See [browser lifecycle](Browser.md#browser-session-lifecycle).
 
+`CarPlay waiting for Android phone Bluetooth; controller startup paused` is a
+prerequisite block, not a dropped wireless session. Radio-on resumes prerequisite
+checks; it does not establish connection success or bypass browser/permission gates.
+`CarPlay Bluetooth wait cleared` means prerequisites are rechecked, not that the
+radio is necessarily on; USB selection or a healthy session can clear the wait.
+
 ## Retention and completeness
 
 One log target belongs to the app process, initialized before activities/services and shared by CarPlay, browser and ordinary AirPlay. Opening settings, replacing a session or destroying an Activity does not reset it; late teardown callbacks keep their original target.
@@ -813,6 +826,12 @@ states, with a `reason` on close. These connection states do not establish that 
 mirror stream was requested or decoded; event-reader failures are reported separately.
 The persistent event connection has no idle-read timeout and closes with its owner;
 two-second command write/acknowledgement limits still apply during quiet video.
+
+`MIRROR_PREPARATION` records `awaiting-stream-observation`, `observation-elapsed`
+after 15 seconds, and `ended` with its reason. `observation`, `elapsedMs`,
+`afterObservation` and `combinedInfo` identify its scope. Expiry is an observation,
+not a stream failure: control/event/audio remain open for later SETUP. No mirror AU
+means `forceKeyFrame` has not been exercised, even with working feedback.
 
 `MIRROR_KEYFRAME` records `sent`, `acknowledged`, `rejected`, `timeout` or `failure`.
 Command sends, replies and timeouts include `cseq`; acknowledgement/rejection also

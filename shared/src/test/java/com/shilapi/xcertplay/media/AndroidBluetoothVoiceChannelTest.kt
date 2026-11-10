@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay.media
 
 import android.Manifest
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.os.Looper
@@ -9,6 +11,8 @@ import java.net.InetAddress
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
@@ -408,6 +412,46 @@ class AndroidBluetoothVoiceChannelTest {
         assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") && it.contains("matches=0") })
         assertTrue(logs.any { it.contains("stage=failure reason=car-bluetooth-unavailable") })
         assertTrue(logs.none { it.contains("AA:BB:CC:DD:EE:01") })
+        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test fun anotherScoDeviceStillDiagnosesSelectedCarProfilesOncePerDemandWithoutRerouting() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val selectedAddress = "AA:BB:CC:DD:EE:01"
+        val otherAddress = "AA:BB:CC:DD:EE:02"
+        shadowOf(manager).setAvailableCommunicationDevices(listOf(sco(otherAddress, 123)))
+        val adapter = app.getSystemService(BluetoothManager::class.java).adapter
+        val bluetooth = shadowOf(adapter)
+        bluetooth.setEnabled(true)
+        bluetooth.setProfileConnectionState(BluetoothProfile.HEADSET, BluetoothProfile.STATE_CONNECTED)
+        bluetooth.setProfileConnectionState(BluetoothProfile.A2DP, BluetoothProfile.STATE_CONNECTED)
+        val headset = mock(BluetoothProfile::class.java)
+        val a2dp = mock(BluetoothProfile::class.java)
+        `when`(headset.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice(otherAddress)))
+        `when`(a2dp.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice(selectedAddress)))
+        bluetooth.setProfileProxy(BluetoothProfile.HEADSET, headset)
+        bluetooth.setProfileProxy(BluetoothProfile.A2DP, a2dp)
+        val states = mutableListOf<BluetoothVoiceState>()
+        val logs = mutableListOf<String>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add, diagnostic = logs::add) { selectedAddress }
+        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") &&
+            it.contains("matches=0") && it.contains("types=${AudioDeviceInfo.TYPE_BLUETOOTH_SCO}") && it.contains("validAddresses=1") })
+        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=headset") && it.contains("connected=1 selectedMatch=false") })
+        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=a2dp") && it.contains("connected=1 selectedMatch=true") })
+        shadowOf(Looper.getMainLooper()).idleFor(7500, TimeUnit.MILLISECONDS)
+        for (profile in listOf("headset", "a2dp")) {
+            assertEquals(1, logs.count { it.contains("stage=headset-diagnostic profile=$profile") && it.contains("result=requested") })
+        }
+        assertEquals("car-bluetooth-unavailable", states.last().error)
+        assertTrue(states.last().released)
+        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+        assertNull(manager.communicationDevice)
+        assertTrue(logs.none { it.contains(selectedAddress) || it.contains(otherAddress) })
+        assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.HEADSET))
+        assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.A2DP))
         channel.close(); shadowOf(Looper.getMainLooper()).idle()
     }
     @Test fun deniedMicrophoneOrBluetoothPermissionDoesNotSelectThePhoneOrChangeMode() {

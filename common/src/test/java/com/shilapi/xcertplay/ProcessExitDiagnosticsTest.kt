@@ -49,6 +49,17 @@ class ProcessExitDiagnosticsTest {
         }
     }
 
+    @Test fun freezerAndPackageLifecycleExitsHavePublicNamesAndKeepTheirNumericReasons() {
+        val records = (14..16).map { ProcessExitDiagnostics.Record(900, it, 0, 125, 2048, 4096) }
+        val report = ProcessExitDiagnostics.report(35, 1000) { records }
+        val exits = report.lineSequence().drop(1).toList()
+        assertEquals(listOf("freezer", "package_state_change", "package_updated").mapIndexed { index, name ->
+            "Process exit index=$index ageMs=100 reason=$name reasonCode=${14 + index} " +
+                "status=0 importance=125 pssKiB=2048 rssKiB=4096"
+        }, exits)
+        exits.forEach { assertEquals(it, DiagnosticRedactor.redact(it)) }
+    }
+
     @Test @Config(sdk = [30]) fun onlyOwnPackageAndThreeRecentExitsAreRequested() {
         val app = RuntimeEnvironment.getApplication()
         val manager = mock(ActivityManager::class.java)

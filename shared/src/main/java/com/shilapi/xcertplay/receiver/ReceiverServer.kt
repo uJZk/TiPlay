@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ScheduledFuture
 
 /** Explicitly started LAN receiver, on its own port and identity, separate from CarPlay. */
@@ -80,6 +80,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(12)
     internal var reverseStagingTimeoutMillis = 60_000L
+    internal var mirrorPreparationObservationMillis = 15_000L
     private val ownership = Any()
     val dacpDiscovery = ReceiverDacpDiscovery(::refreshAudioControls)
     private val remoteCommands = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue<Runnable>(8)) {
@@ -95,9 +96,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private var playbackGeneration = 0L
     private var stoppedSession: Pair<InetAddress, String>? = null
     private var stoppedUntilNanos = 0L
-    private val maintenance = Executors.newSingleThreadScheduledExecutor {
+    private val maintenance = ScheduledThreadPoolExecutor(1) {
         Thread(it, "tiplay-airplay-maintenance").apply { isDaemon = true }
-    }
+    }.apply { removeOnCancelPolicy = true }
     private var photoSession: Pair<InetAddress, String>? = null
     private var photos = ReceiverPhotos()
     private data class VerifiedSession(val publicKey: ByteArray, val connection: Long, val expiresNanos: Long)
@@ -396,6 +397,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private var eventServer: ServerSocket? = null
         private var eventSocket: Socket? = null
         private val mirrorRecovery = ReceiverMirrorRecovery(log = { listener.log("c=$diagnosticId $it") })
+        private val mirrorControlPreparation = ReceiverMirrorPreparation(maintenance,
+            mirrorPreparationObservationMillis, log = { listener.log("c=$diagnosticId $it") })
         private var handshake: ByteArray? = null
         private var key: ByteArray? = null
         private var mirror: ReceiverMirrorStream? = null
@@ -542,6 +545,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             synchronized(ownership) { attachReverse() }
             diagnostics.stage(diagnosticId, ReceiverProtocolDiagnostics.Stage.CLOSE)
             events.shutdownNow()
+            mirrorControlPreparation.close()
             mirrorRecovery.close()
             runCatching { socket.close() }
             runCatching { eventServer?.close() }; eventServer = null
@@ -778,6 +782,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         }
 
         fun closeMedia() {
+            mirrorControlPreparation.end(ReceiverMirrorPreparation.End.MEDIA_RESET)
             retireRemote()
             audioProgress = null; audioSampleRate = 0; currentAudioSample = null
             audioTitle = null
@@ -963,6 +968,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 request.method == "TEARDOWN" -> {
                     synchronized(ownership) {
                         val types = receiverTeardownTypes(request.body)
+                        if (types == null || 110 in types) mirrorControlPreparation.end(ReceiverMirrorPreparation.End.TEARDOWN)
                         if (types == null) {
                             closeMedia()
                         } else {
@@ -1006,6 +1012,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         if ((owner != null && owner !== this && !sameVerifiedPeer(owner!!)) ||
                             (playbackPeer != null && (playbackPeer != peer || playbackId != id ||
                                 (playbackConnection !== this && playbackConnection?.let { !sameVerifiedPeer(it) } == true)))) return busy()
+                        mirrorControlPreparation.end(ReceiverMirrorPreparation.End.OTHER_MEDIA)
                         owner?.closeMedia(); owner = null
                         mirrorPreparation = null
                         resources.clear()
@@ -1031,6 +1038,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             request.headers["x-apple-assetkey"], request.body)
                         diagnostics.photo(diagnosticId, if (image == null) "CACHE_ONLY" else "DISPLAY", request.body.size)
                         if (image != null) {
+                            mirrorControlPreparation.end(ReceiverMirrorPreparation.End.OTHER_MEDIA)
                             mirrorPreparation = null
                             owner?.closeMedia(); owner = null
                             resources.clear()
@@ -1495,6 +1503,21 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         throw error
                     }
                 }
+            }
+            val initialControlSetup = encrypted != null || timingProtocol == "NTP" && requestedStreams == null
+            val streamTypes = requestedStreams?.map { (it["type"] as Number).toInt() }.orEmpty()
+            when {
+                110 in streamTypes -> mirrorControlPreparation.end(ReceiverMirrorPreparation.End.STREAM)
+                96 in streamTypes -> mirrorControlPreparation.end(ReceiverMirrorPreparation.End.AUDIO)
+                initialControlSetup && requestedStreams.isNullOrEmpty() &&
+                    dict["isScreenMirroringSession"] == true && config.mirrorEnabled ->
+                    mirrorControlPreparation.begin(dict["combinedGetInfoWithControlSetup"] == true)
+            }
+            // Match the sender's explicit combined-control request, using the same current
+            // full-info source as /info (protocol comparison: doubletake 5e2f1cbe).
+            if (dict["combinedGetInfoWithControlSetup"] == true &&
+                initialControlSetup) {
+                response["info"] = ReceiverInfoProtocol.fullInfo(config)
             }
             plist(response)
         }

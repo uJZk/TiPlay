@@ -4,6 +4,22 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.46
+
+Version code 88. Browser/cache v118 refreshes product-version metadata for beta.46;
+browser playback logic is unchanged.
+
+- Keep expired native-audio packets separate from peer negotiation: discard stale speech without failing a fresh connection, and preserve live owners for later packets in the same epoch.
+- Include requested combined receiver information in initial control SETUP replies. Observe mirror preparation without media streams for 15 seconds without closing the control session or claiming picture readiness.
+- Pause wireless controller startup while Android phone Bluetooth is off and resume from radio-state changes through the existing startup gates. Label package-update process exits correctly.
+- Expand selected-car Bluetooth profile diagnostics without recording names or addresses or relaxing the required matching SCO route.
+
+These changes do not establish why this iPhone omitted mirror media SETUP, make
+native-audio ICE reachable, or supply a missing selected-car communication route.
+Source checks and device validation are recorded separately in [Testing](docs/Testing.md).
+Full CI remains skipped under the user's authorized beta-release preference;
+focused regressions and signed packaging are tracked in [Build](docs/Build.md#beta46-release).
+
 ## 0.2.20-beta.45
 
 Version code 87. Browser source/cache revision v117.

@@ -57,7 +57,7 @@ internal object ProcessExitDiagnostics {
         return "Process exits available=false error=$type"
     }
 
-    // Stable public Android 11 reason codes. Keep newer/unknown values visible as numbers.
+    // Stable public Android reason codes. Keep newer/unknown values visible as numbers.
     private fun reason(code: Int) = when (code) {
         0 -> "unknown"
         1 -> "self_exit"
@@ -73,6 +73,9 @@ internal object ProcessExitDiagnostics {
         11 -> "user_stopped"
         12 -> "dependency_died"
         13 -> "other"
+        14 -> "freezer"
+        15 -> "package_state_change"
+        16 -> "package_updated"
         else -> "unknown"
     }
 }

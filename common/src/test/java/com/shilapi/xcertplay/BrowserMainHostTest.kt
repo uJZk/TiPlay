@@ -1,6 +1,9 @@
 package com.shilapi.xcertplay
 
 import android.content.Intent
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Handler
@@ -10,6 +13,7 @@ import com.shilapi.xcertplay.orchestration.*
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.AtomicBoolean
+import java.time.Duration
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -40,6 +44,7 @@ class BrowserMainHostTest {
         RuntimeEnvironment.getApplication().getSharedPreferences("tiplay_carplay", 0).edit().clear().commit()
         AirPlayReceiverService.publish("stopped")
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
         reportReadyBrowser()
         controllers = mockConstruction(CarPlayController::class.java) { mock, _ ->
             `when`(mock.phoneBrowserMode()).thenReturn(true)
@@ -85,6 +90,108 @@ class BrowserMainHostTest {
         assertEquals("Waiting for browser connection", (field("browserMainPage") as BrowserMainSettingsMenu).status.text.toString())
     }
 
+    private fun prepareWirelessRadioWait() {
+        BrowserConnectionDraft(true, BrowserConnectionDraft.Source.LOCAL, "Phone hotspot", "password1",
+            ManualHotspotSecurity.WPA2, "", "", phoneAddress = "AA:BB:CC:DD:EE:FF").save(activity)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        setField("wirelessEnabled", true)
+        setField("locationReportingEnabled", false)
+        setField("browserConnectionRequested", true)
+        setField("wirelessPermissionsReady", true)
+        setField("microphonePermissionResolved", true)
+        setField("pendingDisplaySize", null)
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
+        invoke("maybeStartCarPlay")
+        assertTrue(field("waitingForBrowserBluetooth") as Boolean)
+    }
+
+    @Test fun disabledPhoneRadioWaitsWithoutConstructingControllersOrSchedulingHeavyRetries() {
+        prepareWirelessRadioWait()
+        repeat(8) {
+            reportReadyBrowser()
+            invoke("checkBrowserCarPlay")
+            invoke("maybeStartCarPlay")
+        }
+        assertTrue(controllers.constructed().isEmpty())
+        assertNull(field("controller"))
+        assertFalse(field("reconnectScheduled") as Boolean)
+        assertEquals(0, field("reconnectAttempts"))
+        assertEquals(BrowserConnectionProblem.BLUETOOTH, field("browserConnectionProblem"))
+    }
+
+    @Test fun adapterOnBroadcastResumesThePendingFailedConnectionWithoutWaitingForTheIdlePoll() {
+        prepareWirelessRadioWait()
+        attachController()
+        BrowserCarPlayWatch(activity, {}, { invoke("checkBrowserCarPlay") }).use {
+            shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
+            activity.sendBroadcast(Intent(BluetoothAdapter.ACTION_STATE_CHANGED)
+                .putExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.STATE_ON))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        }
+        assertFalse(field("waitingForBrowserBluetooth") as Boolean)
+        assertEquals(1, field("restartGeneration"))
+        assertTrue(field("handshakeResetInProgress") as Boolean)
+        assertNull(field("controller"))
+    }
+
+    @Test fun radioWakeStillRequiresLiveBrowserEnabledCarPlayAndCurrentPermissionGrants() {
+        prepareWirelessRadioWait()
+        val old = attachController()
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
+        browserReadiness().clear()
+        invoke("checkBrowserCarPlay")
+        assertSame(old, field("controller"))
+        reportReadyBrowser()
+        BrowserCarPlaySettings.setDisabled(activity, true)
+        invoke("checkBrowserCarPlay")
+        assertSame(old, field("controller"))
+        BrowserCarPlaySettings.setDisabled(activity, false)
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        invoke("checkBrowserCarPlay")
+        assertSame(old, field("controller"))
+        assertEquals(0, field("restartGeneration"))
+        assertTrue(field("waitingForBrowserBluetooth") as Boolean)
+    }
+
+    @Test fun radioOffCannotRetireAnAlreadyRunningWifiSession() {
+        val old = attachController()
+        setField("wirelessEnabled", true)
+        BrowserCarPlaySettings.saveMode(activity, BrowserCarPlaySettings.Mode.WIRELESS)
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
+        invoke("checkBrowserCarPlay")
+        assertSame(old, field("controller"))
+        assertFalse(field("waitingForBrowserBluetooth") as Boolean)
+        verify(old, never()).close()
+    }
+
+    @Test fun currentSessionActivationClearsAnOlderRadioWaitWithoutRestartingTheRecoveredWifiSession() {
+        prepareWirelessRadioWait()
+        val current = attachController()
+        val session = mock(AirPlaySession::class.java)
+        `when`(current.isCurrentControlSession(session)).thenReturn(true)
+        val listener = activity.javaClass.getDeclaredMethod("createSessionListener", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(activity, 0) as AirPlaySessionListener
+        listener.onSessionActive(session)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(field("waitingForBrowserBluetooth") as Boolean)
+        assertEquals("connected", field("browserCarPlayPhase"))
+        invoke("checkBrowserCarPlay")
+        assertSame(current, field("controller"))
+        assertEquals(0, field("restartGeneration"))
+        verify(current, never()).close()
+    }
+
+    @Test fun aRadioPausedByTheOwnedHandoffOrUsbModeDoesNotBlockPreparation() {
+        setField("wirelessEnabled", true)
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(false)
+        activity.getSharedPreferences("diplay_bt_suspend", 0).edit().putBoolean("restore_initially_enabled", true).commit()
+        assertFalse(invoke("awaitBrowserBluetoothRadio") as Boolean)
+        activity.getSharedPreferences("diplay_bt_suspend", 0).edit().clear().commit()
+        setField("wirelessEnabled", false)
+        assertFalse(invoke("awaitBrowserBluetoothRadio") as Boolean)
+    }
+
     @Test fun idleMainPageWithoutAConnectionRequestDoesNotStartCarPlay() {
         setField("browserConnectionRequested", false)
         setField("wirelessPermissionsReady", true)
@@ -120,6 +227,32 @@ class BrowserMainHostTest {
         assertFalse(field("browserConnectionRequested") as Boolean)
         invoke("maybeStartCarPlay")
         assertNull(field("controller"))
+    }
+
+    @Test fun disablingWhilePhoneBluetoothIsOffStillRetiresTheControllerAndCancelsRecovery() {
+        prepareWirelessRadioWait()
+        val old = attachController()
+        var retried = false
+        val retry = Runnable { retried = true }
+        setField("reconnectTask", retry)
+        setField("reconnectScheduled", true)
+        (field("mainHandler") as Handler).postDelayed(retry, 1_000)
+
+        BrowserCarPlaySettings.setDisabled(activity, true)
+        invoke("applyBrowserSettings")
+
+        assertNull(field("controller"))
+        assertFalse(field("browserConnectionRequested") as Boolean)
+        assertFalse(field("waitingForBrowserBluetooth") as Boolean)
+        assertFalse(field("reconnectScheduled") as Boolean)
+        assertNull(field("reconnectTask"))
+        (field("teardownExecutor") as PausedExecutorService).runAll()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        verify(old).close()
+        assertFalse(retried)
+        invoke("maybeStartCarPlay")
+        assertNull(field("controller"))
+        assertEquals(1, controllers.constructed().size)
     }
 
     @Test fun disablingDuringPrerequisiteWaitUpdatesStatusWithoutAController() {

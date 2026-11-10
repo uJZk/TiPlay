@@ -35,5 +35,5 @@ object BluetoothRadioCheck {
 
     /** The words that ask the driver to act; the host screen matches on them. */
     const val RADIO_OFF_MARK = "Turn on Bluetooth"
-    const val RADIO_OFF = "$RADIO_OFF_MARK in the head unit's settings, then reconnect"
+    const val RADIO_OFF = "$RADIO_OFF_MARK in Android system settings, then reconnect"
 }

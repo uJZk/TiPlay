@@ -114,6 +114,14 @@ One iPhone capture sent `timingProtocol=NTP` together with the legacy FairPlay
 `ekey` and `eiv` in its initial SETUP; beta.40 rejected that combination before
 starting media. Legacy SETUP accepts it, with one NTP clock and the existing
 authorization and pairing checks. Real iPhone picture and audio remain unverified.
+When `combinedGetInfoWithControlSetup` is boolean `true`, a successful initial
+legacy/NTP control SETUP includes nested `info` from the same full-information
+source as `GET /info`. Stream SETUP replies do not add this dictionary.
+An explicit mirror-intent SETUP without `streams` starts a 15-second observation
+of the missing media SETUP. Its expiry only reports that no stream has started;
+it neither closes the session nor acquires display ownership. Later media SETUP
+still follows normal authorization and startup. An event connection, RECORD or
+working feedback alone does not establish a mirror picture or exercise `forceKeyFrame`.
 For an initial legacy SETUP explicitly marked as a screen-mirroring session,
 the receiver supplies a separate peer-restricted event socket before the screen
 stream SETUP. It carries mirror recovery commands and sender feedback without taking

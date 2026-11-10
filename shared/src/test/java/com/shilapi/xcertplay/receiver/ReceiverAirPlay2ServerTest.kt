@@ -55,6 +55,32 @@ class ReceiverAirPlay2ServerTest {
         override fun status(state: String) {}
     }
 
+    @Test fun combinedTransientControlSetupUsesTheSameFullInfoWithoutStartingMedia() {
+        val listener = Listener()
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS), listener)
+        receiver.start()
+        try {
+            Peer(receiver.port).use { peer ->
+                peer.pair()
+                val response = peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
+                    "timingProtocol" to "NTP", "timingPort" to 0L,
+                    "combinedGetInfoWithControlSetup" to true,
+                )))
+                assertEquals("200", response.path)
+                val session = BplistCodec.decode(response.body) as Map<*, *>
+                assertEquals(setOf("timingPort", "eventPort", "info"), session.keys)
+                val information = peer.request("GET", "/info")
+                assertEquals("200", information.path)
+                assertArrayEquals(BplistCodec.encode(BplistCodec.decode(information.body)),
+                    BplistCodec.encode(session["info"]))
+                assertEquals(0, listener.screenLoans)
+                assertTrue(listener.types.isEmpty())
+                assertTrue(listener.payloads.isEmpty())
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun transientPairingNtpAndEncryptedRealtimeAudioKeepTheCarPlayScreenAvailable() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),

@@ -37,16 +37,17 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#beta45-release).
-Beta.45/code87 is published from `db558c4e97674b4f7ca57d835c20cf1fafb50ff1`;
-browser/cache v117 is deployed from the byte-identical web tree at
-`9245a36423263f883e543faf9a6380d98eaf64e2`. The user
-explicitly waived full CI for this beta; keep earlier complete recovery checks,
-current focused mirror-command checks and signed artifact verification separate.
-The final focused run passed 138 shared tests and 700 browser tests; signed release,
-independent public-artifact and 226-file/19-route site checks passed. This waiver
-does not apply to later work. iPhone mirror picture/command compatibility,
-navigation audio and Bluetooth microphone still need physical verification.
+Resume current release work at [Build](docs/Build.md#beta46-release).
+Beta.46/code88 and browser/cache v118 are prepared; final focused checks passed
+411 tests (367 shared/44 common), 700 browser tests and Python/source checks.
+Signed packaging/publication are pending. The user authorized beta publication
+after this recovery work and explicitly waived full CI; keep focused checks,
+prior complete validation and signed artifact verification separate.
+The latest published APK remains beta.45/code87 from
+`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`; browser/cache v117 is deployed from
+`9245a36423263f883e543faf9a6380d98eaf64e2`. Its checks are historical evidence.
+iPhone mirror startup/command compatibility, vehicle native-audio ICE and selected-car
+SCO routing still need physical verification.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

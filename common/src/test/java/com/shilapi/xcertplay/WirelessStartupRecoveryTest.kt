@@ -146,13 +146,17 @@ class WirelessStartupRecoveryTest {
         assertEquals(View.VISIBLE, retry.visibility)
     }
 
-    // The driver can switch Bluetooth on, so the screen asks for it and the attempts go on.
-    @Test fun bluetoothThatIsOffAsksForItAndKeepsRetrying() {
+    @Test fun phoneBluetoothThatIsOffWaitsForTheRadioWithoutSchedulingAnotherHeavyAttempt() {
         val stage = TextView(activity)
         ReflectionHelpers.setField(activity, "stageStatusView", stage)
+        ReflectionHelpers.setField(activity, "wirelessEnabled", true)
+        org.robolectric.Shadows.shadowOf(activity.getSystemService(android.bluetooth.BluetoothManager::class.java).adapter)
+            .setEnabled(false)
         report(status = CarPlayStatus.Failed(BluetoothRadioCheck.RADIO_OFF))
-        assertEquals(activity.getString(R.string.turn_on_bluetooth_in_the_head_unit_s_settings_to_connect), stage.text.toString())
-        assertTrue(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertEquals(activity.getString(R.string.settings_hint_bluetooth), stage.text.toString())
+        assertFalse(ReflectionHelpers.getField(activity, "reconnectScheduled"))
+        assertTrue(ReflectionHelpers.getField(activity, "waitingForBrowserBluetooth"))
+        assertEquals(0, ReflectionHelpers.getField<Int>(activity, "reconnectAttempts"))
         assertFalse(ReflectionHelpers.getField(activity, "startupRetryStopped"))
         assertEquals(View.GONE, retry.visibility)
     }

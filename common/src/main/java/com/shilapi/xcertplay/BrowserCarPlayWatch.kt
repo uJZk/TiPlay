@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothAdapter
 import androidx.core.content.IntentCompat
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -27,6 +28,10 @@ internal class BrowserCarPlayWatch(context: Context, private val bluetoothConnec
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (closed) return
+            if (intent.action == BluetoothAdapter.ACTION_STATE_CHANGED &&
+                intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR) !in
+                    listOf(BluetoothAdapter.STATE_ON, BluetoothAdapter.STATE_OFF)) return
             if (RawTraffic.enabled && (intent.action == UsbManager.ACTION_USB_DEVICE_ATTACHED ||
                     intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED)) {
                 val observedAt = System.currentTimeMillis()
@@ -46,6 +51,7 @@ internal class BrowserCarPlayWatch(context: Context, private val bluetoothConnec
     init {
         ContextCompat.registerReceiver(app, receiver, IntentFilter().apply {
             addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }, ContextCompat.RECEIVER_EXPORTED)

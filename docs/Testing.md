@@ -7,6 +7,44 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+### Beta.46 preparation
+
+**Beta.46/code88 source is prepared**; browser/cache **v118** refreshes product
+version metadata without changing browser playback logic.
+It separates native-audio packet expiry from peer lifetime, supports
+combined SETUP information and observes mirror preparation without closing the
+control session. It also gates new wireless startup on phone Bluetooth and expands
+selected-car profile/process-exit diagnostics. Full CI remains explicitly waived
+for the authorized follow-up beta. These changes do not establish the cause of missing mirror media
+SETUP, actual selected-car SCO routing or vehicle native-audio ICE connectivity.
+The current executor has no ADB device, and its managed Chromium policy disables
+non-proxied UDP. Those limits prevent this environment from establishing actual
+Android-to-vehicle native-audio interoperability.
+
+`BrowserRtcAudioRouterTest` exercises stale-packet removal with fresh same-epoch
+continuation and retired-owner isolation. Receiver preparation/setup fixtures cover
+late media SETUP after observation expiry and combined information. Radio-state,
+Bluetooth route and process-exit fixtures retain the existing authorization,
+ownership and route restrictions. Final focused validation passed **411 tests**:
+367 shared cases in 59 classes and 44 common cases in five classes, including all
+23 Router cases; no failures, errors or skips. All selected tests executed in this
+run. The 700 browser tests, Python release-draft/native-symbol/site cases (9/16/2)
+and public-tree/cache/diff checks passed. A real Chromium Service Worker fixture
+passed baseline/update/newer lifecycle checks with three fixture resources; this
+does not establish complete production-resource offline operation. Signed
+packaging and public artifact verification remain pending.
+
+In the beta.45 field capture, all 1,196 original Opus packets decoded independently,
+and each of three bursts contained nonzero signal. Packet expiry killed two newly
+answered peers after 87/156 ms; this establishes a lifecycle defect, not damaged
+Opus or the underlying ICE cause. The CarPlay audit parsed 2,198 original access
+units and observed duplicate-PTS recovery after about 76 ms. Video payloads were
+not independently decrypted, so this is not independent NAL or plaintext-byte
+verification. The ordinary-mirror attempt never supplied media SETUP and did not
+exercise `forceKeyFrame`.
+
+### Beta.45 reference
+
 **Beta.45/code87 is published** from
 `db558c4e97674b4f7ca57d835c20cf1fafb50ff1`, with browser/cache **v117**.
 [Build](Build.md#beta45-release) records the separate APK and Pages provenance.
