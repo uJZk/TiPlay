@@ -7,9 +7,10 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.46 preparation
+### Beta.46
 
-**Beta.46/code88 source is prepared**; browser/cache **v118** refreshes product
+**Beta.46/code88 is published** from
+`924700b0aae374991c1682cbe6313bf961546bff`; browser/cache **v118** refreshes product
 version metadata without changing browser playback logic.
 It separates native-audio packet expiry from peer lifetime, supports
 combined SETUP information and observes mirror preparation without closing the
@@ -31,8 +32,12 @@ ownership and route restrictions. Final focused validation passed **411 tests**:
 run. The 700 browser tests, Python release-draft/native-symbol/site cases (9/16/2)
 and public-tree/cache/diff checks passed. A real Chromium Service Worker fixture
 passed baseline/update/newer lifecycle checks with three fixture resources; this
-does not establish complete production-resource offline operation. Signed
-packaging and public artifact verification remain pending.
+does not establish complete production-resource offline operation. The signed
+workflow and independent twelve-check package/source/runtime/native verification
+passed. Pages/public-site checks matched 226 files and 20 routes from the same
+build commit. Anonymous downloads matched all three public assets byte for byte,
+including checksums/API digests and exact tag resolution; exact
+publication provenance is in [Build](Build.md#beta46-release).
 
 In the beta.45 field capture, all 1,196 original Opus packets decoded independently,
 and each of three bursts contained nonzero signal. Packet expiry killed two newly

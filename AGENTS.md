@@ -38,14 +38,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#beta46-release).
-Beta.46/code88 and browser/cache v118 are prepared; final focused checks passed
+Beta.46/code88 and browser/cache v118 are published from
+`924700b0aae374991c1682cbe6313bf961546bff`; final focused checks passed
 411 tests (367 shared/44 common), 700 browser tests and Python/source checks.
-Signed packaging/publication are pending. The user authorized beta publication
+Signed packaging, twelve-check artifact verification, 226-file/20-route public
+site checks and anonymous three-asset byte comparison passed.
+The user authorized beta publication
 after this recovery work and explicitly waived full CI; keep focused checks,
 prior complete validation and signed artifact verification separate.
-The latest published APK remains beta.45/code87 from
-`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`; browser/cache v117 is deployed from
-`9245a36423263f883e543faf9a6380d98eaf64e2`. Its checks are historical evidence.
 iPhone mirror startup/command compatibility, vehicle native-audio ICE and selected-car
 SCO routing still need physical verification.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source

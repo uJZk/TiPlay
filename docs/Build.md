@@ -452,6 +452,15 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v118
+
+Browser/cache **v118**, product **0.2.20-beta.46**, is deployed by
+[Pages run 42780860513](https://github.com/uJZk/TiPlay/actions/runs/42780860513)
+from APK build commit `924700b0aae374991c1682cbe6313bf961546bff`.
+Anonymous checks matched all 226 files (37,811,110 bytes) and 20 routes.
+This refreshes product-version metadata; browser playback logic is unchanged.
+The retired `/update/` route remains 404.
+
 ### Browser v117
 
 Browser/cache **v117** and app version **0.2.20-beta.45** are deployed by
@@ -482,22 +491,36 @@ Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
 <a id="beta46-release"></a>
-### Beta.46 preparation
+### Published beta.46
 
-**0.2.20-beta.46/code88** prepares native-audio packet-age isolation, combined
-receiver SETUP information, observation of missing mirror media SETUP, phone
-Bluetooth startup gating and selected-car/process-exit diagnostics. Browser/cache
-**v118** refreshes generated product-version metadata; browser playback logic is unchanged.
+[Beta.46/code88](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.46)
+was published as a prerelease at **2026-11-10 08:24:44 UTC** from
+`924700b0aae374991c1682cbe6313bf961546bff`.
+[Signed workflow 42780854356](https://github.com/uJZk/TiPlay/actions/runs/42780854356)
+passed all three jobs. It ships native-audio packet-age isolation, combined SETUP
+information/preparation observations and phone Bluetooth gating/diagnostics.
 
-The user's authorization to publish the completed beta and skip full CI remains
-in force for this follow-up. Final focused checks passed 411 tests (367 shared,
+Full CI was explicitly waived. Focused checks passed 411 tests (367 shared,
 44 common; no failures/errors/skips), 700 browser tests and Python/source checks.
-The real Chromium Service Worker lifecycle fixture passed; it is not complete
-production-resource offline acceptance. Signed packaging/public verification
-remain pending; see [Testing](Testing.md#current-release-source).
-The prior beta.45 results below do not certify this source. Actual mirror media
-startup, selected-car SCO routing and vehicle native-audio ICE remain physical
-acceptance, and the missing mirror SETUP's cause is not established.
+[Testing](Testing.md#current-release-source) records Service Worker fixture scope.
+Mirror startup's cause, selected-car SCO routing and vehicle native-audio ICE
+remain unverified; the changes do not establish elimination of every field issue.
+
+Independent twelve-check verification confirmed non-debug `com.ujzk.tiplay`,
+code88, signer continuity, two exact runtime containers, new compiled markers,
+v118 metadata, WebRTC identity/16 KiB alignment and all 51 native libraries
+(24 JNI, 27 prebuilt). The source ZIP exactly matches the build commit's archive.
+Matched symbols remain in persistent archive draft `440100070`, separate from the
+public prerelease. Anonymous HTTP 200 downloads at **08:25:23 UTC** matched all
+three assets' sizes, API digests, SHA-256 and bytes; the checksum manifest matched
+and the tag resolves to the build commit.
+[Browser v118](#browser-v118) uses the same build commit.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.46.apk` | 114,563,919 | `7514b55b1c42d5865834443cafc17a1f123b87bc791b6ac9f1802ccddfa0a18f` |
+| `TiPlay-0.2.20-beta.46-source.zip` | 70,237,216 | `d7a9532ff9ad5c89022fd61c53de429331fd230a8f18285d3917f4b70b6f9485` |
+| `SHA256SUMS.txt` | 191 | `c952a46e6597fa24bf198b34571aad023c8812f790ae2175b37e72ecc718407f` |
 
 <a id="beta45-release"></a>
 ### Published beta.45
