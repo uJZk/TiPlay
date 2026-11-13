@@ -454,9 +454,12 @@ APK/source or webpage build provenance.
 
 ### Browser v119
 
-Browser/cache **v119**, product **0.2.20-beta.47**, is prepared for the authorized
-follow-up beta. Only version metadata changes; browser playback logic is unchanged.
-Signed packaging and Pages/public-byte verification are pending.
+Browser/cache **v119**, product **0.2.20-beta.47**, is deployed by
+[Pages run 43407418670](https://github.com/uJZk/TiPlay/actions/runs/43407418670)
+from APK build commit `83634d299052291c02afc6aa0c221b85d7a3b035`.
+Anonymous checks matched all 226 files (37,811,110 bytes) and 20 routes.
+Only product-version metadata changes; browser playback logic is unchanged.
+The retired update paths remain 404.
 
 ### Browser v118
 
@@ -495,16 +498,36 @@ Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
 <a id="beta47-release"></a>
-### Beta.47 preparation
+### Published beta.47
 
-Beta.47/code89 fixes missing-CSeq mirror command acknowledgements, preserves an
-already captured IDR during cold native encoder selection, and adds selected-car
-SCO identity diagnostics without changing route admission.
-Focused checks pass 475 shared Android, 700 browser and 27 Python cases plus
-the Chromium Service Worker lifecycle fixture. Signed packaging and independent
-artifact verification are pending. Full CI remains waived by the user's existing publication request.
-Physical mirror picture, selected-car SCO and vehicle native-audio ICE need
-separate verification; a command acknowledgement is not picture evidence.
+[Beta.47/code89](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.47)
+was published as a prerelease at **2026-11-13 10:22:51 UTC** from
+`83634d299052291c02afc6aa0c221b85d7a3b035`.
+[Signed workflow 43407413026](https://github.com/uJZk/TiPlay/actions/runs/43407413026)
+passed all three jobs. It fixes missing-CSeq command replies and cold encoder
+IDR loss while preserving callback-reset isolation, and adds SCO identity diagnostics.
+
+Full CI was explicitly waived. Focused checks passed 475 shared Android tests
+in 65 classes, 700 browser tests and 27 Python cases; the Chromium lifecycle
+fixture and cache/public-tree checks passed. [Testing](Testing.md#current-release-source)
+records scope and physical limits.
+
+Independent twelve-check verification confirmed non-debug `com.ujzk.tiplay`,
+code89, signer continuity, two exact pinned runtime containers, new compiled
+markers, v119 metadata, WebRTC/16 KiB identity and all 51 native libraries
+(24 JNI, 27 prebuilt). The source ZIP exactly matches the build commit's archive.
+Matched symbols remain in persistent draft `444086720`.
+Anonymous HTTP 200 downloads at **2026-11-13T10:23:17.844013+00:00** matched all three assets'
+bytes, sizes, API digests and SHA-256, the checksum manifest and exact tag commit.
+[Browser v119](#browser-v119) uses the same build commit.
+Actual mirror picture, vehicle native Opus ICE and selected-car SCO routing
+remain physical acceptance boundaries.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.47.apk` | 114,563,915 | `52923681fd2eafae7ae1e59ec1caa5942808db2ce60c4f03fd24870aba065a3e` |
+| `SHA256SUMS.txt` | 191 | `5c4af4fb0057ce66776c2d1e46db95f0c0d2da78cf23488dff86dfbfdf8853a1` |
+| `TiPlay-0.2.20-beta.47-source.zip` | 70,243,710 | `6e3daaa6d0d64c0fef5775eeb5c71af3a1d5ba99ae62c5a240055527c841ba25` |
 
 <a id="beta46-release"></a>
 ### Published beta.46 reference
@@ -528,8 +551,8 @@ was published at **2026-11-09 09:40:49 UTC** from
 `db558c4e97674b4f7ca57d835c20cf1fafb50ff1` by
 [signed workflow 42593488156](https://github.com/uJZk/TiPlay/actions/runs/42593488156).
 Focused validation passed 138 shared and 700 browser tests; full CI was waived.
-Twelve artifact checks and anonymous downloads matched the APK, exact source and
-checksums; persistent native symbols draft `439142956` covers that build.
+Independent artifact checks and anonymous downloads matched the APK, exact source and
+checksums; matching native symbols remain in a separate persistent draft.
 Mirror force-key commands, original-AU readiness gating, duplicate-PTS recovery
 and native-audio/Bluetooth recovery were introduced with physical interoperability
 still pending. Git history preserves the full artifact hash table.

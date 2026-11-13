@@ -14,7 +14,8 @@ playback logic is unchanged.
 - Add aggregate SCO matching counts for the selected car without exposing names or addresses; retain exact route admission.
 
 Focused checks pass 475 Android, 700 browser and 27 Python cases; full CI is waived.
-Signed packaging remains pending. Native mirror output, original-Opus ICE connectivity
+Signed packaging and all twelve independent artifact checks pass; public asset
+bytes and v119 deployment match. Native mirror output, original-Opus ICE connectivity
 and the selected car's SCO route remain unresolved device-acceptance boundaries;
 accepting a command reply does not establish picture recovery.
 

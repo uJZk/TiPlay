@@ -9,8 +9,8 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ### Beta.47
 
-**Beta.47/code89 and browser/cache v119 are in preparation.** Browser playback
-logic is unchanged. Missing-CSeq reverse-command responses now acknowledge only
+**Beta.47/code89 is published** from `83634d299052291c02afc6aa0c221b85d7a3b035`
+with browser/cache v119. Browser playback logic is unchanged. Missing-CSeq reverse-command responses now acknowledge only
 the current channel's unique outstanding mirror request; explicit malformed or
 wrong CSeq values and provisional responses cannot use this compatibility path.
 A native encoder wrapper's first cold initialization retains a captured IDR
@@ -34,8 +34,16 @@ failures, errors or skips, including eleven reverse-command and ten video-recove
 cases. All **700 browser tests** and 27 Python release/native-symbol/site cases
 pass. A real Chromium baseline/update/newer lifecycle fixture passes with three
 resources; this does not establish full production offline operation. Public-tree,
-cache-manifest and diff checks pass. Signed artifact verification is pending. Full CI is explicitly waived for this authorized
+cache-manifest and diff checks pass. Signed packaging and all twelve independent
+artifact checks pass. Public checks match 226 files, 20 routes and all three release
+assets byte for byte; [Build](Build.md#beta47-release) records exact provenance. Full CI is explicitly waived for this authorized
 follow-up beta; release lint/build and artifact checks remain required.
+The focused Gradle task is `:shared:testDebugUnitTest`, filtered with
+`com.shilapi.xcertplay.receiver.*`, `*BrowserRtcVideo*Test`, `*WebVideoHubTest`,
+`*Bluetooth*Test`, `*Rtsp*Test` and `*Bplist*Test` (`--tests` for each pattern).
+A non-incremental compile was used after the resumed executor's stale Kotlin
+cache failed to resolve an existing same-package helper.
+
 Actual vehicle native Opus ICE, selected-car SCO and mirror picture remain open.
 The managed browser policy disables non-proxied UDP, and this environment has no
 attached ADB device; source fixtures cannot establish physical interoperability.

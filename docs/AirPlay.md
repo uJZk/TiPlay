@@ -373,7 +373,7 @@ later reached its fifteen-second first-render timeout. The ACK timeout did not
 itself close the mirror. No pictures were independently decoded, and accepting
 the reply does not by itself establish a fix for native startup or black output.
 Mirror AAC-ELD reached independently verified nonzero Worklet samples in that
-capture while the separate original-Opus peer stayed checking with no ready slot.
+capture while the separate original-Opus peer never became ready (seven snapshots new, five checking) with no ready slot.
 Before any successful native output, only a new encoder wrapper's first
 initialization may retain the queued recovery-IDR chain; an active bridge still
 requests a fresh keyframe. Reinitializing an existing wrapper after release or

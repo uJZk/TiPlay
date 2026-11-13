@@ -38,14 +38,17 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#beta47-release).
-Beta.47/code89 and browser/cache v119 are in preparation after the November 11
-beta.46 field capture. Missing-CSeq mirror command compatibility, cold encoder
-IDR retention and privacy-safe selected-car SCO identity diagnostics are implemented; 475 focused Android,
-700 browser and 27 Python cases pass. Signed/public-artifact checks are pending. Browser playback logic is unchanged.
-The user authorized beta publication after this recovery work and explicitly waived
-full CI; keep focused checks, previous validation and signed artifact verification
-separate. Mirror media SETUP now occurs, but actual mirror picture, vehicle native
-Opus ICE and selected-car SCO identity/routing still need physical verification.
+Beta.47/code89 and browser/cache v119 are published from
+`83634d299052291c02afc6aa0c221b85d7a3b035`. Final focused checks passed
+475 shared Android tests (65 classes), 700 browser and 27 Python cases.
+Signed packaging, twelve independent artifact checks, 226-file/20-route site checks
+and anonymous three-asset byte comparison passed. It fixes missing-CSeq mirror
+command replies and first cold encoder IDR loss while retaining callback-reset
+isolation, and expands privacy-safe selected-car SCO identity diagnostics.
+The user authorized beta publication and explicitly waived full CI; keep focused
+checks, previous validation and signed artifact identity separate. Actual mirror
+picture, vehicle native Opus ICE and selected-car SCO identity/routing still need
+physical verification; ACKs and source packets do not establish display or sound.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from
