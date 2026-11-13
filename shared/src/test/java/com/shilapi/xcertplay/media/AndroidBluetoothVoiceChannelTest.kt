@@ -395,6 +395,37 @@ class AndroidBluetoothVoiceChannelTest {
         assertTrue(sameBluetoothSelection(null, null))
     }
 
+    @Test fun identityDiagnosticsSeparatePlaceholdersFromValidLocallyAdministeredAddresses() {
+        assertEquals("missing", bluetoothVoiceAddressIdentity(null))
+        assertEquals("missing", bluetoothVoiceAddressIdentity("  "))
+        assertEquals("invalid", bluetoothVoiceAddressIdentity("AA-BB-CC-DD-EE-01"))
+        for (address in listOf("00:00:00:00:00:00", "02:00:00:00:00:00", "ff:ff:ff:ff:ff:ff")) {
+            assertEquals("placeholder", bluetoothVoiceAddressIdentity(address))
+        }
+        assertEquals("valid", bluetoothVoiceAddressIdentity(" 02:01:02:03:04:05 "))
+        assertEquals("valid", bluetoothVoiceAddressIdentity("aa:bb:cc:dd:ee:01"))
+    }
+
+    @Test fun profileRelationsDistinguishExactOtherAndUnresolvedIdentitiesWithoutLeakingNamesOrAddresses() {
+        val selected = "AA:BB:CC:DD:EE:01"
+        val other = "AA:BB:CC:DD:EE:02"
+        val unresolved = "AA:BB:CC:DD:EE:03"
+        val connected = listOf(selected to "Private car", other to "Private headset")
+        val relations = bluetoothVoiceProfileRelations(selected, listOf(
+            selected.lowercase() to "Different name", other to " private HEADSET ",
+            unresolved to " PRIVATE CAR ", "02:00:00:00:00:00" to "Private car", null to " "), connected)
+        assertTrue(relations.contains("scoCandidates=5"))
+        assertTrue(relations.contains("missingAddresses=1 invalidAddresses=0 placeholderAddresses=1 usableIdentityAddresses=3"))
+        assertTrue(relations.contains("scoAddressSelectedMatches=1 scoAddressOtherMatches=1 scoAddressUnmatched=1"))
+        assertTrue(relations.contains("scoNameSelectedMatches=2 scoNameOtherMatches=1"))
+        for (privateValue in listOf(selected, other, unresolved, "Private car", "Private headset", "02:00:00:00:00:00")) {
+            assertFalse(relations.contains(privateValue, ignoreCase = true))
+        }
+        assertNull(selectBluetoothAudioDevice(listOf(unresolved), selected) { it })
+        val unnamed = bluetoothVoiceProfileRelations(selected, listOf(unresolved to " "), listOf(selected to ""))
+        assertTrue(unnamed.contains("scoNameSelectedMatches=0 scoNameOtherMatches=0"))
+    }
+
     @Test fun selectedDeviceWithNoMatchingScoAddressDoesNotUseAnotherDevice() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
@@ -439,8 +470,10 @@ class AndroidBluetoothVoiceChannelTest {
         channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
         assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") &&
             it.contains("matches=0") && it.contains("types=${AudioDeviceInfo.TYPE_BLUETOOTH_SCO}") && it.contains("validAddresses=1") })
-        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=headset") && it.contains("connected=1 selectedMatch=false") })
-        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=a2dp") && it.contains("connected=1 selectedMatch=true") })
+        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=headset") && it.contains("connected=1 selectedMatch=false") &&
+            it.contains("scoAddressSelectedMatches=0 scoAddressOtherMatches=1 scoAddressUnmatched=0") })
+        assertTrue(logs.any { it.contains("stage=headset-diagnostic profile=a2dp") && it.contains("connected=1 selectedMatch=true") &&
+            it.contains("scoAddressSelectedMatches=0 scoAddressOtherMatches=0 scoAddressUnmatched=1") })
         shadowOf(Looper.getMainLooper()).idleFor(7500, TimeUnit.MILLISECONDS)
         for (profile in listOf("headset", "a2dp")) {
             assertEquals(1, logs.count { it.contains("stage=headset-diagnostic profile=$profile") && it.contains("result=requested") })
@@ -452,6 +485,70 @@ class AndroidBluetoothVoiceChannelTest {
         assertTrue(logs.none { it.contains(selectedAddress) || it.contains(otherAddress) })
         assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.HEADSET))
         assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.A2DP))
+        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test fun queuedProfileDiagnosticsCloseProxiesWithoutReportingAfterStopOrClose() {
+        for (close in listOf(false, true)) {
+            val app = RuntimeEnvironment.getApplication()
+            shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+            val manager = app.getSystemService(AudioManager::class.java)
+            shadowOf(manager).setAvailableCommunicationDevices(listOf(sco("AA:BB:CC:DD:EE:02", 123)))
+            val adapter = app.getSystemService(BluetoothManager::class.java).adapter
+            val bluetooth = shadowOf(adapter)
+            bluetooth.setEnabled(true)
+            for (profile in listOf(BluetoothProfile.HEADSET, BluetoothProfile.A2DP)) {
+                val proxy = mock(BluetoothProfile::class.java)
+                `when`(proxy.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice("AA:BB:CC:DD:EE:01")))
+                bluetooth.setProfileProxy(profile, proxy)
+            }
+            val logs = mutableListOf<String>()
+            val channel = AndroidBluetoothVoiceChannel(app, {}, diagnostic = logs::add) { "AA:BB:CC:DD:EE:01" }
+            channel.start(config())
+            if (close) channel.close() else channel.stop()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(logs.any { it.contains("stage=headset-diagnostic") && it.contains("result=requested") })
+            assertTrue(logs.none { it.contains("stage=headset-diagnostic") && it.contains("connected=") })
+            assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.HEADSET))
+            assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.A2DP))
+            channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        }
+    }
+
+    @Test fun selectionChangesRejectQueuedProfilesAndPermitFreshDiagnosticsForTheNewCar() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val oldCar = "AA:BB:CC:DD:EE:01"
+        val newCar = "AA:BB:CC:DD:EE:02"
+        shadowOf(manager).setAvailableCommunicationDevices(listOf(sco("AA:BB:CC:DD:EE:03", 123)))
+        val adapter = app.getSystemService(BluetoothManager::class.java).adapter
+        val bluetooth = shadowOf(adapter)
+        bluetooth.setEnabled(true)
+        for (profile in listOf(BluetoothProfile.HEADSET, BluetoothProfile.A2DP)) {
+            val proxy = mock(BluetoothProfile::class.java)
+            `when`(proxy.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice(newCar)))
+            bluetooth.setProfileProxy(profile, proxy)
+        }
+        var selectedAddress = oldCar
+        val logs = mutableListOf<String>()
+        val channel = AndroidBluetoothVoiceChannel(app, {}, diagnostic = logs::add) { selectedAddress }
+        channel.start(config())
+        shadowOf(Looper.getMainLooper()).runOneTask()
+        selectedAddress = newCar
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(logs.none { it.contains("stage=headset-diagnostic") && it.contains("connected=") })
+        for (profile in listOf(BluetoothProfile.HEADSET, BluetoothProfile.A2DP)) {
+            val proxy = mock(BluetoothProfile::class.java)
+            `when`(proxy.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice(newCar)))
+            bluetooth.setProfileProxy(profile, proxy)
+        }
+        shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
+        for (profile in listOf("headset", "a2dp")) {
+            assertEquals(1, logs.count { it.contains("stage=headset-diagnostic profile=$profile") && it.contains("connected=1 selectedMatch=true") })
+        }
+        assertTrue(logs.none { it.contains(oldCar) || it.contains(newCar) })
+        assertNull(manager.communicationDevice)
         channel.close(); shadowOf(Looper.getMainLooper()).idle()
     }
     @Test fun deniedMicrophoneOrBluetoothPermissionDoesNotSelectThePhoneOrChangeMode() {

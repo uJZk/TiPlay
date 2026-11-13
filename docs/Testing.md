@@ -7,46 +7,50 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.46
+### Beta.47
 
-**Beta.46/code88 is published** from
-`924700b0aae374991c1682cbe6313bf961546bff`; browser/cache **v118** refreshes product
-version metadata without changing browser playback logic.
-It separates native-audio packet expiry from peer lifetime, supports
-combined SETUP information and observes mirror preparation without closing the
-control session. It also gates new wireless startup on phone Bluetooth and expands
-selected-car profile/process-exit diagnostics. Full CI remains explicitly waived
-for the authorized follow-up beta. These changes do not establish the cause of missing mirror media
-SETUP, actual selected-car SCO routing or vehicle native-audio ICE connectivity.
-The current executor has no ADB device, and its managed Chromium policy disables
-non-proxied UDP. Those limits prevent this environment from establishing actual
-Android-to-vehicle native-audio interoperability.
+**Beta.47/code89 and browser/cache v119 are in preparation.** Browser playback
+logic is unchanged. Missing-CSeq reverse-command responses now acknowledge only
+the current channel's unique outstanding mirror request; explicit malformed or
+wrong CSeq values and provisional responses cannot use this compatibility path.
+A native encoder wrapper's first cold initialization retains a captured IDR
+when no output chain exists. Callback reinitialization, warm replacement and
+actual loss still invalidate old chains;
+codec/profile/level and instance checks remain strict.
+SCO diagnostics classify placeholder addresses and correlate profile/SCO identities
+without exposing addresses or names or relaxing selected-car route admission.
 
-`BrowserRtcAudioRouterTest` exercises stale-packet removal with fresh same-epoch
-continuation and retired-owner isolation. Receiver preparation/setup fixtures cover
-late media SETUP after observation expiry and combined information. Radio-state,
-Bluetooth route and process-exit fixtures retain the existing authorization,
-ownership and route restrictions. Final focused validation passed **411 tests**:
-367 shared cases in 59 classes and 44 common cases in five classes, including all
-23 Router cases; no failures, errors or skips. All selected tests executed in this
-run. The 700 browser tests, Python release-draft/native-symbol/site cases (9/16/2)
-and public-tree/cache/diff checks passed. A real Chromium Service Worker fixture
-passed baseline/update/newer lifecycle checks with three fixture resources; this
-does not establish complete production-resource offline operation. The signed
-workflow and independent twelve-check package/source/runtime/native verification
-passed. Pages/public-site checks matched 226 files and 20 routes from the same
-build commit. Anonymous downloads matched all three public assets byte for byte,
-including checksums/API digests and exact tag resolution; exact
-publication provenance is in [Build](Build.md#beta46-release).
+The November 11 beta.46 capture independently contains 687 mirror access units:
+two IDRs and 685 P frames, no non-IDR I slices, SEI recovery points or B slices.
+This is original NAL/slice verification, not decoded-picture verification.
+Mirror media SETUP succeeds. A genuine 75-byte, CSeq-less 200 reply arrives after
+the force-key request but was ignored, causing a false command timeout that
+suppressed later requests. Two submitted mirror frames yield zero output; native
+startup then expires before the first-presentation deadline. Those are distinct
+observations; a successful reply alone does not establish picture recovery.
 
-In the beta.45 field capture, all 1,196 original Opus packets decoded independently,
-and each of three bursts contained nonzero signal. Packet expiry killed two newly
-answered peers after 87/156 ms; this establishes a lifecycle defect, not damaged
-Opus or the underlying ICE cause. The CarPlay audit parsed 2,198 original access
-units and observed duplicate-PTS recovery after about 76 ms. Video payloads were
-not independently decrypted, so this is not independent NAL or plaintext-byte
-verification. The ordinary-mirror attempt never supplied media SETUP and did not
-exercise `forceKeyFrame`.
+Focused Android validation passed **475 tests in 65 shared classes**, with no
+failures, errors or skips, including eleven reverse-command and ten video-recovery
+cases. All **700 browser tests** and 27 Python release/native-symbol/site cases
+pass. A real Chromium baseline/update/newer lifecycle fixture passes with three
+resources; this does not establish full production offline operation. Public-tree,
+cache-manifest and diff checks pass. Signed artifact verification is pending. Full CI is explicitly waived for this authorized
+follow-up beta; release lint/build and artifact checks remain required.
+Actual vehicle native Opus ICE, selected-car SCO and mirror picture remain open.
+The managed browser policy disables non-proxied UDP, and this environment has no
+attached ADB device; source fixtures cannot establish physical interoperability.
+
+### Beta.46 reference
+
+Beta.46/code88 was published from `924700b0aae374991c1682cbe6313bf961546bff`
+with browser/cache v118. Focused validation passed 411 tests (367 shared/44 common),
+700 browser tests, Python release/native-symbol/site checks and independent signed
+artifact/public-byte verification; [Build](Build.md#beta46-release) records provenance.
+The November 11 capture no longer shows the previous five-second packet-age peer
+mis-kill. CarPlay Opus source packets decode, but all native audio slots remain
+unready; ordinary-mirror AAC produces nonzero Worklet samples. HFP and A2DP both
+report the selected vehicle connected while no SCO address matches it. These
+observations do not identify the underlying ICE or SCO identity cause.
 
 ### Beta.45 reference
 

@@ -146,7 +146,11 @@ internal class ReceiverMirrorRecovery(
             // An already admitted write may finish while its mirror is closing. A queued old demand
             // must not acquire the writer or be redirected to a replacement event connection.
             val written = command.channel.write(header.toByteArray(Charsets.US_ASCII) + body) {
-                synchronized(lock) { !closed && outstanding === command && token === command.token && channel === command.channel }
+                synchronized(lock) {
+                    val admitted = !closed && outstanding === command && token === command.token && channel === command.channel
+                    if (admitted) command.writeAdmitted = true
+                    admitted
+                }
             }
             if (!written) {
                 synchronized(lock) {
@@ -176,10 +180,17 @@ internal class ReceiverMirrorRecovery(
     }
 
     private fun acknowledge(candidate: Channel, message: RtspMessage.Request) {
-        val sequence = message.headers["cseq"]?.toLongOrNull() ?: return
+        val rawSequence = message.headers["cseq"]
+        val sequence = rawSequence?.takeIf { it.isNotEmpty() && it.all { digit -> digit in '0'..'9' } }?.toLongOrNull()
+        // Apple senders can omit CSeq even on a successful reverse command. An explicit invalid
+        // or different sequence must never take this fallback path.
+        if (rawSequence != null && sequence == null) return
         val status = message.path.toIntOrNull()?.takeIf { it in 200..599 } ?: return
         val matched = synchronized(lock) {
-            val command = outstanding?.takeIf { it.channel === candidate && it.cseq == sequence } ?: return@synchronized false
+            val command = outstanding?.takeIf {
+                !closed && it.writeAdmitted && channel === candidate && it.channel === candidate && token === it.token &&
+                    (rawSequence == null || it.cseq == sequence)
+            } ?: return@synchronized null
             command.deadline?.cancel(false)
             outstanding = null
             if (status !in 200..299) {
@@ -187,9 +198,10 @@ internal class ReceiverMirrorRecovery(
                 pending = false
             }
             scheduleLocked()
-            true
+            command
         }
-        if (matched) report("state=${if (status in 200..299) "acknowledged" else "rejected"} cseq=$sequence status=$status")
+        if (matched != null) report("state=${if (status in 200..299) "acknowledged" else "rejected"} " +
+            "cseq=${matched.cseq} status=$status" + if (rawSequence == null) " responseCSeq=absent" else "")
     }
 
     private fun timeout(command: Command) {
@@ -228,6 +240,7 @@ internal class ReceiverMirrorRecovery(
     private fun report(message: String) { runCatching { log("stage=MIRROR_KEYFRAME $message") } }
 
     private class Command(val token: Any, val channel: Channel, val cseq: Long) {
+        var writeAdmitted = false // guarded by the recovery controller's lock
         var deadline: ScheduledFuture<*>? = null
     }
 

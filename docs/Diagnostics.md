@@ -323,10 +323,13 @@ matching IPv4 /24 prefixes. A matching prefix does not prove connectivity, and
 mDNS addresses cannot be compared this way. These counts do not include addresses,
 ports or credentials. When the selected car has no matching SCO route,
 `communication-devices` records device `types`, `namedCandidates` and `validAddresses`
-as counts/types only. `headset-diagnostic` records adapter/profile state, proxy result,
-connected count and `selectedMatch`, at most once per profile per demand/selection.
-Names and addresses are omitted. Another connected headset does not establish a
-selected-car route, and these fields do not identify every platform Bluetooth failure.
+as counts/types only. `selectedIdentity` and address-class counts distinguish missing,
+invalid, placeholder and usable identities. `headset-diagnostic` records live profile
+state/counts, `selectedMatch`, `requestedAgeMs` and aggregate `scoAddress*`/`scoName*`
+correlations with selected/other profile devices, once per demand/selection. Names,
+addresses and their hashes are omitted. Name correlation cannot identify a route.
+HFP/A2DP `selectedMatch=true` with zero SCO exact matches does not establish a
+disconnected or wrongly selected car; the communication-device mismatch remains distinct.
 
 RTP packet reception alone also does not establish decoded samples. The local
 original-Opus reproduction received packets with zero Worklet output until a
@@ -834,12 +837,12 @@ not a stream failure: control/event/audio remain open for later SETUP. No mirror
 means `forceKeyFrame` has not been exercised, even with working feedback.
 
 `MIRROR_KEYFRAME` records `sent`, `acknowledged`, `rejected`, `timeout` or `failure`.
-Command sends, replies and timeouts include `cseq`; acknowledgement/rejection also
-records RTSP `status`.
-These are event-connection outcomes, not proof of a new source IDR or restored
-picture. Compare them with the mirror's `keyFrames`, bridge submission/output and
-first-frame Canvas acknowledgement in the same session. H.264 `keyFrames` counts
-recognized NAL type-5 IDR access units, not all I pictures or recovery-point SEI.
-Requests wait for a source picture with a valid VCL NAL header and connected event
-socket; SEI-only access units do not activate requests. An initially quiet log alone
-does not distinguish those prerequisites.
+Command sends/replies/timeouts include the request's `cseq`; replies also record RTSP `status`.
+`responseCSeq=absent` identifies a final reply associated with the current single
+outstanding request on its owning connection/mirror. Explicit wrong or malformed
+CSeq values cannot take that path. A command timeout disables further requests;
+it does not itself close the mirror. Native-encoder and first-render deadlines
+are separate. Compare outcomes with source IDRs, bridge submission/output and
+first-frame Canvas acknowledgement: an ACK does not prove picture recovery.
+H.264 `keyFrames` counts recognized type-5 IDR access units, not all I pictures or
+recovery SEI. Requests still require a valid VCL picture and connected event socket.

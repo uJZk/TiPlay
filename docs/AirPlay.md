@@ -113,7 +113,7 @@ This capability selection and its effect on audio require physical iPhone testin
 One iPhone capture sent `timingProtocol=NTP` together with the legacy FairPlay
 `ekey` and `eiv` in its initial SETUP; beta.40 rejected that combination before
 starting media. Legacy SETUP accepts it, with one NTP clock and the existing
-authorization and pairing checks. Real iPhone picture and audio remain unverified.
+authorization and pairing checks. Physical mirror picture and speaker output remain unverified.
 When `combinedGetInfoWithControlSetup` is boolean `true`, a successful initial
 legacy/NTP control SETUP includes nested `info` from the same full-information
 source as `GET /info`. Stream SETUP replies do not add this dictionary.
@@ -122,6 +122,9 @@ of the missing media SETUP. Its expiry only reports that no stream has started;
 it neither closes the session nor acquires display ownership. Later media SETUP
 still follows normal authorization and startup. An event connection, RECORD or
 working feedback alone does not establish a mirror picture or exercise `forceKeyFrame`.
+The November 11 beta.46 capture reached type-110 media SETUP with combined information;
+its roughly three-second request-to-stream interval included authorization. This
+is a different failure stage from the earlier transport-only attempt.
 For an initial legacy SETUP explicitly marked as a screen-mirroring session,
 the receiver supplies a separate peer-restricted event socket before the screen
 stream SETUP. It carries mirror recovery commands and sender feedback without taking
@@ -130,7 +133,7 @@ Quiet event connections have no idle-read timeout; command write/reply deadlines
 remain bounded independently.
 This follows the connectable event
 port used by [PhairPlay](https://github.com/mazer666/PhairPlay/blob/bdc51c8e25a0fe4658ed61669c89e907765cdcaf/app/src/main/kotlin/com/phairplay/airplay/AirPlayMirrorSession.kt).
-Sender compatibility and actual mirror recovery still require a device test.
+Actual mirror recovery and compatibility with other senders still require device tests.
 Independent SRP-client and loopback socket tests cover encrypted control, events,
 audio delivery and unsupported transport rejection. These checks do not establish
 iOS picker selection, interoperability with every sender or physical output timing.
@@ -351,13 +354,33 @@ It waits for a source picture with a valid VCL NAL header and the event connecti
 before sending; SEI-only access units do not activate requests. The
 [upstream caller](https://github.com/regulad/RosellaView/blob/9b0b6e14810b5ef3fb60063db4af47c59501c9ab/native/src/receiver.c#L1016-L1023)
 also waits for stream frames before requesting. Requests coalesce within a 500 ms
-limit and permit one outstanding reply.
+limit and permit one outstanding reply. A final response without a CSeq header may
+acknowledge only that current request on its owning event connection and mirror.
+An explicit CSeq must be numeric and match exactly; wrong or malformed values do
+not use this compatibility path. A 1xx response is not a final acknowledgement.
 Legacy events are plaintext; authenticated events retain their existing cipher and
 nonce sequence. Mirror retirement cancels its pending request. A rejected command or
 two-second acknowledgement timeout disables further requests on that event connection;
 sender feedback still receives replies. Writing a command or receiving a successful
-reply does not establish a new IDR or browser picture. Sender compatibility remains
-unverified, and continuing prediction frames alone cannot restore a lost reference chain.
+reply does not establish a new IDR or browser picture. Compatibility beyond the
+captured sender remains unverified; prediction frames alone cannot restore a lost reference chain.
+In that beta.46 capture, a real 200 reply without CSeq was ignored, so the
+command reached a false acknowledgement timeout and further requests stopped.
+Independent decryption found 687 mirror pictures: two IDRs and 685 P pictures,
+with no non-IDR I, B or recovery-point SEI. The native bridge reported two
+submissions and no output before its six-second startup failure; the mirror
+later reached its fifteen-second first-render timeout. The ACK timeout did not
+itself close the mirror. No pictures were independently decoded, and accepting
+the reply does not by itself establish a fix for native startup or black output.
+Mirror AAC-ELD reached independently verified nonzero Worklet samples in that
+capture while the separate original-Opus peer stayed checking with no ready slot.
+Before any successful native output, only a new encoder wrapper's first
+initialization may retain the queued recovery-IDR chain; an active bridge still
+requests a fresh keyframe. Reinitializing an existing wrapper after release or
+rebinding its callback invalidates old pending access units even without prior
+output. Established-output replacement, actual loss, codec mismatch, stale-chain
+and profile/level checks remain enforced. Device startup needs actual output and
+Canvas presentation, independently of this source correction.
 Read native RTP/Canvas evidence separately from URL buffering. The
 [live diagnostics](Diagnostics.md#live-video-policy-evidence) distinguish current
 receiver behavior from the retired application video policy.

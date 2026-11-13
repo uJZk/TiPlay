@@ -37,17 +37,15 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#beta46-release).
-Beta.46/code88 and browser/cache v118 are published from
-`924700b0aae374991c1682cbe6313bf961546bff`; final focused checks passed
-411 tests (367 shared/44 common), 700 browser tests and Python/source checks.
-Signed packaging, twelve-check artifact verification, 226-file/20-route public
-site checks and anonymous three-asset byte comparison passed.
-The user authorized beta publication
-after this recovery work and explicitly waived full CI; keep focused checks,
-prior complete validation and signed artifact verification separate.
-iPhone mirror startup/command compatibility, vehicle native-audio ICE and selected-car
-SCO routing still need physical verification.
+Resume current release work at [Build](docs/Build.md#beta47-release).
+Beta.47/code89 and browser/cache v119 are in preparation after the November 11
+beta.46 field capture. Missing-CSeq mirror command compatibility, cold encoder
+IDR retention and privacy-safe selected-car SCO identity diagnostics are implemented; 475 focused Android,
+700 browser and 27 Python cases pass. Signed/public-artifact checks are pending. Browser playback logic is unchanged.
+The user authorized beta publication after this recovery work and explicitly waived
+full CI; keep focused checks, previous validation and signed artifact verification
+separate. Mirror media SETUP now occurs, but actual mirror picture, vehicle native
+Opus ICE and selected-car SCO identity/routing still need physical verification.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

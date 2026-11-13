@@ -376,6 +376,7 @@ internal class BrowserRtcVideoTrack(
         // an in-flight callback and prevent any later invocation of that pointer.
         private val callbackGate = Any()
         private var callback: VideoEncoder.Callback? = null
+        private var initializedOnce = false // guarded by callbackGate; survives release/reset
         override fun initEncode(settings: VideoEncoder.Settings, encodeCallback: VideoEncoder.Callback): VideoCodecStatus {
             var refresh = false
             val status = synchronized(callbackGate) {
@@ -387,7 +388,14 @@ internal class BrowserRtcVideoTrack(
                         val previous = activeEncoder
                         initializedSerial = serial; activeEncoder = this; currentCodec = codec
                         callback = encodeCallback
-                        if (previous !== this) refresh = markLost()
+                        if (previous !== this || initializedOnce) {
+                            // A cold native selection can initialize its matching encoder after
+                            // this source's recovery IDR was captured. No output chain exists to
+                            // invalidate yet. Rebinding any existing wrapper's native callback,
+                            // or replacing a warm encoder, must still retire its old chain.
+                            refresh = if (initializedOnce || everEncoded.get()) markLost() else active
+                        }
+                        initializedOnce = true
                         updateSelectionWait()
                         VideoCodecStatus.OK
                     }

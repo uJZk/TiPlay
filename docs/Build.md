@@ -452,14 +452,18 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v119
+
+Browser/cache **v119**, product **0.2.20-beta.47**, is prepared for the authorized
+follow-up beta. Only version metadata changes; browser playback logic is unchanged.
+Signed packaging and Pages/public-byte verification are pending.
+
 ### Browser v118
 
-Browser/cache **v118**, product **0.2.20-beta.46**, is deployed by
-[Pages run 42780860513](https://github.com/uJZk/TiPlay/actions/runs/42780860513)
-from APK build commit `924700b0aae374991c1682cbe6313bf961546bff`.
-Anonymous checks matched all 226 files (37,811,110 bytes) and 20 routes.
-This refreshes product-version metadata; browser playback logic is unchanged.
-The retired `/update/` route remains 404.
+Browser/cache v118, product beta.46, was deployed from
+`924700b0aae374991c1682cbe6313bf961546bff` by
+[Pages run 42780860513](https://github.com/uJZk/TiPlay/actions/runs/42780860513).
+All 226 files and 20 routes matched; `/update/` remained 404.
 
 ### Browser v117
 
@@ -490,69 +494,45 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta47-release"></a>
+### Beta.47 preparation
+
+Beta.47/code89 fixes missing-CSeq mirror command acknowledgements, preserves an
+already captured IDR during cold native encoder selection, and adds selected-car
+SCO identity diagnostics without changing route admission.
+Focused checks pass 475 shared Android, 700 browser and 27 Python cases plus
+the Chromium Service Worker lifecycle fixture. Signed packaging and independent
+artifact verification are pending. Full CI remains waived by the user's existing publication request.
+Physical mirror picture, selected-car SCO and vehicle native-audio ICE need
+separate verification; a command acknowledgement is not picture evidence.
+
 <a id="beta46-release"></a>
-### Published beta.46
+### Published beta.46 reference
 
 [Beta.46/code88](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.46)
-was published as a prerelease at **2026-11-10 08:24:44 UTC** from
+was published at **2026-11-10 08:24:44 UTC** from
 `924700b0aae374991c1682cbe6313bf961546bff`.
 [Signed workflow 42780854356](https://github.com/uJZk/TiPlay/actions/runs/42780854356)
-passed all three jobs. It ships native-audio packet-age isolation, combined SETUP
-information/preparation observations and phone Bluetooth gating/diagnostics.
-
-Full CI was explicitly waived. Focused checks passed 411 tests (367 shared,
-44 common; no failures/errors/skips), 700 browser tests and Python/source checks.
-[Testing](Testing.md#current-release-source) records Service Worker fixture scope.
-Mirror startup's cause, selected-car SCO routing and vehicle native-audio ICE
-remain unverified; the changes do not establish elimination of every field issue.
-
-Independent twelve-check verification confirmed non-debug `com.ujzk.tiplay`,
-code88, signer continuity, two exact runtime containers, new compiled markers,
-v118 metadata, WebRTC identity/16 KiB alignment and all 51 native libraries
-(24 JNI, 27 prebuilt). The source ZIP exactly matches the build commit's archive.
-Matched symbols remain in persistent archive draft `440100070`, separate from the
-public prerelease. Anonymous HTTP 200 downloads at **08:25:23 UTC** matched all
-three assets' sizes, API digests, SHA-256 and bytes; the checksum manifest matched
-and the tag resolves to the build commit.
-[Browser v118](#browser-v118) uses the same build commit.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.46.apk` | 114,563,919 | `7514b55b1c42d5865834443cafc17a1f123b87bc791b6ac9f1802ccddfa0a18f` |
-| `TiPlay-0.2.20-beta.46-source.zip` | 70,237,216 | `d7a9532ff9ad5c89022fd61c53de429331fd230a8f18285d3917f4b70b6f9485` |
-| `SHA256SUMS.txt` | 191 | `c952a46e6597fa24bf198b34571aad023c8812f790ae2175b37e72ecc718407f` |
+passed; full CI was waived. Focused checks passed 411 Android and 700 browser
+cases; twelve artifact checks and anonymous downloads matched. All 51 native
+libraries have recorded coverage in persistent symbol archive draft `440100070`.
+It introduced native-audio packet-age isolation, combined SETUP information and
+phone Bluetooth startup gating. The following field capture establishes mirror
+media SETUP, but not successful mirror presentation, native Opus ICE or SCO routing.
 
 <a id="beta45-release"></a>
-### Published beta.45
+### Published beta.45 reference
 
 [Beta.45/code87](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.45)
-was published as a prerelease at **2026-11-09 09:40:49 UTC** from
-`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`.
-[Signed workflow 42593488156](https://github.com/uJZk/TiPlay/actions/runs/42593488156)
-passed all three jobs. It includes mirror `forceKeyFrame`, persistent event
-connections, original-AU readiness gating, duplicate-PTS recovery, native-audio
-readiness/retry fixes and selected-car Bluetooth/wireless recovery.
-
-The user explicitly waived complete CI. Final focused checks passed 138 shared
-tests in 16 classes, including eleven mirror-command regressions, and 700 browser
-tests; [Testing](Testing.md#current-release-source) separates these from earlier
-complete checks and Python/source checks. Physical mirror-command compatibility
-and vehicle picture/audio/ICE/HFP behavior remain unverified.
-
-Independent verification downloaded APK/source from the same-build release draft:
-non-debug `com.ujzk.tiplay`, code87, signer continuity, exactly two pinned runtime
-containers, 51 indexed native libraries, WebRTC identity and 16 KiB alignment all
-passed. The source ZIP is byte-identical to the build commit's `git archive`.
-Matched native symbols remain in the persistent archive draft, separate from the
-public prerelease. Anonymous downloads at **09:41:20 UTC** matched all three
-verified files byte for byte, including API digests/checksums; the release tag
-resolves to the build commit. [Browser v117](#browser-v117) has separate Pages provenance.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.45.apk` | 114,547,535 | `40efab9407ce0597f7a2726e7c93721c862b2901df2d228d3f2f0700cbb50cf6` |
-| `TiPlay-0.2.20-beta.45-source.zip` | 70,219,375 | `9189aa720536256992eb53f58b07f88509cf61b33eb641a11e443159e046629f` |
-| `SHA256SUMS.txt` | 191 | `2ee5c364f8ad347683255c34e8ebbebf5e7ad32ddb36196642d0eb3a7e247f4d` |
+was published at **2026-11-09 09:40:49 UTC** from
+`db558c4e97674b4f7ca57d835c20cf1fafb50ff1` by
+[signed workflow 42593488156](https://github.com/uJZk/TiPlay/actions/runs/42593488156).
+Focused validation passed 138 shared and 700 browser tests; full CI was waived.
+Twelve artifact checks and anonymous downloads matched the APK, exact source and
+checksums; persistent native symbols draft `439142956` covers that build.
+Mirror force-key commands, original-AU readiness gating, duplicate-PTS recovery
+and native-audio/Bluetooth recovery were introduced with physical interoperability
+still pending. Git history preserves the full artifact hash table.
 
 <a id="published-beta44"></a>
 ### Published beta.44

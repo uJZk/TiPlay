@@ -4,6 +4,20 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.47
+
+Version code 89. Browser/cache v119 refreshes product-version metadata; browser
+playback logic is unchanged.
+
+- Accept a final mirror-command response without CSeq only for the current single outstanding request on its owning event connection. Continue rejecting explicit wrong or malformed CSeq values, so a valid unnumbered reply no longer causes a false acknowledgement timeout.
+- Preserve the queued recovery-IDR chain on a new native encoder wrapper's first cold initialization; retain callback-rebinding, established-chain and real-loss recovery checks.
+- Add aggregate SCO matching counts for the selected car without exposing names or addresses; retain exact route admission.
+
+Focused checks pass 475 Android, 700 browser and 27 Python cases; full CI is waived.
+Signed packaging remains pending. Native mirror output, original-Opus ICE connectivity
+and the selected car's SCO route remain unresolved device-acceptance boundaries;
+accepting a command reply does not establish picture recovery.
+
 ## 0.2.20-beta.46
 
 Version code 88. Browser/cache v118 refreshes product-version metadata for beta.46;

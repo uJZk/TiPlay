@@ -42,6 +42,43 @@ internal fun <T> selectBluetoothAudioDevice(devices: List<T>, target: String?, a
 private fun audioAddress(device: AudioDeviceInfo): String? =
     if (Build.VERSION.SDK_INT >= 28) device.address.takeIf { it.isNotBlank() } else null
 
+/** Diagnostic classification only; never substitutes an identity for route selection. */
+internal fun bluetoothVoiceAddressIdentity(address: String?): String {
+    val normalized = address?.trim()?.uppercase(java.util.Locale.ROOT).orEmpty()
+    return when {
+        normalized.isEmpty() -> "missing"
+        !android.bluetooth.BluetoothAdapter.checkBluetoothAddress(normalized) -> "invalid"
+        normalized in setOf("00:00:00:00:00:00", "02:00:00:00:00:00", "FF:FF:FF:FF:FF:FF") -> "placeholder"
+        else -> "valid"
+    }
+}
+
+private fun bluetoothVoiceAddressCounts(addresses: List<String?>): String {
+    val identities = addresses.map(::bluetoothVoiceAddressIdentity)
+    return "missingAddresses=${identities.count { it == "missing" }} invalidAddresses=${identities.count { it == "invalid" }}" +
+        " placeholderAddresses=${identities.count { it == "placeholder" }} usableIdentityAddresses=${identities.count { it == "valid" }}"
+}
+
+/** Names provide correlation evidence, never identity or permission to use a device. */
+internal fun bluetoothVoiceProfileRelations(selected: String?, sco: List<Pair<String?, String?>>, connected: List<Pair<String?, String?>>): String {
+    val selectedDevices = connected.filter { selected != null && sameBluetoothSelection(selected, it.first) }
+    val otherDevices = connected.filter { selected == null || !sameBluetoothSelection(selected, it.first) }
+    fun addressMatches(candidate: Pair<String?, String?>, devices: List<Pair<String?, String?>>) =
+        bluetoothVoiceAddressIdentity(candidate.first) == "valid" && devices.any {
+            bluetoothVoiceAddressIdentity(it.first) == "valid" && sameBluetoothSelection(candidate.first, it.first)
+        }
+    fun nameMatches(candidate: Pair<String?, String?>, devices: List<Pair<String?, String?>>): Boolean {
+        val name = candidate.second?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+        return devices.any { it.second?.trim()?.equals(name, ignoreCase = true) == true }
+    }
+    return "scoCandidates=${sco.size} ${bluetoothVoiceAddressCounts(sco.map { it.first })}" +
+        " scoAddressSelectedMatches=${sco.count { addressMatches(it, selectedDevices) }}" +
+        " scoAddressOtherMatches=${sco.count { addressMatches(it, otherDevices) }}" +
+        " scoAddressUnmatched=${sco.count { bluetoothVoiceAddressIdentity(it.first) == "valid" && !addressMatches(it, connected) }}" +
+        " scoNameSelectedMatches=${sco.count { nameMatches(it, selectedDevices) }}" +
+        " scoNameOtherMatches=${sco.count { nameMatches(it, otherDevices) }}"
+}
+
 private val retryableFailures = setOf("car-bluetooth-unavailable", "car-bluetooth-disconnected",
     "bluetooth-input-unavailable", "bluetooth-output-unavailable", "bluetooth-connect-timeout", "bluetooth-route-rejected",
     "bluetooth-route-failed", "bluetooth-duplex-failed", "bluetooth-output-failed", "communication-route-busy",
@@ -236,7 +273,8 @@ class AndroidBluetoothVoiceChannel(
                 val target = selectBluetoothAudioDevice(candidates, address) { audioAddress(it) }
                 report("stage=communication-devices candidates=${candidates.size} addressAvailable=${candidates.count { audioAddress(it) != null }} matches=${candidates.count { sameBluetoothSelection(address, audioAddress(it)) && address != null }} selected=${target != null}" +
                     " types=${available.map { it.type }.distinct().sorted().joinToString(",")} namedCandidates=${candidates.count { !it.productName.isNullOrBlank() }}" +
-                    " validAddresses=${candidates.count { audioAddress(it)?.let(android.bluetooth.BluetoothAdapter::checkBluetoothAddress) == true }}")
+                    " validAddresses=${candidates.count { audioAddress(it)?.let(android.bluetooth.BluetoothAdapter::checkBluetoothAddress) == true }}" +
+                    " selectedIdentity=${bluetoothVoiceAddressIdentity(address)} ${bluetoothVoiceAddressCounts(candidates.map(::audioAddress))}")
                 if (target == null) {
                     diagnoseHeadsetProfile(address)
                     fail(if (address != null || candidates.isEmpty()) "car-bluetooth-unavailable" else "multiple-bluetooth-headsets"); return
@@ -285,6 +323,8 @@ class AndroidBluetoothVoiceChannel(
         if (profileDiagnosticRequested) return
         profileDiagnosticRequested = true
         val epoch = profileDiagnosticEpoch
+        val demand = wanted
+        val requestedAt = SystemClock.elapsedRealtime()
         val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
         if (adapter == null) { report("stage=headset-diagnostic result=no-adapter"); return }
         for ((id, label) in listOf(BluetoothProfile.HEADSET to "headset", BluetoothProfile.A2DP to "a2dp")) {
@@ -294,10 +334,16 @@ class AndroidBluetoothVoiceChannel(
                 val accepted = adapter.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
                     override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) { main.post {
                         try {
-                            if (closed || wanted == null || epoch != profileDiagnosticEpoch ||
+                            if (closed || wanted == null || wanted !== demand || epoch != profileDiagnosticEpoch ||
                                 !sameBluetoothSelection(address, selectedCarAddress?.invoke())) return@post
                             val connected = proxy.connectedDevices
-                            report("stage=headset-diagnostic profile=$label adapterEnabled=$enabled profileState=$profileState connected=${connected.size} selectedMatch=${address != null && connected.any { sameBluetoothSelection(address, it.address) }}")
+                            val sco = if (Build.VERSION.SDK_INT >= 31) manager.availableCommunicationDevices
+                                .filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO } else emptyList()
+                            val relations = bluetoothVoiceProfileRelations(address,
+                                sco.map { audioAddress(it) to it.productName?.toString() },
+                                connected.map { it.address to runCatching { it.name }.getOrNull() })
+                            report("stage=headset-diagnostic profile=$label adapterEnabled=${adapter.isEnabled} profileState=${adapter.getProfileConnectionState(id)} connected=${connected.size} selectedMatch=${address != null && connected.any { sameBluetoothSelection(address, it.address) }}" +
+                                " requestedAgeMs=${SystemClock.elapsedRealtime() - requestedAt} selectedIdentity=${bluetoothVoiceAddressIdentity(address)} $relations")
                         } catch (error: Exception) {
                             report("stage=headset-diagnostic profile=$label result=error exception=${error.javaClass.simpleName}")
                         } finally { runCatching { adapter.closeProfileProxy(profile, proxy) } }
@@ -374,7 +420,10 @@ class AndroidBluetoothVoiceChannel(
                 val permissionRestored = failure == "microphone-or-bluetooth-permission" && permitted()
                 val retryDue = failure in retryableFailures && SystemClock.elapsedRealtime() >= retryAt
                 if (((changed || retryDue) && permitted()) || permissionRestored) {
-                    if (changed) unavailableAttempts = 0
+                    if (changed) {
+                        unavailableAttempts = 0
+                        profileDiagnosticRequested = false; profileDiagnosticEpoch++
+                    }
                     failure = null
                     state(BluetoothVoiceState("connecting"))
                     acquire()

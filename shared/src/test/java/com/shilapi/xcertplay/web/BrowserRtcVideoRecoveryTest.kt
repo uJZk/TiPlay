@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.web
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.webrtc.EncodedImage
 import org.webrtc.VideoCodecInfo
 import org.webrtc.VideoCodecStatus
 import org.webrtc.VideoEncoder
@@ -9,6 +10,116 @@ import org.webrtc.VideoFrame
 import java.util.concurrent.Executor
 
 class BrowserRtcVideoRecoveryTest {
+    @Test fun coldBaselineThenHighInitializationDoesNotConsumeBothCapturedIdrs() = Fixture().use { f ->
+        val statuses = mutableListOf<VideoCodecStatus>()
+        var captures = 0
+        f.capture = { frame ->
+            val selected = if (captures++ == 0) f.baseline else f.high
+            f.initialize(VideoCodecInfo(selected.name, selected.parameters, emptyList()))
+            statuses.add(f.encode(frame))
+        }
+        val first = f.frame(0, true)
+        assertTrue(f.bridge.offer(first))
+        assertEquals(listOf(VideoCodecStatus.NO_OUTPUT), statuses)
+        assertTrue("High bytes must never be emitted by the interim Baseline encoder", f.output.isEmpty())
+        assertEquals(1L, f.counter("codecMismatchFrames"))
+        assertEquals(1L, f.counter("releasedUnencodedFrames"))
+        val recovery = f.frame(33_334, true)
+        assertTrue(f.bridge.offer(recovery))
+        assertEquals(listOf(VideoCodecStatus.NO_OUTPUT, VideoCodecStatus.OK), statuses)
+        assertArrayEquals(recovery.prefix!! + recovery.payload, f.output.single())
+        assertEquals(0L, f.counter("chainRejectedFrames"))
+        assertEquals(2L, f.counter("submittedFrames"))
+        assertEquals(1L, f.counter("outputFrames"))
+        assertTrue(f.sentRequests > 0)
+    }
+
+    @Test fun coldMatchingInitializationCanOutputItsAlreadyCapturedIdrUnchanged() = Fixture().use { f ->
+        f.capture = { frame ->
+            f.initialize(VideoCodecInfo(f.high.name, f.high.parameters, emptyList()))
+            assertEquals(VideoCodecStatus.OK, f.encode(frame))
+        }
+        val original = f.frame(0, true)
+        assertTrue(f.bridge.offer(original))
+        assertArrayEquals(original.prefix!! + original.payload, f.output.single())
+        assertEquals(0L, f.counter("lossEvents"))
+        assertEquals(0L, f.counter("chainRejectedFrames"))
+        assertTrue(f.sentRequests > 0)
+    }
+
+    @Test fun warmEncoderReplacementStillRejectsTheOldCapturedChainAndRequestsANewIdr() = Fixture().use { f ->
+        f.initialize(VideoCodecInfo(f.high.name, f.high.parameters, emptyList()))
+        f.dropInput = false
+        assertTrue(f.bridge.offer(f.frame(0, true)))
+        lateinit var held: VideoFrame
+        f.capture = { it.retain(); held = it }
+        assertTrue(f.bridge.offer(f.frame(16_667, true)))
+        try {
+            f.atMillis(1_000)
+            val requests = f.sentRequests
+            f.initialize(VideoCodecInfo(f.high.name, f.high.parameters, emptyList()))
+            assertTrue(f.sentRequests > requests)
+            assertEquals(VideoCodecStatus.NO_OUTPUT, f.encode(held))
+            assertEquals(1L, f.counter("chainRejectedFrames"))
+            assertEquals(1, f.output.size)
+            f.capture = null
+            assertTrue(f.bridge.offer(f.frame(33_334)))
+            assertEquals(1, f.output.size)
+            val recovery = f.frame(50_001, true)
+            assertTrue(f.bridge.offer(recovery))
+            assertEquals(2, f.output.size)
+            assertArrayEquals(recovery.prefix!! + recovery.payload, f.output.last())
+        } finally { held.release() }
+    }
+
+    @Test fun reinitializingTheSameColdWrapperStillRejectsItsOldCapturedIdr() {
+        for (release in listOf(false, true)) Fixture().use { f ->
+            f.initialize(VideoCodecInfo(f.high.name, f.high.parameters, emptyList()))
+            lateinit var held: VideoFrame
+            f.capture = { it.retain(); held = it }
+            assertTrue(f.bridge.offer(f.frame(0, true)))
+            try {
+                f.atMillis(1_000)
+                val requests = f.sentRequests
+                f.reinitialize(release)
+                assertTrue(f.sentRequests > requests)
+                assertEquals(VideoCodecStatus.NO_OUTPUT, f.encode(held))
+                assertEquals(1L, f.counter("chainRejectedFrames"))
+                assertTrue(f.output.isEmpty())
+                f.capture = null; f.dropInput = false
+                val recovery = f.frame(16_667, true)
+                assertTrue(f.bridge.offer(recovery))
+                assertArrayEquals(recovery.prefix!! + recovery.payload, f.output.single())
+            } finally { held.release() }
+        }
+    }
+
+    @Test fun aRealLossBeforeAnyOutputStillRejectsAnOlderCapturedIdr() = Fixture().use { f ->
+        f.initialize(VideoCodecInfo(f.high.name, f.high.parameters, emptyList()))
+        lateinit var held: VideoFrame
+        f.capture = { it.retain(); held = it }
+        assertTrue(f.bridge.offer(f.frame(0, true)))
+        try {
+            f.capture = { assertEquals(VideoCodecStatus.NO_OUTPUT, f.encode(it, requestKey = true)) }
+            assertTrue(f.bridge.offer(f.frame(16_667)))
+            assertEquals(VideoCodecStatus.NO_OUTPUT, f.encode(held))
+            assertEquals(1L, f.counter("nativeKeyFrameRequests"))
+            assertEquals(1L, f.counter("chainRejectedFrames"))
+            assertTrue(f.output.isEmpty())
+            f.capture = null; f.dropInput = false
+            val recovery = f.frame(33_334, true)
+            assertTrue(f.bridge.offer(recovery))
+            assertArrayEquals(recovery.prefix!! + recovery.payload, f.output.single())
+        } finally { held.release() }
+    }
+
+    @Test fun coldRecoveryStillRejectsAHighSourceAboveTheNegotiatedLevel() = Fixture().use { f ->
+        assertFalse(f.configure("avc1.640032"))
+        assertEquals("codec-profile-not-negotiated", f.bridge.failure)
+        assertFalse(f.bridge.offer(f.frame(0, true)))
+        assertTrue(f.output.isEmpty())
+    }
+
     @Test fun idlePollingRetriesAKeyFrameSuppressedDuringTheInitialBurstAndHighProfileRecovers() = Fixture().use { f ->
         f.hub.requestKeyFrame(force = true)
         f.atMillis(89)
@@ -90,13 +201,16 @@ class BrowserRtcVideoRecoveryTest {
             private set
         val hub = WebVideoHub(Executor { it.run() }, { now })
         val high = BrowserRtcVideoPolicy.Codec("H264", mapOf("profile-level-id" to "64002a", "packetization-mode" to "1"))
-        private val baseline = BrowserRtcVideoPolicy.Codec("H264", mapOf("profile-level-id" to "42002a", "packetization-mode" to "1"))
+        val baseline = BrowserRtcVideoPolicy.Codec("H264", mapOf("profile-level-id" to "42002a", "packetization-mode" to "1"))
         var dropInput = true
+        var capture: ((VideoFrame) -> Unit)? = null
         val output = mutableListOf<ByteArray>()
         private lateinit var encoder: VideoEncoder
         val bridge = BrowserRtcVideoTrack(listOf(baseline, high), { hub.requestKeyFrame() },
             captureFrame = { frame: VideoFrame ->
-                if (!dropInput) encoder.encode(frame, VideoEncoder.EncodeInfo(emptyArray()))
+                val handler = capture
+                if (handler != null) handler(frame)
+                else if (!dropInput) encode(frame)
             }, nowNanos = { now })
         val selector = bridge.getEncoderSelector()
         init {
@@ -104,14 +218,22 @@ class BrowserRtcVideoRecoveryTest {
             bridge.negotiated("v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=recvonly\r\na=rtpmap:96 H264/90000\r\n" +
                 "a=fmtp:96 profile-level-id=64002a;packetization-mode=1\r\n")
             initialize(VideoCodecInfo(baseline.name, baseline.parameters, emptyList()))
-            assertTrue(bridge.configure(WebVideoRecord(WebVideoRecords.KIND_CONFIG, 0, WebVideoRecords.CODEC_H264, 0, 1, 0,
-                WebJson.write(mapOf("codec" to "avc1.64002a", "width" to 1568, "height" to 1080, "fps" to 60)).toByteArray())))
+            assertTrue(configure())
         }
+        fun configure(codec: String = "avc1.64002a") = bridge.configure(WebVideoRecord(
+            WebVideoRecords.KIND_CONFIG, 0, WebVideoRecords.CODEC_H264, 0, 1, 0,
+            WebJson.write(mapOf("codec" to codec, "width" to 1568, "height" to 1080, "fps" to 60)).toByteArray()))
+        fun encode(frame: VideoFrame, requestKey: Boolean = false) = encoder.encode(frame, VideoEncoder.EncodeInfo(
+            if (requestKey) arrayOf(EncodedImage.FrameType.VideoFrameKey) else emptyArray()))
         fun initialize(info: VideoCodecInfo) {
             encoder = requireNotNull(bridge.createEncoder(info))
+            reinitialize()
+            selector.onCurrentEncoder(info)
+        }
+        fun reinitialize(release: Boolean = false) {
+            if (release) assertEquals(VideoCodecStatus.OK, encoder.release())
             assertEquals(VideoCodecStatus.OK, encoder.initEncode(VideoEncoder.Settings(1, 1568, 1080, 16_000, 60, 1, false),
                 VideoEncoder.Callback { image, _ -> output.add(ByteArray(image.buffer.remaining()).also { image.buffer.duplicate().get(it) }) }))
-            selector.onCurrentEncoder(info)
         }
         fun frame(timeUs: Long, key: Boolean = false) = WebVideoRecord(WebVideoRecords.KIND_FRAME,
             if (key) WebVideoRecords.FLAG_KEY_FRAME else 0, WebVideoRecords.CODEC_H264, 0, 1, timeUs,
