@@ -41,19 +41,71 @@ function commandFailed(text) {
   return /(?:unknown command|not found|invalid |could not|failed|not supported|error:|expecting |ambiguous)/i.test(text);
 }
 
-function networkVerified(text, netdevId) {
-  let wifiNic = false, matches = 0;
-  for (const row of text.split('\n')) {
+function staticIdentifier(value) {
+  return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(value) &&
+    !/(?:\d{1,3}\.){3}\d{1,3}/.test(value) ? value : 'other';
+}
+
+function identifiers(values) {
+  return Object.freeze([...new Set(values.map(staticIdentifier))].sort().slice(0, 8));
+}
+
+function inspectNetwork(text, netdevId) {
+  const records = [];
+  const rawRows = text.split('\n');
+  const tokenValues = key => [...text.matchAll(new RegExp('(?:^|[,\\s])' + key + '=([^,\\s]+)', 'g'))].map(match => match[1]);
+  let parentNic, unparsedLines = 0;
+  for (const row of rawRows) {
     const client = /^\s*(\\\s+)?([^:\s]+):\s+index=-?\d+,type=([^,\s]+)(?:,(.*))?$/.exec(row);
-    if (!client) { if (row.trim()) wifiNic = false; continue; }
+    if (!client) { if (row.trim()) { parentNic = null; unparsedLines++; } continue; }
+    const info = client[4] || '';
+    const record = { peer: Boolean(client[1]), name: client[2], type: client[3], info,
+      model: /(?:^|,)model=([^,\s]+)/.exec(info)?.[1] ?? null, parentNic: client[1] ? parentNic : null };
+    records.push(record);
     if (!client[1]) {
-      wifiNic = client[3] === 'nic' && /(?:^|,)model=virtio-wifi(?:-[A-Za-z0-9_.-]+)?(?:,|$)/.test(client[4] || '');
-    } else if (client[2] === netdevId) {
-      if (!wifiNic || client[3] !== 'user') fail('wifi-user-backend-unverified');
-      matches++;
-    }
+      parentNic = record.type === 'nic' ? record : null;
+    } else parentNic = null;
   }
-  if (matches !== 1) fail('wifi-user-backend-unverified');
+  const nics = records.filter(record => !record.peer && record.type === 'nic');
+  const configured = records.filter(record => record.name === netdevId);
+  const parents = configured.filter(record => record.peer && record.parentNic).map(record => record.parentNic);
+  return { records, summary: Object.freeze({ parsedClients: records.length, unparsedLines,
+    rootNics: nics.length, peerClients: records.filter(record => record.peer).length,
+    nicNames: identifiers(nics.map(record => record.name)),
+    nicModels: identifiers(nics.filter(record => record.model !== null).map(record => record.model)),
+    emptyInfoNics: nics.filter(record => record.info === '').length,
+    clientTypes: identifiers(records.map(record => record.type)),
+    observedTypeIdentifiers: identifiers(tokenValues('type')),
+    observedModelIdentifiers: identifiers(tokenValues('model')),
+    configuredNameLineMentions: rawRows.filter(row => row.includes(netdevId + ':')).length,
+    configuredBackendOccurrences: configured.length,
+    configuredBackendUserOccurrences: configured.filter(record => record.type === 'user').length,
+    configuredBackendPeerOccurrences: configured.filter(record => record.peer).length,
+    configuredBackendLinkedNics: parents.length,
+    configuredParentNames: identifiers(parents.map(record => record.name)),
+    configuredParentModels: identifiers(parents.filter(record => record.model !== null).map(record => record.model)) }) };
+}
+
+function networkVerified(records, netdevId) {
+  const configured = records.filter(record => record.name === netdevId);
+  if (configured.length !== 1) fail('wifi-user-backend-unverified');
+  const backend = configured[0], nic = backend.parentNic;
+  if (!backend.peer || backend.type !== 'user' || !nic || nic.type !== 'nic') fail('wifi-user-backend-unverified');
+  // The source's legacy VirtioWifiForwarder names its net client exactly this
+  // way and leaves info_str empty. Its -device name does not imply a model=
+  // entry in `info network`. Never infer WiFi from an arbitrary empty NIC.
+  const sourceNamedWifi = nic.name === 'virtio-wifi-device' && nic.info === '';
+  const explicitWifiModel = /(?:^|,)model=virtio-wifi(?:-[A-Za-z0-9_.-]+)?(?:,|$)/.test(nic.info);
+  if (!sourceNamedWifi && !explicitWifiModel) fail('wifi-user-backend-unverified');
+}
+
+function inspectUsernet(text, netdevId) {
+  const headers = text.split('\n').map(row => /^(?:VLAN|Hub)\s+-?\d+\s+\(([^)]+)\):\s*$/.exec(row.trim()))
+    .filter(Boolean).map(match => match[1]);
+  return Object.freeze({ sectionHeaders: headers.length, uniqueSections: new Set(headers).size,
+    duplicateSections: headers.length - new Set(headers).size,
+    configuredSections: headers.filter(name => name === netdevId).length,
+    udpForwardRows: text.split('\n').filter(row => row.includes('UDP[HOST_FORWARD]')).length });
 }
 
 function usernet(text) {
@@ -161,6 +213,7 @@ export async function openQemuUdpForwarding({ socketPath, netdevId, guestAddress
   const owned = new Map(), removed = new WeakSet();
   const stats = { mode: 'qemu-hmp-slirp', backendType: 'unknown', monitorVerified: false,
     capabilitiesVerified: false, backendVerified: false, wifiNicVerified: false,
+    networkStructure: null, usernetStructure: null,
     closed: false, mappingAddAttempts: 0, mappingsCreated: 0, mappingRemoveAttempts: 0,
     mappingsRemoved: 0, potentialMappingsResolvedAbsent: 0, uncertainRemovalsResolvedAbsent: 0,
     commandsSent: 0, reconnects: 0, failures: 0 };
@@ -174,6 +227,7 @@ export async function openQemuUdpForwarding({ socketPath, netdevId, guestAddress
   };
   const getSections = async () => {
     const answer = await session.command('info usernet');
+    stats.usernetStructure = inspectUsernet(answer, netdevId);
     if (commandFailed(answer)) fail('usernet-unavailable');
     const sections = usernet(answer);
     if (!sections.has(netdevId)) fail('missing-usernet-section');
@@ -199,9 +253,13 @@ export async function openQemuUdpForwarding({ socketPath, netdevId, guestAddress
       }
       stats.capabilitiesVerified = true;
       const network = await session.command('info network');
+      const observed = inspectNetwork(network, netdevId);
+      stats.networkStructure = observed.summary;
       if (commandFailed(network)) fail('network-unavailable');
-      networkVerified(network, netdevId);
+      // Collect both read-only structures before admission, so even a model or
+      // formatting rejection preserves enough safe evidence to distinguish it.
       await getSections();
+      networkVerified(observed.records, netdevId);
       stats.backendType = 'user'; stats.backendVerified = true; stats.wifiNicVerified = true;
     } catch (error) { session.close(); throw error; }
   }

@@ -16,6 +16,11 @@ const defaultNetwork = [
   'net1: index=0,type=nic,model=virtio-wifi-pci,macaddr=52:54:00:12:34:57',
   ' \\ virtio-wifi: index=0,type=user,net=10.0.2.0,restrict=off',
 ].join('\r\n');
+// Legacy VirtioWifiForwarder uses this source-defined name and leaves info_str
+// empty; it does not print a model= field merely because the device is WiFi.
+const sourceNamedNetwork = defaultNetwork.replace(
+  'net1: index=0,type=nic,model=virtio-wifi-pci,macaddr=52:54:00:12:34:57',
+  'virtio-wifi-device: index=0,type=nic,');
 
 async function monitorFixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'tiplay-hmp-'));
@@ -192,6 +197,91 @@ test('the actual Hub usernet section format also verifies and retires an owned f
     assert.equal(safeSnapshot(fixture, provider).pendingMappings, 0);
     assert.equal(safeSnapshot(fixture, provider).mappingsRemoved, 1);
   } finally { await provider?.close().catch(() => {}); await fixture.close(); }
+});
+
+test('the source-derived empty-info WiFi NIC supports a complete verified forward lifecycle', async () => {
+  const fixture = await monitorFixture({ networkText: sourceNamedNetwork, sectionLabel: 'Hub' });
+  let provider;
+  try {
+    provider = await fixture.open();
+    const observed = safeSnapshot(fixture, provider);
+    assert.equal(observed.backendVerified, true); assert.equal(observed.wifiNicVerified, true);
+    const network = observed.networkStructure;
+    assert.equal(network.parsedClients, 4); assert.equal(network.rootNics, 2);
+    assert.equal(network.peerClients, 2); assert.equal(network.emptyInfoNics, 1);
+    assert.equal(network.configuredBackendOccurrences, 1);
+    assert.equal(network.configuredBackendUserOccurrences, 1);
+    assert.equal(network.configuredBackendLinkedNics, 1);
+    assert.deepEqual(network.configuredParentNames, ['virtio-wifi-device']);
+    assert.deepEqual(network.configuredParentModels, []);
+    assert.deepEqual(observed.usernetStructure, { sectionHeaders: 2, uniqueSections: 2,
+      duplicateSections: 0, configuredSections: 1, udpForwardRows: 0 });
+    const owned = await provider.add({ hostPort: 32012, guestPort: 41012 });
+    assert.equal(safeSnapshot(fixture, provider).usernetStructure.udpForwardRows, 1);
+    await provider.remove(owned);
+    await provider.close();
+    const closed = safeSnapshot(fixture, provider);
+    assert.equal(closed.pendingMappings, 0); assert.equal(closed.mappingsRemoved, 1);
+    assert.equal(closed.usernetStructure.udpForwardRows, 0);
+  } finally { await provider?.close().catch(() => {}); await fixture.close(); }
+});
+
+test('the source-defined WiFi name does not override contradictory info or a broken peer association', async () => {
+  const cases = [
+    sourceNamedNetwork.replace('virtio-wifi-device: index=0,type=nic,', 'virtio-wifi-device: index=0,type=nic,model=e1000'),
+    sourceNamedNetwork.replace('virtio-wifi-device: index=0,type=nic,', 'another-empty-device: index=0,type=nic,'),
+    sourceNamedNetwork.replace('virtio-wifi-device: index=0,type=nic,', 'virtio-wifi-device: index=0,type=nic,unknown=info'),
+    sourceNamedNetwork.replace(' \\ virtio-wifi:', ' \\ intermediate-peer: index=0,type=user,net=10.0.2.0,restrict=off\r\n \\ virtio-wifi:'),
+  ];
+  for (let index = 0; index < cases.length; index++) {
+    const fixture = await monitorFixture({ networkText: cases[index] });
+    try {
+      await assert.rejects(fixture.open(), error => {
+        safeError(fixture, error);
+        const observed = error.qemuForwarding;
+        assert.equal(observed.backendVerified, false); assert.equal(observed.wifiNicVerified, false);
+        assert.equal(observed.networkStructure.configuredBackendOccurrences, 1);
+        assert.equal(observed.networkStructure.configuredBackendLinkedNics, index === 3 ? 0 : 1);
+        assert.equal(observed.usernetStructure.configuredSections, 1);
+        return true;
+      });
+      assert.ok(fixture.commands.includes('info network') && fixture.commands.includes('info usernet'));
+      assert.equal(fixture.commands.some(value => value.startsWith('hostfwd_')), false);
+    } finally { await fixture.close(); }
+  }
+});
+
+test('startup rejection preserves safe structural counts while sanitizing identifiers that contain endpoints', async () => {
+  const hiddenName = 'device-192.0.2.45', hiddenModel = 'model-198.51.100.7';
+  const networkText = defaultNetwork
+    .replace('net1: index=0,type=nic,model=virtio-wifi-pci,macaddr=52:54:00:12:34:57',
+      hiddenName + ': index=0,type=nic,model=' + hiddenModel + ',macaddr=52:54:00:12:34:57,path=/private/probe')
+    .replace('virtio-wifi: index=0,type=user', 'virtio-wifi: index=0,type=backend-203.0.113.9');
+  const fixture = await monitorFixture({ networkText, initialRows: [
+    [backend, [{ hostPort: 32018, guestPort: 41018, address: guestAddress }]],
+  ] });
+  try {
+    await assert.rejects(fixture.open(), error => {
+      safeError(fixture, error);
+      const observed = error.qemuForwarding, structure = observed.networkStructure;
+      assert.equal(observed.closed, true); assert.equal(observed.connected, false);
+      assert.equal(structure.rootNics, 2); assert.equal(structure.peerClients, 2);
+      assert.equal(structure.configuredBackendOccurrences, 1);
+      assert.equal(structure.configuredBackendUserOccurrences, 0);
+      assert.equal(structure.configuredBackendLinkedNics, 1);
+      assert.deepEqual(structure.configuredParentNames, ['other']);
+      assert.deepEqual(structure.configuredParentModels, ['other']);
+      assert.deepEqual(structure.clientTypes, ['nic', 'other', 'user']);
+      assert.deepEqual(observed.usernetStructure, { sectionHeaders: 2, uniqueSections: 2,
+        duplicateSections: 0, configuredSections: 1, udpForwardRows: 1 });
+      const rendered = JSON.stringify(observed);
+      for (const hidden of [fixture.socketPath, guestAddress, '127.0.0.1', hiddenName, hiddenModel,
+        '203.0.113.9', '52:54:00:12:34:57', '/private/probe', '32018', '41018', networkText])
+        assert.ok(!rendered.includes(hidden), 'Startup structural proof leaked a raw endpoint or transcript.');
+      return true;
+    });
+    assert.equal(fixture.commands.some(value => value.startsWith('hostfwd_')), false);
+  } finally { await fixture.close(); }
 });
 
 test('a prompt and a matching row in another stack cannot certify a silent add', async () => {
