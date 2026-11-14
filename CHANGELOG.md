@@ -4,6 +4,21 @@ Release availability and APKs: [TiPlay releases](https://github.com/uJZk/TiPlay/
 Current behavior is described in the [documentation](docs/README.md); older implementation
 and delivery records remain in Git history.
 
+## 0.2.20-beta.48
+
+Version code 90. Browser/cache v120.
+
+- Keep controlled pages, Workers, Worklets and Wasm on their own cached runtime during upgrades. Retain needed old assets after failed navigation or worker restart, and avoid deleting a newer installation cache.
+
+- Prefer the selected car Bluetooth output for calls, then try available Bluetooth/system playback instead of rejecting an unmatched output. Keep microphone capture restricted to its verified car route.
+- Separate microphone readiness from Android call playback while keeping browser telephony suppressed during microphone/call-route demand. Preserve busy-route checks, owner isolation and release barriers against double output.
+- Add official browser ICE pair/STUN/DTLS statistics and native transport/selected-pair classifications without exporting endpoint identities.
+
+Focused validation passes 580 Android, 716 browser and 27 Python cases, plus
+a real two-track, 160-packet original-Opus JNI replay. Enhanced Chromium cache
+lifecycle and all 132 production cache resources pass; signed packaging is pending. These changes do not establish the vehicle's ICE
+failure cause or physical playback/capture behavior; device acceptance remains open.
+
 ## 0.2.20-beta.47
 
 Version code 89. Browser/cache v119 refreshes product-version metadata; browser

@@ -8,7 +8,11 @@
 #include <string.h>
 #include <time.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <stdio.h>
+#include <strings.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include "rtc.h"
 
 #define SLOT_LIMIT 16
@@ -26,8 +30,14 @@ typedef struct {
     int gathered;
     int connection_state;
     int ice_state;
+    int gathering_state;
+    int signaling_state;
+    int remote_description_result;
+    int local_description_result;
     unsigned int connection_changes;
     unsigned int ice_changes;
+    unsigned int gathering_changes;
+    unsigned int signaling_changes;
 } AudioPeer;
 
 static void throw_state(JNIEnv *env, const char *message) {
@@ -58,10 +68,21 @@ static void ice_changed(int pc, rtcIceState state, void *ptr) {
 static void gathered(int pc, rtcGatheringState state, void *ptr) {
     (void)pc;
     AudioPeer *p = ptr;
-    if (!p || state != RTC_GATHERING_COMPLETE) return;
+    if (!p) return;
     pthread_mutex_lock(&p->mutex);
-    p->gathered = 1;
+    p->gathering_state = (int)state;
+    if (p->gathering_changes < 65535) p->gathering_changes++;
+    if (state == RTC_GATHERING_COMPLETE) p->gathered = 1;
     pthread_cond_broadcast(&p->changed);
+    pthread_mutex_unlock(&p->mutex);
+}
+static void signaling_changed(int pc, rtcSignalingState state, void *ptr) {
+    (void)pc;
+    AudioPeer *p = ptr;
+    if (!p) return;
+    pthread_mutex_lock(&p->mutex);
+    p->signaling_state = (int)state;
+    if (p->signaling_changes < 65535) p->signaling_changes++;
     pthread_mutex_unlock(&p->mutex);
 }
 static uint32_t random_ssrc(void) {
@@ -81,6 +102,7 @@ static void destroy(AudioPeer *p) {
         rtcSetStateChangeCallback(p->pc, NULL);
         rtcSetIceStateChangeCallback(p->pc, NULL);
         rtcSetGatheringStateChangeCallback(p->pc, NULL);
+        rtcSetSignalingStateChangeCallback(p->pc, NULL);
         rtcSetUserPointer(p->pc, NULL);
         for (int i = 0; i < p->count; ++i) rtcDeleteTrack(p->tracks[i]);
         rtcClosePeerConnection(p->pc);
@@ -103,6 +125,10 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
     p->pc = -1;
     p->connection_state = -1;
     p->ice_state = -1;
+    p->gathering_state = -1;
+    p->signaling_state = -1;
+    p->remote_description_result = INT_MIN;
+    p->local_description_result = INT_MIN;
     pthread_mutex_init(&p->mutex, NULL);
     pthread_condattr_t attr;
     pthread_condattr_init(&attr); pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
@@ -117,6 +143,7 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
     rtcSetStateChangeCallback(p->pc, state_changed);
     rtcSetIceStateChangeCallback(p->pc, ice_changed);
     rtcSetGatheringStateChangeCallback(p->pc, gathered);
+    rtcSetSignalingStateChangeCallback(p->pc, signaling_changed);
     jint pt[SLOT_LIMIT]; (*env)->GetIntArrayRegion(env, payloads, 0, count, pt);
     if ((*env)->ExceptionCheck(env)) { destroy(p); return 0; }
     for (int i = 0; i < count; ++i) {
@@ -159,7 +186,15 @@ JNIEXPORT jstring JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nati
     if (!sdp) return NULL;
     int error = rtcSetRemoteDescription(p->pc, sdp, "offer");
     (*env)->ReleaseStringUTFChars(env, offer, sdp);
-    if (error < 0 || rtcSetLocalDescription(p->pc, "answer") < 0) {
+    pthread_mutex_lock(&p->mutex);
+    p->remote_description_result = error;
+    pthread_mutex_unlock(&p->mutex);
+    int local_error = INT_MIN;
+    if (error >= 0) local_error = rtcSetLocalDescription(p->pc, "answer");
+    pthread_mutex_lock(&p->mutex);
+    p->local_description_result = local_error;
+    pthread_mutex_unlock(&p->mutex);
+    if (error < 0 || local_error < 0) {
         throw_state(env, "audio-native-description"); return NULL;
     }
     struct timespec limit; clock_gettime(CLOCK_MONOTONIC, &limit); limit.tv_sec += 5;
@@ -206,6 +241,66 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
         ((uint64_t)p->connection_changes << 8) | ((uint64_t)p->ice_changes << 24);
     pthread_mutex_unlock(&p->mutex);
     return (jlong)result;
+}
+
+/* Fixed classifications only. SDP credentials and candidate addresses never cross JNI. */
+static int description_type(const char *type) {
+    if (!strcmp(type, "offer")) return 1;
+    if (!strcmp(type, "answer")) return 2;
+    if (!strcmp(type, "pranswer")) return 3;
+    if (!strcmp(type, "rollback")) return 4;
+    return 5;
+}
+static void candidate_summary(const char *candidate, jint *summary) {
+    summary[3] = candidate[0] != '\0';
+    char foundation[64], protocol[16], address[256], kind[16];
+    unsigned int component, priority, port;
+    if (sscanf(candidate, "%63s %u %15s %u %255s %u typ %15s", foundation,
+               &component, protocol, &priority, address, &port, kind) != 7) return;
+    if (!strcasecmp(kind, "host")) summary[0] = 1;
+    else if (!strcasecmp(kind, "srflx")) summary[0] = 2;
+    else if (!strcasecmp(kind, "prflx")) summary[0] = 3;
+    else if (!strcasecmp(kind, "relay")) summary[0] = 4;
+    if (!strcasecmp(protocol, "udp")) summary[1] = 1;
+    else if (!strcasecmp(protocol, "tcp")) summary[1] = 2;
+    unsigned char binary[16];
+    if (inet_pton(AF_INET, address, binary) == 1) summary[2] = 1;
+    else if (inet_pton(AF_INET6, address, binary) == 1) summary[2] = 2;
+    else {
+        size_t length = strlen(address);
+        if (length > 6 && !strcasecmp(address + length - 6, ".local")) summary[2] = 3;
+    }
+}
+JNIEXPORT jintArray JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nativeDiagnostics
+  (JNIEnv *env, jclass type, jlong handle) {
+    (void)type;
+    AudioPeer *p = peer(handle);
+    if (!p) return (*env)->NewIntArray(env, 0);
+    /* Keep this fixed layout in sync with nativeAudioDiagnostics() in Kotlin. */
+    jint values[21] = {0};
+    pthread_mutex_lock(&p->mutex);
+    values[0] = p->connection_state; values[1] = p->ice_state;
+    values[2] = (jint)p->connection_changes; values[3] = (jint)p->ice_changes;
+    values[4] = p->gathering_state; values[5] = p->signaling_state;
+    values[6] = (jint)p->gathering_changes; values[7] = (jint)p->signaling_changes;
+    values[8] = p->remote_description_result; values[9] = p->local_description_result;
+    pthread_mutex_unlock(&p->mutex);
+    /* Official getters may acquire library locks; never call them under our callback mutex. */
+    char local_type[16] = {0}, remote_type[16] = {0};
+    if (rtcGetLocalDescriptionType(p->pc, local_type, sizeof(local_type)) >= 0)
+        values[10] = description_type(local_type);
+    if (rtcGetRemoteDescriptionType(p->pc, remote_type, sizeof(remote_type)) >= 0)
+        values[11] = description_type(remote_type);
+    char local[2048] = {0}, remote[2048] = {0};
+    int result = rtcGetSelectedCandidatePair(p->pc, local, sizeof(local), remote, sizeof(remote));
+    values[12] = result >= 0 ? RTC_ERR_SUCCESS : result;
+    if (result >= 0) {
+        candidate_summary(local, values + 13);
+        candidate_summary(remote, values + 17);
+    }
+    jintArray output = (*env)->NewIntArray(env, 21);
+    if (output) (*env)->SetIntArrayRegion(env, output, 0, 21, values);
+    return output;
 }
 JNIEXPORT void JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nativeSend
   (JNIEnv *env, jclass type, jlong handle, jint slot, jlong timestamp, jbyteArray payload) {

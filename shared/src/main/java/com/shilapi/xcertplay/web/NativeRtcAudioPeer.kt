@@ -36,6 +36,7 @@ internal class NativeRtcAudioPeer(
     private val pointerLock = Any()
     private var handle = 0L
     @Volatile private var answered = false
+    @Volatile private var lastDiagnostics = nativeAudioDiagnostics(IntArray(0))
     private val sender = Thread(::pump, "tiplay-native-audio").apply { isDaemon = true; start() }
 
     override fun answer(offer: String): String {
@@ -55,7 +56,11 @@ internal class NativeRtcAudioPeer(
             runCatching { diagnostic("stage=ice-candidates peer=$diagnosticId ${BrowserRtcAudioCandidates.describe(offer, answer)}") }
             answered = true
             return answer
-        } finally { answering.set(false); deleteClosed() }
+        } catch (cause: Throwable) {
+            val details = refreshDiagnostics()
+            runCatching { diagnostic("stage=negotiation-failure peer=$diagnosticId exception=${cause.javaClass.simpleName} ${diagnosticFields(details)}") }
+            throw cause
+        } finally { refreshDiagnostics(); answering.set(false); deleteClosed() }
     }
 
     override fun send(slot: String, payload: ByteArray, timestampUs: Double) {
@@ -111,7 +116,8 @@ internal class NativeRtcAudioPeer(
                     if (handle == 0L) "connection=unavailable ice=unavailable" else formatNativeAudioStates(nativeStates(handle))
                 } }.getOrDefault("connection=unknown ice=unknown")
                 val ageMs = if (admittedAt == 0L) -1L else (nanoTime() - admittedAt).coerceAtLeast(0) / 1_000_000
-                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState $transportState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs") }
+                val details = refreshDiagnostics()
+                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState $transportState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs ${diagnosticFields(details)}") }
                 fail(when (error.message) {
                 "audio-native-open-timeout" -> "audio-native-open-timeout"
                 "audio-native-peer-failed" -> "audio-native-peer-failed"
@@ -126,18 +132,36 @@ internal class NativeRtcAudioPeer(
         }
     }
 
-    private fun fail(reason: String) { if (failed.compareAndSet(false, true)) { try { onFailure(reason) } finally { close() } } }
+    private fun fail(reason: String) {
+        if (failed.compareAndSet(false, true)) {
+            refreshDiagnostics()
+            try { onFailure(reason) } finally { close() }
+        }
+    }
     override fun ready(): Boolean = synchronized(pointerLock) {
         !closed.get() && !failed.get() && answered && handle != 0L && !nativeFailed(handle)
             && nativeAudioTransportConnected(nativeStates(handle))
     }
     override fun snapshot(): Map<String, Any?> = mapOf("backend" to "libdatachannel", "peer" to diagnosticId, "ready" to ready(),
         "queuedPackets" to packets.size, "queuedBytes" to bytes.get().coerceAtLeast(0), "tracks" to slots.size,
-        "failed" to failed.get())
+        "failed" to failed.get(), "transportDiagnostics" to refreshDiagnostics())
+
+    private fun refreshDiagnostics(): Map<String, Any?> = synchronized(pointerLock) {
+        if (!closed.get() && handle != 0L) runCatching { nativeAudioDiagnostics(nativeDiagnostics(handle)) }
+            .getOrNull()?.let { lastDiagnostics = it }
+        lastDiagnostics
+    }
+
+    private fun diagnosticFields(details: Map<String, Any?>): String =
+        details.entries.joinToString(" ") { (key, value) -> "$key=$value" }
 
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
-        synchronized(pointerLock) { if (handle != 0L) nativeCancel(handle) }
+        synchronized(pointerLock) {
+            if (closed.get()) return
+            refreshDiagnostics()
+            closed.set(true)
+            if (handle != 0L) nativeCancel(handle)
+        }
         sender.interrupt()
     }
 
@@ -161,8 +185,43 @@ internal class NativeRtcAudioPeer(
         @JvmStatic private external fun nativeReady(handle: Long, slot: Int): Boolean
         @JvmStatic private external fun nativeFailed(handle: Long): Boolean
         @JvmStatic private external fun nativeStates(handle: Long): Long
+        @JvmStatic private external fun nativeDiagnostics(handle: Long): IntArray
         @JvmStatic private external fun nativeSend(handle: Long, slot: Int, timestamp: Long, payload: ByteArray)
     }
+}
+
+/** Fixed JNI classifications only; no candidate address, port, credential or SDP can enter this map. */
+internal fun nativeAudioDiagnostics(values: IntArray): Map<String, Any?> {
+    if (values.size != 21) return mapOf("available" to false)
+    fun state(index: Int, names: List<String>) = names.getOrNull(values[index]) ?: "unavailable"
+    fun count(index: Int) = values[index].coerceIn(0, 65535)
+    fun result(index: Int): Int? = values[index].takeUnless { it == Int.MIN_VALUE }
+    val descriptions = listOf("unavailable", "offer", "answer", "pranswer", "rollback", "unknown")
+    val candidateTypes = listOf("unknown", "host", "srflx", "prflx", "relay")
+    val protocols = listOf("unknown", "udp", "tcp")
+    val families = listOf("unknown", "ipv4", "ipv6", "mdns")
+    val pairResult = values[12]
+    return linkedMapOf(
+        "available" to true,
+        "connection" to state(0, listOf("new", "connecting", "connected", "disconnected", "failed", "closed")),
+        "ice" to state(1, listOf("new", "checking", "connected", "completed", "failed", "disconnected", "closed")),
+        "connectionChanges" to count(2), "iceChanges" to count(3),
+        "gathering" to state(4, listOf("new", "gathering", "complete")),
+        "signaling" to state(5, listOf("stable", "have-local-offer", "have-remote-offer", "have-local-pranswer", "have-remote-pranswer")),
+        "gatheringChanges" to count(6), "signalingChanges" to count(7),
+        "remoteDescriptionSetResult" to result(8), "localDescriptionSetResult" to result(9),
+        "localDescriptionType" to state(10, descriptions), "remoteDescriptionType" to state(11, descriptions),
+        "selectedPair" to when (pairResult) { 0 -> "selected"; -3 -> "not-selected"; else -> "error" },
+        "selectedPairResult" to pairResult,
+        "localCandidateType" to (candidateTypes.getOrNull(values[13]) ?: "unknown"),
+        "localCandidateProtocol" to (protocols.getOrNull(values[14]) ?: "unknown"),
+        "localCandidateFamily" to (families.getOrNull(values[15]) ?: "unknown"),
+        "localCandidatePresent" to (values[16] == 1),
+        "remoteCandidateType" to (candidateTypes.getOrNull(values[17]) ?: "unknown"),
+        "remoteCandidateProtocol" to (protocols.getOrNull(values[18]) ?: "unknown"),
+        "remoteCandidateFamily" to (families.getOrNull(values[19]) ?: "unknown"),
+        "remoteCandidatePresent" to (values[20] == 1),
+    )
 }
 
 internal fun nativeAudioTransportConnected(value: Long): Boolean = (value and 15L) == 3L &&

@@ -8,6 +8,45 @@ const peerStates = ['new', 'connecting', 'connected', 'disconnected', 'failed', 
 const iceStates = ['new', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed'];
 const gatheringStates = ['new', 'gathering', 'complete'];
 const observedState = (value, allowed) => allowed.includes(value) ? value : 'unavailable';
+const pairStates = ['frozen', 'waiting', 'in-progress', 'failed', 'succeeded'];
+const iceRoles = ['unknown', 'controlling', 'controlled'];
+const dtlsStates = ['new', 'connecting', 'connected', 'closed', 'failed'];
+
+/** RTCStats IDs and candidate identities are used only to select records, never exported. */
+function summarizeIceStats(report) {
+  const transports = [], candidates = [];
+  report.forEach(value => {
+    if (value?.type === 'transport') transports.push(value);
+    if (value?.type === 'candidate-pair') candidates.push(value);
+  });
+  const selectedIds = new Set(transports.map(value => value.selectedCandidatePairId)
+    .filter(value => typeof value === 'string' && value.length > 0));
+  const selected = [...selectedIds].map(id => report.get?.(id)).filter(value => value?.type === 'candidate-pair');
+  const pairs = selected.length ? selected : candidates;
+  const result = { icePairScope: selected.length ? 'selected' : pairs.length ? 'all' : 'none', icePairCount: pairs.length };
+  if (selected.length) result.iceSelectedPairPresent = true;
+  else if (transports.length && transports.every(value => value.selectedCandidatePairId === null
+    || value.selectedCandidatePairId === '')) result.iceSelectedPairPresent = false;
+  function state(records, field, allowed) {
+    const values = records.map(value => observedState(value[field], allowed));
+    return values.includes('unavailable') ? 'unavailable' : new Set(values).size === 1 ? values[0] : 'mixed';
+  }
+  if (transports.length) {
+    result.iceRole = state(transports, 'iceRole', iceRoles);
+    result.dtlsState = state(transports, 'dtlsState', dtlsStates);
+  }
+  if (!pairs.length) return result;
+  result.icePairState = state(pairs, 'state', pairStates);
+  if (pairs.some(value => value.nominated === true)) result.icePairNominated = true;
+  else if (pairs.every(value => value.nominated === false)) result.icePairNominated = false;
+  for (const field of ['requestsSent', 'requestsReceived', 'responsesSent', 'responsesReceived', 'consentRequestsSent']) {
+    // Unknown counters are not zero. A sum is exact only when every scoped pair reports it.
+    if (!pairs.every(value => Number.isSafeInteger(value[field]) && value[field] >= 0)) continue;
+    const sum = pairs.reduce((sum, value) => sum + value[field], 0);
+    if (Number.isSafeInteger(sum)) result['ice' + field[0].toUpperCase() + field.slice(1)] = sum;
+  }
+  return result;
+}
 
 /** Advertise actual browser RTP decoders, excluding repair/event-only payloads. */
 export function rtcAudioCodecs(Receiver = globalThis.RTCRtpReceiver) {
@@ -35,9 +74,32 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
   function disconnect(slot) {
     slot.source?.disconnect(); slot.source = null;
   }
+  const samplingLive = peer => current === peer && !closed && !peer.closed;
+  function iceEvidence(peer) {
+    if (!peer) return {};
+    return { ...peer.iceStats, ...(peer.iceStatsAt === undefined ? {} : {
+      iceStatsSampleAgeMs: Math.max(0, performance.now() - peer.iceStatsAt) }) };
+  }
+  function sampleIce(peer, afterStateChange = false) {
+    if (!samplingLive(peer)) return;
+    if (typeof peer.pc.getStats !== 'function') { peer.iceStats = { iceStatsState: 'unsupported' }; return; }
+    if (peer.iceStatsPending) { peer.iceStatsAgain ||= afterStateChange; return; }
+    peer.iceStatsPending = true;
+    Promise.resolve().then(() => samplingLive(peer) ? peer.pc.getStats() : null).then(report => {
+      if (!samplingLive(peer)) return;
+      const summary = summarizeIceStats(report);
+      peer.iceStats = { iceStatsState: 'sampled', ...summary }; peer.iceStatsAt = performance.now();
+    }).catch(() => {
+      if (samplingLive(peer)) peer.iceStats = { ...peer.iceStats, iceStatsState: 'failed' };
+    }).finally(() => {
+      peer.iceStatsPending = false;
+      if (peer.iceStatsAgain && samplingLive(peer)) { peer.iceStatsAgain = false; sampleIce(peer); }
+    });
+  }
   function retire(peer) {
     if (!peer || peer.closed) return;
-    peer.closed = true; peer.abort.abort(); clearTimeout(peer.timer); peer.reject(peer.error ?? stopped());
+    peer.closed = true; peer.abort.abort(); clearTimeout(peer.timer); clearInterval(peer.iceStatsTimer);
+    peer.reject(peer.error ?? stopped());
     for (const slot of peer.slots) {
       clearTimeout(slot.readyTimer); slot.rejectReady?.(peer.error ?? stopped());
       disconnect(slot); slot.track?.stop?.();
@@ -59,7 +121,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
       remoteCandidates: candidateCounts(peer.pc.remoteDescription?.sdp).total,
       remotePrivateIpv4Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).privateIpv4,
       remoteCgnatIpv4Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).cgnatIpv4,
-      remoteIpv6Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).ipv6 };
+      remoteIpv6Candidates: candidateCounts(peer.pc.remoteDescription?.sdp).ipv6, ...iceEvidence(peer) };
     peer.error = cause; retire(peer); onError(cause, detail);
   }
   function startPlayout(peer, track) {
@@ -107,6 +169,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
   }
   function transportChanged(peer) {
     if (current !== peer || peer.closed) return;
+    sampleIce(peer, true);
     const { connectionState, iceConnectionState } = peer.pc;
     if (['failed', 'closed'].includes(connectionState) || ['failed', 'closed'].includes(iceConnectionState)) {
       fail(peer, Error('Native audio connection failed.')); return;
@@ -136,12 +199,15 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
     let pc;
     try { pc = new PeerConnection({ iceServers: [], iceTransportPolicy: 'all', bundlePolicy: 'max-bundle' }); }
     catch (cause) { return Promise.reject(cause); }
-    const peer = current = { pc, generation, slots: [], abort: new AbortController(), ready: false, closed: false, error: null, stage: 'offer' };
+    const peer = current = { pc, generation, slots: [], abort: new AbortController(), ready: false, closed: false,
+      error: null, stage: 'offer', iceStats: { iceStatsState: 'pending' } };
     const cancelled = new Promise((_, reject) => { peer.reject = reject; });
     cancelled.catch(() => {});
     // SDP completion alone does not establish ICE connectivity. Keep the same
     // deadline until the peer connects so a peer stuck checking can recover.
     peer.timer = setTimeout(() => fail(peer, Error(peer.ready ? 'Native audio connection timed out.' : 'Native audio negotiation timed out.')), timeoutMs);
+    sampleIce(peer);
+    if (typeof pc.getStats === 'function') peer.iceStatsTimer = setInterval(() => sampleIce(peer), 1000);
     const operation = (async () => {
       try {
         for (let index = 0; index < RTC_AUDIO_SLOTS; index++) {
@@ -163,6 +229,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
           connectSlot(peer, slot);
         };
         pc.onconnectionstatechange = pc.oniceconnectionstatechange = () => transportChanged(peer);
+        pc.onicegatheringstatechange = () => sampleIce(peer, true);
         await pc.setLocalDescription(await pc.createOffer());
         peer.stage = 'local-ice';
         // This peer has one-shot signaling. Keep late host interfaces in the
@@ -258,6 +325,7 @@ export function createRtcAudio({ exchange, context, node, generation: playbackGe
         peerState: observedState(current?.pc.connectionState, peerStates),
         iceState: observedState(current?.pc.iceConnectionState, iceStates),
         gatheringState: observedState(current?.pc.iceGatheringState, gatheringStates),
+        ...iceEvidence(current),
         tracks: live ? current.slots.filter(slot => slot.track).length : 0,
         boundSlots: live ? current.slots.filter(slot => slot.bindingConfirmed).length : 0,
         readySlots: live ? current.slots.filter(slot => slot.readySent && !slot.ended).length : 0,

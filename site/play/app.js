@@ -1124,7 +1124,7 @@ window.addEventListener('pageshow', event => {
   if (resumeOnShow) start();
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('sw.js', import.meta.url), { updateViaCache: 'none' })
+if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('sw.js', document.baseURI), { updateViaCache: 'none' })
   .then(registration => registration.update()).catch(() => {});
 
 $('code').value = link.code ?? '';

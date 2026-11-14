@@ -4,8 +4,9 @@ import argparse, base64, ctypes as C, json, os, pathlib, select, struct, subproc
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--host-dir',type=pathlib.Path,required=True);p.add_argument('--kotlin-stdlib',type=pathlib.Path,required=True)
+p.add_argument('--classes-dir',type=pathlib.Path,default=ROOT/'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes')
 a=p.parse_args();host=a.host_dir.resolve()
-classes=ROOT/'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes'
+classes=a.classes_dir.resolve()
 probe=host/'probe-classes';probe.mkdir(exist_ok=True)
 subprocess.run(['javac','-cp',os.pathsep.join(map(str,[classes,a.kotlin_stdlib])),'-d',str(probe),str(ROOT/'tests/native/EncodedAudioPeerProbe.java')],check=True)
 lib=C.CDLL(str(host/'libdatachannel/libdatachannel.so'))

@@ -7,46 +7,56 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.47
+### Beta.48
 
-**Beta.47/code89 is published** from `83634d299052291c02afc6aa0c221b85d7a3b035`
-with browser/cache v119. Browser playback logic is unchanged. Missing-CSeq reverse-command responses now acknowledge only
-the current channel's unique outstanding mirror request; explicit malformed or
-wrong CSeq values and provisional responses cannot use this compatibility path.
-A native encoder wrapper's first cold initialization retains a captured IDR
-when no output chain exists. Callback reinitialization, warm replacement and
-actual loss still invalidate old chains;
-codec/profile/level and instance checks remain strict.
-SCO diagnostics classify placeholder addresses and correlate profile/SCO identities
-without exposing addresses or names or relaxing selected-car route admission.
+**Beta.48/code90 and browser/cache v120 are in preparation.** Android call output
+prefers the selected car Bluetooth device, then another usable Bluetooth output,
+then the system AudioTrack route. Playback readiness is independent of microphone
+capture. Mic failures retain working output and retry capture with bounded backoff
+only under the existing verified microphone identity. Pending SCO requests and mode
+ownership are withdrawn through this app's platform client before output handoff.
 
-The November 11 beta.46 capture independently contains 687 mirror access units:
-two IDRs and 685 P frames, no non-IDR I slices, SEI recovery points or B slices.
-This is original NAL/slice verification, not decoded-picture verification.
-Mirror media SETUP succeeds. A genuine 75-byte, CSeq-less 200 reply arrives after
-the force-key request but was ignored, causing a false command timeout that
-suppressed later requests. Two submitted mirror frames yield zero output; native
-startup then expires before the first-presentation deadline. Those are distinct
-observations; a successful reply alone does not establish picture recovery.
+During call/microphone demand, browser telephone downlink remains suppressed even
+if Android output fails or is released. It resumes only after demand ends and
+owned Android output cleanup completes. Music, navigation and Siri keep their
+existing browser paths.
 
-Focused Android validation passed **475 tests in 65 shared classes**, with no
-failures, errors or skips, including eleven reverse-command and ten video-recovery
-cases. All **700 browser tests** and 27 Python release/native-symbol/site cases
-pass. A real Chromium baseline/update/newer lifecycle fixture passes with three
-resources; this does not establish full production offline operation. Public-tree,
-cache-manifest and diff checks pass. Signed packaging and all twelve independent
-artifact checks pass. Public checks match 226 files, 20 routes and all three release
-assets byte for byte; [Build](Build.md#beta47-release) records exact provenance. Full CI is explicitly waived for this authorized
-follow-up beta; release lint/build and artifact checks remain required.
-The focused Gradle task is `:shared:testDebugUnitTest`, filtered with
-`com.shilapi.xcertplay.receiver.*`, `*BrowserRtcVideo*Test`, `*WebVideoHubTest`,
-`*Bluetooth*Test`, `*Rtsp*Test` and `*Bplist*Test` (`--tests` for each pattern).
-A non-incremental compile was used after the resumed executor's stale Kotlin
-cache failed to resolve an existing same-package helper.
+Browser audio uses official `getStats()` with per-peer cache ownership, selected
+versus aggregate pair scope, real request/reply counters and sample age. Missing
+fields stay unknown. JNI adds official state/description/pair classifications;
+closing retains its last snapshot. Neither diagnostics path emits addresses,
+credentials or SDP, and no new native STUN counters are claimed.
 
-Actual vehicle native Opus ICE, selected-car SCO and mirror picture remain open.
-The managed browser policy disables non-proxied UDP, and this environment has no
-attached ADB device; source fixtures cannot establish physical interoperability.
+Final focused validation passes **580 shared cases in 74 classes**, with no
+failures, errors or skips, including 59 Android-output/Sink cases and five native
+state cases. All **716 browser tests** and 27 Python release/native-symbol/site
+cases pass. The real final Gradle classes plus C JNI/libdatachannel replay two
+tracks of 80 original Opus packets: payload and RTP timestamps match; diagnostic
+assertions cover not-selected, invalid SDP, selected pair and close retention.
+Signed packaging and public artifact checks are pending. Full CI remains explicitly waived. The managed browser policy
+still disables non-proxied UDP; there is no attached Android vehicle test device.
+Native vehicle Opus ICE and actual mirror picture still need physical evidence.
+The initially failing update fixture exposed a real cache-coherence race, now
+fixed with durable ownership and versioned module URLs. All twelve SW unit cases
+and enhanced Chromium checks pass: delayed takeover, failed navigation, restart,
+legacy unknown clients, multiple versions, module Worker/Worklet/Wasm and offline.
+A separate real-browser probe verifies all 132 production cache resources
+(12,219,931 bytes) offline against disk SHA-256, size and MIME, with UI boot and
+no external requests. This establishes resource integrity and lifecycle behavior,
+not codec execution, phone connectivity or physical media output.
+
+### Beta.47 reference
+
+Beta.47/code89 was published from `83634d299052291c02afc6aa0c221b85d7a3b035`
+with browser/cache v119. Focused validation passed 475 shared cases in 65 classes,
+700 browser tests and 27 Python checks, plus the Chromium three-resource lifecycle
+fixture. Twelve artifact checks and anonymous site/release bytes matched;
+[Build](Build.md#beta47-release) records the exact release provenance.
+The November 11 field capture independently contains 687 mirror AUs: two IDRs
+and 685 P frames, no non-IDR I slices, SEI recovery points or B slices. This is
+NAL/slice verification, not decoded-picture verification. That capture exposed
+missing-CSeq ACK handling and initial encoder selection losses; beta.47 fixes
+those software defects, with actual vehicle presentation still to be verified.
 
 ### Beta.46 reference
 

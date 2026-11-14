@@ -456,3 +456,22 @@ test('native audio readiness and ICE diagnostics survive dense Debug budgets wit
   const events = browserDiagnosticEvents({ audio: { nativeAudio: malformed, debug: { nativeAudio: malformed } } }, false, true);
   assert.equal(JSON.stringify(events).includes('nativeAudio.'), false);
 });
+
+test('audio ICE check evidence survives capture while candidate identities and unknown counters do not', () => {
+  const nativeAudio = { iceStatsState: 'sampled', iceStatsSampleAgeMs: 125.5, icePairScope: 'all',
+    icePairCount: 2, icePairState: 'in-progress', icePairNominated: false, iceSelectedPairPresent: false,
+    iceRequestsSent: 6, iceResponsesReceived: 0, iceRole: 'controlling', dtlsState: 'new',
+    selectedCandidatePairId: 'private-pair', address: '192.0.2.44', password: 'private-password' };
+  const [summary, detail] = browserDiagnosticEvents({ audio: { nativeAudio, debug: {} } }, false, true, 'capture');
+  for (const [field, expected] of Object.entries(nativeAudio).slice(0, 11)) {
+    const flat = typeof expected === 'boolean' ? Number(expected) : expected;
+    assert.equal(summary.v[`audio.nativeAudio.${field}`], flat);
+    assert.equal(detail.v[`nativeAudio.${field}`], flat);
+  }
+  assert.equal(detail.v['nativeAudio.iceRequestsReceived'], undefined, 'unobserved checks are not zero');
+  assert.doesNotMatch(JSON.stringify([summary, detail]), /private-pair|192\.0\.2\.44|private-password/);
+  const invalid = browserDiagnosticEvents({ audio: { nativeAudio: { iceStatsState: 'private-error', icePairScope: 'private-pair',
+    icePairCount: 1025, icePairNominated: 'false', iceRequestsSent: -1, iceResponsesReceived: Infinity,
+    iceConsentRequestsSent: Number.MAX_SAFE_INTEGER + 1, iceStatsSampleAgeMs: -1 } } }, false, true);
+  assert.equal(JSON.stringify(invalid).includes('nativeAudio.'), false);
+});

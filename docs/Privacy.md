@@ -45,6 +45,11 @@ Retained upstream DiLink cluster code, hidden from the phone/browser product, ca
 
 ## Browser and network
 
+The page caches runtime files and page/Worker cache-version ownership locally.
+Ownership records contain browser-generated client IDs, version tokens and cleanup
+state, without pairing links, phone addresses or coordinates. These records are
+not uploaded.
+
 Browser storage retains the pairing code, phone address and confirmed coordinate-system type (plus browser UA and record version). Location coordinates are not persisted. When enabled, browser positions travel only over the paired local control channel to Android and onward to the iPhone. High accuracy Android GPS supplies the initial position and coordinate-system comparison; it stops when a known browser position is available and resumes if browser fixes expire. See [geolocation](Geolocation.md) for permissions, caching and the opt-out.
 
 Browser storage retains no position history. TiPlay removes the code from the link

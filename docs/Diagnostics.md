@@ -295,33 +295,35 @@ it does not run the retired PD/SoundTouch or browser libsoxr controller. The bun
 NetEq Opus API is exercised by library tests, while product Opus requires native
 RTP negotiation. A retained schema/allowlist field does not prove a retired path runs.
 
-Before browser v117, `nativeAudio.state=ready` meant the independent native-audio
-SDP was installed, even if ICE was still checking. Current source requires both
-the peer and ICE transport to be connected for `ready`; read the separate
-`peerState`, `iceState` and `gatheringState` when analyzing older captures.
-`rtcGeneration` fences replacements; `tracks`, `boundSlots`,
-`readySlots` and `streams` distinguish received tracks, Worklet graph application,
-announced ready active slots and active owners. Ready slots require successful
-playout-anchor `play()`, Worklet binding and connected transport. The Standard summary retains the
-main state/counts; Debug audio records retain all ten bounded fields. Missing
-native-audio fields remain unknown. Failed, retired and closed peers report zero
-live track/slot/owner counts and no pending drain. `drainUnknown=true` means an ended owner's
-receiver stays connected for its buffered tail; it does not certify drain completion
-or audible output. Music may use software AAC while guidance uses this separate
-Opus peer, so successful music alone cannot establish native guidance playback.
-Current packet-age expiry drops stale queued speech without failing a newly
-negotiated peer. Fresh packets from a continuing live owner keep the same epoch;
-transport/metadata readiness has its own deadline. This does not prove ICE connectivity.
+Before browser v117, `nativeAudio.state=ready` meant only SDP installation. Current
+readiness requires connected peer/ICE, Worklet binding and fulfilled playout-anchor
+`play()`. Read `peerState`, `iceState` and `gatheringState` separately.
+`rtcGeneration` fences replacements; `tracks`, `boundSlots`, `readySlots` and
+`streams` distinguish reception, graph binding, readiness and active owners.
+Standard retains main states/counts; Debug retains the original ten core fields and ICE evidence below. Missing
+fields are unknown. Failed/retired/closed peers have zero live counts and no pending
+drain. `drainUnknown=true` preserves an ended owner's receiver for its buffered tail,
+not proof of completion or sound. Software AAC music does not establish native
+Opus guidance playback. Expiry drops stale queued speech without failing a newly
+negotiated peer; a continuing live owner's fresh packets retain their epoch.
+Transport/metadata readiness has an independent deadline, not proof of connectivity.
 
-Android's `native-audio stage=sender-failure` also records its native `connection`
-and `ice` states and state-callback counts at failure. ICE connected with the peer
-still connecting points to a later transport stage; checking or failed ICE does
-not by itself identify which candidate or network caused the failure. No address
-or candidate contents are included. At SDP negotiation, `stage=ice-candidates`
-records host UDP address counts by type for the offer and answer and the count of
-matching IPv4 /24 prefixes. A matching prefix does not prove connectivity, and
-mDNS addresses cannot be compared this way. These counts do not include addresses,
-ports or credentials. When the selected car has no matching SCO route,
+Browser official `getStats()` supplies `iceStatsState`, `iceStatsSampleAgeMs`,
+pair scope/count/state/nomination, selection, ICE role, DTLS state and STUN
+request/response/consent counts. `icePairScope` distinguishes selected pairs from
+all observed pairs. A missing selected-pair reference is unknown, not false.
+Missing counters remain absent; aggregation requires every
+scoped pair's counter. Failed collection/close retains previous samples and age.
+Replacement generations do not inherit old ICE counters. Compare within the same peer/scope.
+The native snapshot's `transportDiagnostics` uses official libdatachannel callbacks,
+description and selected-pair APIs: states/change counts, description results/types,
+selected-pair result and candidate type/protocol/family/presence. `not-selected`/-3
+is not a socket error; close retains the last snapshot. It supplies no STUN counters.
+SDP `ice-candidates` retains host counts and matching IPv4 /24 counts; matching
+prefixes do not prove reachability, and mDNS cannot be compared. These summaries
+omit addresses, ports, SDP and credentials; they do not identify or fix the ICE cause.
+
+When the selected car has no matching SCO route,
 `communication-devices` records device `types`, `namedCandidates` and `validAddresses`
 as counts/types only. `selectedIdentity` and address-class counts distinguish missing,
 invalid, placeholder and usable identities. `headset-diagnostic` records live profile
@@ -330,6 +332,14 @@ correlations with selected/other profile devices, once per demand/selection. Nam
 addresses and their hashes are omitted. Name correlation cannot identify a route.
 HFP/A2DP `selectedMatch=true` with zero SCO exact matches does not establish a
 disconnected or wrongly selected car; the communication-device mismatch remains distinct.
+`communication-devices` may include non-SCO Bluetooth playback candidates;
+selection alone does not verify microphone capture.
+`output-preference` is a request; `output-route`/`output-ready` observe playback.
+`output-ready` means routed/primed playback, not capture or physical sound.
+Route type/`selectedCarMatch` report exact-address correlation; false does not resolve aliases.
+`microphone-unavailable` can coexist with active playback. Microphone demand alone
+still suppresses browser telephony even after Android output failure/release;
+that policy is not evidence of a browser playback defect.
 
 RTP packet reception alone also does not establish decoded samples. The local
 original-Opus reproduction received packets with zero Worklet output until a

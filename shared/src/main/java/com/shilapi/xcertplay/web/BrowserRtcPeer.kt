@@ -813,7 +813,8 @@ private class AndroidBrowserRtcPeer(
         val event = if (reason in setOf("audio-slots-exhausted", "audio-new-demand")) "audio-restart-required" else "audio-error"
         log("Browser RTC: stage=native-audio epoch=$epoch generation=$generation peer=${native?.get("peer")} reason=$reason failed=true " +
             listOf("negotiating", "slots", "owners", "receiverReadySlots", "queuedPackets", "queuedBytes")
-                .joinToString(" ") { "$it=${snapshot[it]}" })
+                .joinToString(" ") { "$it=${snapshot[it]}" } +
+            " transportDiagnostics=${native?.get("transportDiagnostics")?.let(WebJson::write) ?: "unavailable"}")
         runCatching { sendControl(WebJson.write(mapOf("k" to event, "reason" to reason, "generation" to generation))) }
         synchronized(wake) { wake.notifyAll() }
     }

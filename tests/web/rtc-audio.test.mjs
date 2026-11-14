@@ -61,13 +61,14 @@ test('ICE-only disconnect recovers within its budget or retires the audio peer w
   } finally { h.audio.close(); }
 });
 function harness(options = {}) {
-  const peers = [], sources = [], messages = [], exchanges = [], errors = [], anchors = [], abort = new AbortController();
+  const peers = [], sources = [], messages = [], exchanges = [], errors = [], errorDetails = [], anchors = [], abort = new AbortController();
   class PeerConnection {
     constructor(configuration) {
       if (options.failPeerConstruction?.()) throw Error('Native peer construction failed.');
       this.configuration = configuration; this.transceivers = []; peers.push(this);
       this.connectionState = options.connectionState ?? 'connected';
       this.iceConnectionState = this.connectionState === 'connected' ? 'connected' : 'checking';
+      if (options.getStats) this.getStats = () => options.getStats(this);
     }
     addTransceiver(kind, options) {
       const transceiver = { kind, options, mid: null, setCodecPreferences(value) { this.codecs = value; } };
@@ -94,9 +95,122 @@ function harness(options = {}) {
     createPlayout: () => { const anchor = { play() { this.played = true; return Promise.resolve(); },
       pause() { this.paused = true; }, remove() { this.removed = true; } }; anchors.push(anchor); return anchor; },
     exchange: async request => { exchanges.push(request); return { sdp: 'answer', generation: request.generation }; },
-    onError: cause => errors.push(cause), ...options });
-  return { audio, peers, sources, messages, exchanges, errors, anchors, abort, node };
+    onError: (cause, detail) => { errors.push(cause); errorDetails.push(detail); }, ...options });
+  return { audio, peers, sources, messages, exchanges, errors, errorDetails, anchors, abort, node };
 }
+
+const flushIceStats = () => new Promise(resolve => setImmediate(resolve));
+const iceReport = (pairs, transport = {}) => new Map([
+  ['private transport ID', { type: 'transport', iceRole: 'controlled', dtlsState: 'connecting', ...transport }],
+  ...pairs.map((pair, index) => [pair.id ?? 'private pair ID ' + index, { type: 'candidate-pair', ...pair }]),
+  ['private candidate ID', { type: 'local-candidate', address: 'private address', usernameFragment: 'private credential' }],
+]);
+
+test('official selected-pair evidence excludes private identities and survives audio failure and close', async () => {
+  const report = iceReport([
+    { id: 'private selected ID', state: 'succeeded', nominated: true, requestsSent: 7, requestsReceived: 8,
+      responsesSent: 9, responsesReceived: 10, consentRequestsSent: 2, localCandidateId: 'private candidate ID' },
+    { state: 'failed', nominated: false, requestsSent: 999 },
+  ], { selectedCandidatePairId: 'private selected ID', dtlsState: 'connected' });
+  const h = harness({ getStats: async () => report });
+  try {
+    await h.audio.start(1); await flushIceStats();
+    const stats = h.audio.stats();
+    assert.equal(stats.iceStatsState, 'sampled'); assert.equal(stats.icePairScope, 'selected');
+    assert.equal(stats.icePairCount, 1); assert.equal(stats.icePairState, 'succeeded');
+    assert.equal(stats.icePairNominated, true); assert.equal(stats.iceSelectedPairPresent, true);
+    assert.equal(stats.iceRole, 'controlled'); assert.equal(stats.dtlsState, 'connected');
+    assert.equal(stats.iceRequestsSent, 7); assert.equal(stats.iceRequestsReceived, 8);
+    assert.equal(stats.iceResponsesSent, 9); assert.equal(stats.iceResponsesReceived, 10);
+    assert.equal(stats.iceConsentRequestsSent, 2); assert.ok(stats.iceStatsSampleAgeMs >= 0);
+    assert.equal(JSON.stringify(stats).includes('private'), false);
+    h.audio.fail(Error('Native audio test failure'));
+    assert.equal(h.peers[0].closed, true); assert.equal(h.errorDetails[0].iceRequestsSent, 7);
+    assert.equal(h.errorDetails[0].icePairScope, 'selected');
+    assert.equal(JSON.stringify(h.errorDetails[0]).includes('private'), false);
+    h.audio.close(); assert.equal(h.audio.stats().iceRequestsSent, 7);
+  } finally { h.audio.close(); }
+});
+
+test('checking-pair totals have an explicit all scope and omit unknown or invalid STUN counters', async () => {
+  let report = iceReport([
+    { state: 'waiting', nominated: false, requestsSent: 2, requestsReceived: null, responsesSent: 0,
+      responsesReceived: 0, consentRequestsSent: -1 },
+    { state: 'in-progress', nominated: false, requestsSent: 3, requestsReceived: 4, responsesSent: 0 },
+  ], { iceRole: 'private role', dtlsState: 'private state', selectedCandidatePairId: null });
+  const h = harness({ getStats: async () => report });
+  try {
+    await h.audio.start(1); await flushIceStats();
+    const stats = h.audio.stats();
+    assert.equal(stats.icePairScope, 'all'); assert.equal(stats.icePairCount, 2);
+    assert.equal(stats.icePairState, 'mixed'); assert.equal(stats.icePairNominated, false);
+    assert.equal(stats.iceRequestsSent, 5); assert.equal(stats.iceResponsesSent, 0);
+    assert.equal(stats.iceSelectedPairPresent, false);
+    assert.equal(stats.iceRole, 'unavailable'); assert.equal(stats.dtlsState, 'unavailable');
+    for (const field of ['iceRequestsReceived', 'iceResponsesReceived', 'iceConsentRequestsSent']) assert.equal(Object.hasOwn(stats, field), false);
+    report = iceReport([{ state: 'in-progress', requestsSent: 1 }]);
+    h.peers[0].oniceconnectionstatechange(); await flushIceStats();
+    assert.equal(Object.hasOwn(h.audio.stats(), 'iceSelectedPairPresent'), false, 'an omitted transport field is unknown');
+    report = new Map(); h.peers[0].oniceconnectionstatechange(); await flushIceStats();
+    const empty = h.audio.stats();
+    assert.equal(empty.icePairScope, 'none'); assert.equal(empty.icePairCount, 0);
+    for (const field of ['iceRequestsSent', 'iceSelectedPairPresent', 'icePairNominated', 'iceRole', 'dtlsState'])
+      assert.equal(Object.hasOwn(empty, field), false, field);
+  } finally { h.audio.close(); }
+});
+
+test('rejected or unsupported stats do not fail audio or discard the last successful ICE sample', async () => {
+  let reject = false;
+  const h = harness({ getStats: async () => {
+    if (reject) throw Error('private stats error');
+    return iceReport([{ state: 'in-progress', requestsSent: 3 }]);
+  } });
+  try {
+    await h.audio.start(1); await flushIceStats();
+    reject = true; h.peers[0].oniceconnectionstatechange(); await flushIceStats();
+    assert.equal(h.errors.length, 0); assert.equal(h.audio.stats().state, 'ready');
+    assert.equal(h.audio.stats().iceStatsState, 'failed'); assert.equal(h.audio.stats().iceRequestsSent, 3);
+    assert.ok(h.audio.stats().iceStatsSampleAgeMs >= 0); assert.equal(JSON.stringify(h.audio.stats()).includes('private'), false);
+  } finally { h.audio.close(); }
+  const unsupported = harness();
+  try {
+    await unsupported.audio.start(1); assert.equal(unsupported.audio.stats().state, 'ready');
+    assert.equal(unsupported.audio.stats().iceStatsState, 'unsupported'); assert.equal(unsupported.errors.length, 0);
+    assert.equal(Object.hasOwn(unsupported.audio.stats(), 'iceRequestsSent'), false);
+  } finally { unsupported.audio.close(); }
+});
+
+test('late stats from a replaced or retired peer cannot overwrite the current or final ICE evidence', async () => {
+  let finishOld, finishFinal, pendingFinal = false;
+  const old = new Promise(resolve => { finishOld = resolve; });
+  const final = new Promise(resolve => { finishFinal = resolve; });
+  const h = harness({ getStats: peer => peer === h.peers[0] ? old : pendingFinal ? final
+    : Promise.resolve(iceReport([{ state: 'in-progress', requestsSent: 22 }])) });
+  try {
+    await h.audio.start(1); await h.audio.start(2); await flushIceStats();
+    assert.equal(h.peers[0].closed, true); assert.equal(h.audio.stats().iceRequestsSent, 22);
+    finishOld(iceReport([{ state: 'succeeded', requestsSent: 999 }])); await flushIceStats();
+    assert.equal(h.audio.stats().iceRequestsSent, 22); assert.equal(h.audio.stats().icePairState, 'in-progress');
+    pendingFinal = true; h.peers[1].oniceconnectionstatechange(); await flushIceStats();
+    h.audio.fail(Error('Audio failed while stats are pending'));
+    assert.equal(h.peers[1].closed, true); assert.equal(h.errorDetails[0].iceRequestsSent, 22);
+    finishFinal(iceReport([{ state: 'succeeded', requestsSent: 33 }])); await flushIceStats();
+    assert.equal(h.audio.stats().iceRequestsSent, 22); assert.equal(h.errorDetails[0].iceRequestsSent, 22);
+  } finally { h.audio.close(); }
+});
+
+test('ICE evidence is sampled periodically and sampling stops immediately when the peer retires', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  let samples = 0;
+  const h = harness({ getStats: async () => iceReport([{ state: 'in-progress', requestsSent: ++samples }]) });
+  try {
+    await h.audio.start(1); await flushIceStats(); const initial = samples;
+    t.mock.timers.tick(1000); await flushIceStats();
+    assert.equal(samples, initial + 1); assert.equal(h.audio.stats().iceRequestsSent, samples);
+    h.audio.close(); const stopped = samples;
+    t.mock.timers.tick(5000); await flushIceStats(); assert.equal(samples, stopped);
+  } finally { h.audio.close(); t.mock.timers.reset(); }
+});
 
 test('RTP audio advertises actual codecs and negotiates sixteen receive-only audio slots without capture', async () => {
   assert.deepEqual(rtcAudioCodecs(Receiver), codecs.slice(0, 2));

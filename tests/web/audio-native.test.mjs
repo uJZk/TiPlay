@@ -14,7 +14,7 @@ function frame(kind, payload, { type = 0, epoch = 1, rate = 48000, flags = 0 } =
 }
 const setup = (config = opus, fields = {}) => frame(6, new TextEncoder().encode(JSON.stringify(config)), { flags: 2, ...fields });
 const pcm = () => frame(2, new Uint8Array(new Int16Array([123, 456]).buffer), { type: 2 });
-async function harness(t, { exchange, play, connectionState = 'connected' } = {}) {
+async function harness(t, { exchange, play, getStats, connectionState = 'connected' } = {}) {
   const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream', 'document'];
   const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
   const peers = [], nodes = [], contexts = [], sources = [], messages = [], offers = [], modes = [], ready = [];
@@ -23,7 +23,8 @@ async function harness(t, { exchange, play, connectionState = 'connected' } = {}
   globalThis.RTCRtpReceiver = { getCapabilities: () => ({ codecs: [{ mimeType: 'audio/opus', clockRate: 48000, channels: 2 }] }) };
   globalThis.RTCPeerConnection = class extends EventTarget {
     constructor(config) { super(); this.config = config; this.transceivers = []; this.connectionState = connectionState;
-      this.iceConnectionState = connectionState === 'connected' ? 'connected' : 'checking'; peers.push(this); }
+      this.iceConnectionState = connectionState === 'connected' ? 'connected' : 'checking'; peers.push(this);
+      if (getStats) this.getStats = () => getStats(this, peers.indexOf(this)); }
     addTransceiver(kind, options) {
       const receiver = { kind, options, mid: String(this.transceivers.length), setCodecPreferences(codecs) { this.codecs = codecs; } };
       this.transceivers.push(receiver); return receiver;
@@ -147,6 +148,31 @@ test('failed ICE retires only that generation and retries while fallback audio c
   assert.equal(h.ready[1].rtcGeneration, 2);
   h.peers[1].connectionState = 'connected'; h.peers[1].onconnectionstatechange();
   assert.equal(h.audio.stats().nativeAudio.retryAttempts, 0);
+});
+
+test('failed-peer ICE counters and frozen sample age cannot leak into replacement browser audio stats', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let finishNew;
+  const pendingNew = new Promise(resolve => { finishNew = resolve; });
+  const report = values => new Map([['pair', { type: 'candidate-pair', state: 'in-progress', ...values }]]);
+  const h = await harness(t, { connectionState: 'connecting', getStats: (peer, index) => index === 0
+    ? Promise.resolve(report({ requestsSent: 17, requestsReceived: 4 })) : pendingNew });
+  await until(() => h.audio.stats().nativeAudio?.iceRequestsSent === 17);
+  h.peers[0].connectionState = 'failed'; h.peers[0].iceConnectionState = 'failed'; h.peers[0].onconnectionstatechange();
+  assert.equal(h.audio.stats().nativeAudio.iceRequestsSent, 17, 'the failed current peer keeps its last observation');
+  assert.equal(h.audio.stats().nativeAudio.failureIceState, 'failed');
+  t.mock.timers.tick(1000); await until(() => h.offers.length === 2);
+  const pending = h.audio.stats().nativeAudio;
+  assert.equal(pending.rtcGeneration, 2); assert.equal(pending.iceStatsState, 'pending');
+  assert.equal(pending.failureIceState, 'failed', 'explicit historical failure context stays available');
+  for (const field of ['iceRequestsSent', 'iceRequestsReceived', 'iceStatsSampleAgeMs', 'icePairState'])
+    assert.equal(Object.hasOwn(pending, field), false, field);
+  finishNew(report({ requestsSent: 0 }));
+  await until(() => h.audio.stats().nativeAudio.iceStatsState === 'sampled');
+  const current = h.audio.stats().nativeAudio;
+  assert.equal(current.iceRequestsSent, 0, 'zero is retained only when the replacement actually reports it');
+  assert.equal(Object.hasOwn(current, 'iceRequestsReceived'), false);
+  assert.ok(current.iceStatsSampleAgeMs >= 0);
 });
 
 test('stopping audio cancels the pending independent peer retry', async t => {

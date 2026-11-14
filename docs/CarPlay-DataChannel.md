@@ -97,7 +97,7 @@ reachability, actual car hardware decoding, physical latency or P/non-P continui
 | Touch | Forward immediately at the earliest available scheduling opportunity. Touch does not select a special playback profile or change either media timeline. |
 | Audio delay | Independently at most **+300 ms relative to its sender presentation time**, normally as low as practical. The former audio-versus-video windows, including -180/+500 ms, are superseded. No additional hard A/V skew window was specified. |
 | Audio continuity | Touch must not reset, accelerate or change the audio timeline. Audio may use software decoding. |
-| Audio routing | Preserve music/navigation through the car browser. Microphone demand uses Android with verified car HFP/SCO input and corresponding voice playback. Do not use handset microphone or loudspeaker fallback; the webpage must not request microphone access. |
+| Audio routing | Preserve music/navigation through the car browser. During microphone/call-route demand, prefer the selected car Bluetooth output for telephony, then attempt available Bluetooth/system output. Browser telephony stays suppressed during that demand, including Android output failure; resume only after demand ends and owned output releases. Microphone capture still requires verified car HFP/SCO, with no handset/browser fallback. |
 | Transport | Control, video metadata and audio without a negotiated RTP codec use reliable, ordered DataChannel delivery, without partial reliability. RTP video uses the browser's WebRTC reception policy; it does not promise reliable ordered compressed-frame delivery or use an encoded-video DataChannel fallback. |
 | Debug capture | Keep complete application-visible original streams. Store the original video payload **once**, with downstream events referencing that copy. No silent sampling or capture loss. |
 
@@ -129,6 +129,7 @@ iPhone CarPlay / AirPlay mirror
   -> browser compositor / car display
 
 ordinary audio -> independent decode/transport/output timeline -> car browser
+telephony during microphone demand -> Android: prefer car Bluetooth -> available output
 microphone demand -> Android <-> verified car HFP/SCO
 touch and clock exchange -> small control messages, independent of media work
 original stream capture -> one canonical payload journal with referenced events
@@ -378,7 +379,13 @@ Keep music/navigation, speech streams and HFP transitions distinct. Correct
 source-sample accounting and bounded resampling may compensate genuine device
 clock drift; video Delta and touch must not drive audio acceleration. Verify the
 car route before microphone readiness, including cold SCO startup and loss of
-the selected device. API acceptance alone does not establish physical routing.
+the selected device. Playback can continue without microphone readiness; prefer
+car Bluetooth but permit another available output. Retire owned Android playback
+and end the demand before browser telephony resumes. Do not restore browser
+telephony as a fallback during that demand. Preserve busy-route checks and reject stale
+owner callbacks. API acceptance alone does not establish physical routing.
+Bluetooth-to-system playback fallback also waits for owned route/worker cleanup;
+capture failure can leave a working Android output active.
 
 Record original video bytes once at a canonical Android application boundary.
 AU assembly, DataChannel fragments/retransmission metadata, decoder submission

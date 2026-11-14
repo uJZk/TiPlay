@@ -1,6 +1,12 @@
 # TiPlay contributor instructions
 
 TiPlay supports **Android phone + car browser only**. 本项目不考虑原生车机。
+Audio output should prefer the selected car Bluetooth route and keep trying usable
+output routes when that identity cannot be matched. A Bluetooth/SCO or microphone
+failure must not suppress all downlink playback. Keep microphone capture independent;
+this output preference does not authorize switching capture to the handset microphone.
+During microphone/call demand, telephone downlink stays on Android and remains
+suppressed in the browser until demand ends and the owned Android route is released.
 Keep inherited native files for upstream merging; do not add product navigation,
 settings or acceptance tests for native head units. Preserve shared session,
 media, permission and connection contracts used by the phone/browser product.
@@ -37,18 +43,25 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#beta47-release).
-Beta.47/code89 and browser/cache v119 are published from
-`83634d299052291c02afc6aa0c221b85d7a3b035`. Final focused checks passed
-475 shared Android tests (65 classes), 700 browser and 27 Python cases.
-Signed packaging, twelve independent artifact checks, 226-file/20-route site checks
-and anonymous three-asset byte comparison passed. It fixes missing-CSeq mirror
-command replies and first cold encoder IDR loss while retaining callback-reset
-isolation, and expands privacy-safe selected-car SCO identity diagnostics.
-The user authorized beta publication and explicitly waived full CI; keep focused
-checks, previous validation and signed artifact identity separate. Actual mirror
-picture, vehicle native Opus ICE and selected-car SCO identity/routing still need
-physical verification; ACKs and source packets do not establish display or sound.
+Resume current release work at [Build](docs/Build.md#beta48-release).
+Beta.48/code90 and browser/cache v120 are in preparation. Android output now tries
+selected-car Bluetooth, another usable Bluetooth route and system AudioTrack;
+MIC failures do not stop playback, while capture retains its verified identity.
+The user explicitly requires browser telephone downlink to remain suppressed
+throughout call/MIC demand. Restore browser telephone playback only after demand
+ends and owned Android output cleanup completes. This supersedes old blanket
+selected-only output/no-speaker fallback statements; input permission/identity
+and non-interference with another application's call remain separate requirements.
+Focused checks pass 580 shared Android cases in 74 classes, 716 browser tests,
+27 Python cases and a real 160-packet original-Opus JNI replay. Signed/public
+artifact checks are pending. The Service Worker cache-coherence race is fixed;
+enhanced Chromium lifecycle checks and all 132 production cache resources
+(12,219,931 bytes, offline integrity/UI boot) pass. Physical codec/media decode
+is not established by these static-resource checks.
+Native ICE diagnostics add evidence and do not establish an ICE root cause.
+The user authorized beta publication and explicitly waived full CI; preserve focused
+checks, existing complete validation and independent artifact verification.
+Actual mirror picture and vehicle native Opus ICE still need physical evidence.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

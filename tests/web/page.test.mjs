@@ -595,7 +595,10 @@ test('the service worker answers only its own files, so the download pages in it
   new Function('self', 'caches', 'fetch', read('sw.js'))(worker, { open: async () => cache }, async () => new Response('network'));
   const answers = (url, method = 'GET') => {
     let answered = false;
-    handlers.fetch({ request: { method, url }, respondWith: () => { answered = true; } });
+    // This case verifies synchronous routing. Storage/ownership behavior has its
+    // own fixture; consume asynchronous work without fabricating those services.
+    handlers.fetch({ request: { method, url }, respondWith: promise => { answered = true; promise.catch(() => {}); },
+      waitUntil: promise => { promise.catch(() => {}); } });
     return answered;
   };
   for (const url of ['https://example.test/DiPlay/', 'https://example.test/DiPlay/?t=100.64.0.1', 'https://example.test/DiPlay/index.html',
@@ -609,6 +612,7 @@ test('the service worker answers only its own files, so the download pages in it
     'https://example.test/DiPlay/download/assets/site.css', 'https://example.test/DiPlay/download/index.html',
     'https://example.test/DiPlay/download/#install', 'https://example.test/DiPlay/play/', 'https://example.test/DiPlay/play/#c=1234',
     'https://example.test/DiPlay/play/sw.js', 'https://example.test/DiPlay/sw.js',
+    'https://example.test/DiPlay/vendor/libav/source/build.sh', 'https://example.test/DiPlay/sources.zip',
     'https://example.test/DiPlay/app.js/', 'https://example.test/app.js', 'https://other.test/DiPlay/app.js',
     'http://100.109.220.253:8080/hello', 'http://100.109.220.253:8080/play/app.js']) {
     assert.ok(!answers(url), url);

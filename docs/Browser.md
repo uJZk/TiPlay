@@ -138,7 +138,9 @@ a complete manifest/new cache identity. The removed `/webrtc/` location receives
 no compatibility alias or redirect in this deployment.
 
 On page load the browser checks for an updated Service Worker without relying on
-the HTTP cache. After the complete new asset cache is installed, the worker takes
+the HTTP cache. Controlled pages and Workers retain their own cached version during
+the handoff; failed navigation preserves resources still in use. After the complete
+new asset cache is installed, the worker takes
 over and reloads the TiPlay page, retaining its pairing URL. This interrupts
 an active projection; connections recover through the usual startup path. A failed
 or offline download leaves the existing cache active and retries on a later visit.
@@ -205,15 +207,24 @@ estimates position, not physical speaker time. Lossless/spatial audio is not adv
 Upstream rationale: [buffering #308](https://github.com/shihabal3amri/DiPlay/pull/308)
 and [pacing #484](https://github.com/shihabal3amri/DiPlay/pull/484).
 
-On iPhone call/Siri microphone demand, Android uses the selected car HFP/SCO
-route for microphone capture. The selected address must match the available route;
-an absent or differently formatted system address is not proof of a match. Only telephony downlink switches to Bluetooth;
+On iPhone call/Siri microphone demand, Android prefers the selected car Bluetooth
+route for telephony playback. If that route is unavailable, another available
+Bluetooth output or Android's system default may carry playback. A failed preferred
+device request or missing microphone must not by itself silence call audio.
+Failed Bluetooth attempts retire their owned route/output before trying media
+Bluetooth or system playback. New demand, device arrival or selection can retry
+the preferred route without repeatedly reopening the failed SCO attempt.
+Microphone capture still requires the verified car HFP/SCO route: an absent or
+differently formatted address is not proof of a match. Only telephony downlink switches to Android;
 navigation, default guidance and Siri downlink continue through the browser alongside
 music and ordinary AirPlay audio. Route transitions retire only telephony decoders,
 preserving guidance/music queues, epochs and the audio DataChannel subscription.
-Both AudioRecord input and telephony AudioTrack output must actually confirm Bluetooth.
-Busy routes and ambiguous headsets are refused; there is no handset/browser microphone
-fallback. Permission/focus/route loss stops devices and reports failure. Android's
+Microphone readiness still requires actual matching Bluetooth input/output, while
+playback readiness is independent. Busy communication routes are not seized;
+system media playback can still be attempted without changing another app's call route.
+There is no handset/browser microphone fallback. Capture failure stops its input
+and reports an error without stopping a working playback track; bounded microphone
+retries retain the same demand's counters. Android's
 Bluetooth stack owns mSBC/CVSD; TiPlay supplies PCM.
 
 Car selection lists only devices already paired in Android, excluding the selected
@@ -237,9 +248,10 @@ manual connection from outside TiPlay during that window may be mistaken for the
 late result; results arriving after the window cannot be compensated. This window
 is an application trade-off, not an Android timing guarantee.
 
-Resuming the same microphone demand preserves RTP/nonce counters. Actual route release
-must precede fresh browser telephony output; release timeouts hold only telephony with
-an error. Other browser streams continue. Revisions reject delayed route state without
+Resuming the same microphone demand preserves RTP/nonce counters. Browser telephony
+stays suppressed throughout that demand, including SCO or Android playback failure.
+It resumes only after the demand ends and owned Android output releases; release
+timeouts hold only telephony with an error. Other browser streams continue. Revisions reject delayed route state without
 replaying old speech. Route ownership survives AirPlay takeover. Car HFP owns microphone
 echo cancellation; TiPlay adds no software AEC. Browser-rendered Siri/guidance during
 microphone capture needs physical vehicle verification for feedback and audibility.

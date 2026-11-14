@@ -452,14 +452,20 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
-### Browser v119
+### Browser v120
 
-Browser/cache **v119**, product **0.2.20-beta.47**, is deployed by
-[Pages run 43407418670](https://github.com/uJZk/TiPlay/actions/runs/43407418670)
-from APK build commit `83634d299052291c02afc6aa0c221b85d7a3b035`.
-Anonymous checks matched all 226 files (37,811,110 bytes) and 20 routes.
-Only product-version metadata changes; browser playback logic is unchanged.
-The retired update paths remain 404.
+Browser/cache **v120**, product **0.2.20-beta.48**, is prepared with audio ICE
+checks and durable page/Worker runtime-cache ownership. Enhanced Chromium checks
+cover failed navigation, restart, offline and multiple versions. All 132 cached
+production resources (12,219,931 bytes) match offline, with successful UI boot.
+Deployment/public-byte checks are pending; call routing changes are in Android.
+
+### Browser v119 reference
+
+Browser/cache v119, product beta.47, was deployed from
+`83634d299052291c02afc6aa0c221b85d7a3b035` by
+[Pages run 43407418670](https://github.com/uJZk/TiPlay/actions/runs/43407418670).
+All 226 files and 20 routes matched; retired update paths remained 404.
 
 ### Browser v118
 
@@ -497,37 +503,34 @@ checks passed 693 web tests, the Android command, the site layout and an actual
 Chromium update/first-install/offline test. Vehicle-browser behavior remains to
 be verified. The Android-only beta.40 release did not change the browser deployment.
 
+<a id="beta48-release"></a>
+### Beta.48 preparation
+
+Beta.48/code90 changes Android call output to selected-car Bluetooth first,
+then another usable Bluetooth route or system AudioTrack. Microphone failures
+leave playback running; microphone capture retains its own verified route.
+Call/microphone demand still suppresses browser telephone downlink until demand
+ends and the owned Android output is released. ICE checks gain official browser
+statistics and native state/pair diagnostics without changing the transport.
+Actual vehicle ICE connectivity remains unresolved.
+
+Source checks pass 580 shared Android cases in 74 classes, 716 browser cases,
+27 Python checks and a real Kotlin/JNI two-track original-Opus replay (160 packets).
+Signed packaging and independent public artifacts are pending.
+Full CI remains waived under the user's existing beta-publication authorization.
+
 <a id="beta47-release"></a>
-### Published beta.47
+### Published beta.47 reference
 
 [Beta.47/code89](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.47)
-was published as a prerelease at **2026-11-13 10:22:51 UTC** from
+was published at **2026-11-13 10:22:51 UTC** from
 `83634d299052291c02afc6aa0c221b85d7a3b035`.
 [Signed workflow 43407413026](https://github.com/uJZk/TiPlay/actions/runs/43407413026)
-passed all three jobs. It fixes missing-CSeq command replies and cold encoder
-IDR loss while preserving callback-reset isolation, and adds SCO identity diagnostics.
-
-Full CI was explicitly waived. Focused checks passed 475 shared Android tests
-in 65 classes, 700 browser tests and 27 Python cases; the Chromium lifecycle
-fixture and cache/public-tree checks passed. [Testing](Testing.md#current-release-source)
-records scope and physical limits.
-
-Independent twelve-check verification confirmed non-debug `com.ujzk.tiplay`,
-code89, signer continuity, two exact pinned runtime containers, new compiled
-markers, v119 metadata, WebRTC/16 KiB identity and all 51 native libraries
-(24 JNI, 27 prebuilt). The source ZIP exactly matches the build commit's archive.
-Matched symbols remain in persistent draft `444086720`.
-Anonymous HTTP 200 downloads at **2026-11-13T10:23:17.844013+00:00** matched all three assets'
-bytes, sizes, API digests and SHA-256, the checksum manifest and exact tag commit.
-[Browser v119](#browser-v119) uses the same build commit.
-Actual mirror picture, vehicle native Opus ICE and selected-car SCO routing
-remain physical acceptance boundaries.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.47.apk` | 114,563,915 | `52923681fd2eafae7ae1e59ec1caa5942808db2ce60c4f03fd24870aba065a3e` |
-| `SHA256SUMS.txt` | 191 | `5c4af4fb0057ce66776c2d1e46db95f0c0d2da78cf23488dff86dfbfdf8853a1` |
-| `TiPlay-0.2.20-beta.47-source.zip` | 70,243,710 | `6e3daaa6d0d64c0fef5775eeb5c71af3a1d5ba99ae62c5a240055527c841ba25` |
+passed. Focused checks passed 475 shared Android, 700 browser and 27 Python cases;
+full CI was waived. Twelve artifact checks and anonymous downloads matched the
+APK, exact source and checksums; persistent symbols draft `444086720` covers all
+51 native libraries. It fixed mirror missing-CSeq replies and cold encoder IDR
+loss while retaining callback isolation. Physical mirror picture remained unverified.
 
 <a id="beta46-release"></a>
 ### Published beta.46 reference

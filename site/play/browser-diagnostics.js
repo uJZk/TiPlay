@@ -4,8 +4,11 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v119';
+export const PAGE_VERSION = 'v120';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
+const AUDIO_ICE_FIELDS = ['iceStatsState', 'iceStatsSampleAgeMs', 'icePairScope', 'icePairCount', 'icePairState',
+  'icePairNominated', 'iceSelectedPairPresent', 'iceRequestsSent', 'iceRequestsReceived', 'iceResponsesSent',
+  'iceResponsesReceived', 'iceConsentRequestsSent', 'iceRole', 'dtlsState'];
 const SUMMARY_KEYS = [
   'page.version', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
   'video.decodeDroppedFrames', 'video.scheduledDroppedFrames', 'video.transferDroppedFrames', 'video.renderDroppedFrames', 'video.pacingDroppedFrames',
@@ -28,6 +31,7 @@ const SUMMARY_KEYS = [
   'audio.nativeAudio.remoteCandidates', 'audio.nativeAudio.remotePrivateIpv4Candidates', 'audio.nativeAudio.retryAttempts',
   'audio.nativeAudio.localCgnatIpv4Candidates', 'audio.nativeAudio.localIpv6Candidates',
   'audio.nativeAudio.remoteCgnatIpv4Candidates', 'audio.nativeAudio.remoteIpv6Candidates',
+  ...AUDIO_ICE_FIELDS.map(field => `audio.nativeAudio.${field}`),
   'video.policyInteractionStarts', 'video.policyInteractionReleases', 'video.policyProfileSwitches',
   'video.sourceClockState', 'video.sourceClockAgeMs', 'video.sourceClockGeneration', 'video.sourceClockMaxAgeMs', 'video.stageClockUncertaintyMs',
   'video.clockEstimatorState', 'video.clockEstimatorObservationAgeMs', 'video.clockEstimatorSelectedAgeMs',
@@ -59,7 +63,7 @@ const SUMMARY_KEYS = [
 const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'backend', 'codec', 'lastRecoveryReason'];
 const AUDIO_NATIVE_FIELDS = ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState', 'tracks', 'boundSlots', 'readySlots', 'streams', 'drainUnknown',
   'failureStage', 'failurePeerState', 'failureIceState', 'localCandidates', 'localPrivateIpv4Candidates', 'localCgnatIpv4Candidates', 'localIpv6Candidates',
-  'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts'];
+  'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts', ...AUDIO_ICE_FIELDS];
 const AUDIO_NATIVE_ENUMS = {
   state: ['idle', 'connecting', 'ready', 'failed', 'closed'],
   peerState: ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'unavailable'],
@@ -68,15 +72,24 @@ const AUDIO_NATIVE_ENUMS = {
   failureStage: ['offer', 'local-ice', 'signaling', 'remote-description', 'transport'],
   failurePeerState: ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'unavailable'],
   failureIceState: ['new', 'checking', 'connected', 'completed', 'disconnected', 'failed', 'closed', 'unavailable'],
+  iceStatsState: ['pending', 'sampled', 'unsupported', 'failed'],
+  icePairScope: ['selected', 'all', 'none'],
+  icePairState: ['frozen', 'waiting', 'in-progress', 'failed', 'succeeded', 'mixed', 'unavailable'],
+  iceRole: ['unknown', 'controlling', 'controlled', 'mixed', 'unavailable'],
+  dtlsState: ['new', 'connecting', 'connected', 'closed', 'failed', 'mixed', 'unavailable'],
 };
 function nativeAudioDiagnostics(source) {
   const values = {};
   for (const field of AUDIO_NATIVE_FIELDS) {
     const value = source?.[field];
-    if (AUDIO_NATIVE_ENUMS[field]?.includes(value) || field === 'drainUnknown' && typeof value === 'boolean'
+    if (AUDIO_NATIVE_ENUMS[field]?.includes(value) || ['drainUnknown', 'icePairNominated', 'iceSelectedPairPresent'].includes(field) && typeof value === 'boolean'
       || ['tracks', 'boundSlots', 'readySlots', 'streams'].includes(field) && Number.isInteger(value) && value >= 0 && value <= 16
       || ['localCandidates', 'localPrivateIpv4Candidates', 'localCgnatIpv4Candidates', 'localIpv6Candidates', 'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts'].includes(field) && Number.isInteger(value) && value >= 0 && value <= 1024
-      || field === 'rtcGeneration' && Number.isInteger(value) && value >= 1 && value <= 0x7fffffff) values[field] = value;
+      || field === 'rtcGeneration' && Number.isInteger(value) && value >= 1 && value <= 0x7fffffff
+      || field === 'icePairCount' && Number.isInteger(value) && value >= 0 && value <= 1024
+      || field === 'iceStatsSampleAgeMs' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER
+      || ['iceRequestsSent', 'iceRequestsReceived', 'iceResponsesSent', 'iceResponsesReceived', 'iceConsentRequestsSent'].includes(field)
+        && Number.isSafeInteger(value) && value >= 0) values[field] = value;
   }
   return values;
 }

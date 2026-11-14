@@ -18,6 +18,11 @@ const DECODE_RESERVATION_BYTES = 256 * 1024;
 // Bounded exponential backoff avoids repeatedly opening failing ICE peers. A
 // successful transport connection resets the budget, not merely an SDP answer.
 const RTC_AUDIO_RETRY_DELAYS_MS = [1000, 2000, 4000];
+// Failure context may outlive its peer. Live ICE counters and sample age belong
+// exclusively to createRtcAudio's current-generation cache.
+const RTC_AUDIO_FAILURE_FIELDS = new Set(['failureStage', 'failurePeerState', 'failureIceState',
+  'localCandidates', 'localPrivateIpv4Candidates', 'localCgnatIpv4Candidates', 'localIpv6Candidates',
+  'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates']);
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
@@ -126,7 +131,7 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
           rtcLastError = null; notify();
         }, onError: (cause, detail) => {
           if (rtcAudio !== owner) return;
-          rtcLastFailure = detail ?? null;
+          rtcLastFailure = detail ? Object.fromEntries(Object.entries(detail).filter(([field]) => RTC_AUDIO_FAILURE_FIELDS.has(field))) : null;
           rtcLastError = cause.message || String(cause); audioError = rtcLastError; notify();
           retryRtcAudio(rtcPeerGeneration);
         } });
