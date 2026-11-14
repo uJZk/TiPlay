@@ -136,6 +136,9 @@ class AndroidBluetoothVoiceChannel(
     private var playbackFallbackStage = 0
     private var playbackFallbackReason: String? = null
     private var routeReleaseRequested = false
+    private var routeReleaseAttempts = 0
+    private var routeReleaseRetryAt = 0L
+    private var routeReleaseError: String? = null
     private var connectingAt = 0L
     private var releasingAt = 0L
     private var failure: String? = null
@@ -459,14 +462,18 @@ class AndroidBluetoothVoiceChannel(
             if (releasingAt != 0L) {
                 // Device stop/release runs on its existing capture worker. Do not
                 // reroute a still-playing AudioTrack to the handset during retirement.
-                if (!workerRetiring && acquired && !routeReleaseRequested) releaseRoute()
+                if (!workerRetiring && acquired && !routeReleaseRequested &&
+                    SystemClock.elapsedRealtime() >= routeReleaseRetryAt) releaseRoute()
                 // Never resume browser sound while an owned SCO connection is still up.
-                val up = if (Build.VERSION.SDK_INT >= 31) communicationRequested else scoRoute && legacySco
+                // Device and mode clients are withdrawn by separate platform calls.
+                // A successful device cancellation cannot prove that our mode client was removed.
+                val up = communicationOwned || communicationRequested || legacyScoRequested ||
+                    (Build.VERSION.SDK_INT < 31 && scoRoute && legacySco)
                 if (!up && !workerRetiring) finishRelease()
                 else {
-                    if (SystemClock.elapsedRealtime() - releasingAt >= 4000 && failure != "bluetooth-release-timeout") {
-                        failure = "bluetooth-release-timeout"
-                        state(BluetoothVoiceState("failed", failure, released = false))
+                    if (SystemClock.elapsedRealtime() - releasingAt >= 4000 && routeReleaseError != "bluetooth-release-timeout") {
+                        routeReleaseError = "bluetooth-release-timeout"
+                        state(BluetoothVoiceState("failed", routeReleaseError, released = false))
                     }
                     schedule()
                 }
@@ -590,11 +597,13 @@ class AndroidBluetoothVoiceChannel(
             return
         }
         state(BluetoothVoiceState("releasing", failure))
+        routeReleaseAttempts = 0; routeReleaseRetryAt = 0; routeReleaseRequested = false; routeReleaseError = null
         releasingAt = SystemClock.elapsedRealtime().coerceAtLeast(1)
         tick()
     }
     private fun releaseRoute() {
         routeReleaseRequested = true
+        routeReleaseAttempts++
         runCatching {
             if (!communicationOwned) return@runCatching
             if (Build.VERSION.SDK_INT >= 31) {
@@ -614,13 +623,23 @@ class AndroidBluetoothVoiceChannel(
             // MODE_NORMAL removes our mode client; the platform retains other callers.
             manager.mode = AudioManager.MODE_NORMAL
             communicationOwned = false
-        }.onFailure { failure = "bluetooth-release-failed" }
+        }.onFailure {
+            routeReleaseError = "bluetooth-release-failed"
+            // Retain the flags for each unfinished client. A later attempt must not
+            // cancel a communication-device request that was already withdrawn.
+            routeReleaseRequested = routeReleaseAttempts >= MAX_ROUTE_RELEASE_ATTEMPTS
+            routeReleaseRetryAt = SystemClock.elapsedRealtime() + 1000
+            report("stage=communication-release-failed attempt=$routeReleaseAttempts modeOwned=$communicationOwned deviceRequested=$communicationRequested legacyRequested=$legacyScoRequested")
+            state(BluetoothVoiceState("failed", routeReleaseError, released = false))
+        }
     }
     private fun finishRelease() {
         main.removeCallbacks(poll)
         acquired = false; scoRoute = false; communicationOwned = false
         communicationRequested = false; legacyScoRequested = false
-        releasingAt = 0; routeReleaseRequested = false; selected = null; activeCarAddress = null
+        releasingAt = 0; routeReleaseRequested = false; routeReleaseAttempts = 0; routeReleaseRetryAt = 0
+        routeReleaseError = null
+        selected = null; activeCarAddress = null
         if (receiverRegistered) { runCatching { context.unregisterReceiver(receiver) }; receiverRegistered = false }
         if (defaultAfterRelease && wanted != null && !closed && !focusWaiting) {
             defaultAfterRelease = false; failure = null
@@ -838,5 +857,9 @@ class AndroidBluetoothVoiceChannel(
                 runCatching { sender?.close() }; runCatching { resampler?.close() }
             }
         }
+    }
+
+    private companion object {
+        const val MAX_ROUTE_RELEASE_ATTEMPTS = 3
     }
 }

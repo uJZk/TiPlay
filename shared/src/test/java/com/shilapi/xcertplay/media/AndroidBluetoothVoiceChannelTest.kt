@@ -53,7 +53,10 @@ class AndroidBluetoothVoiceChannelTest {
         return device
     }
 
-    @Test fun transientAndDuckLossWaitForFocusGainWithoutRequestingFocusOrReroutingLiveDevices() {
+    @Test
+    @Config(shadows = [ModeResetFailureAudioManagerShadow::class,
+        BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
+    fun transientAndDuckLossWaitForFocusGainWithoutRequestingFocusOrReroutingLiveDevices() {
         for (loss in listOf(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)) {
             val app = RuntimeEnvironment.getApplication()
             shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
@@ -88,6 +91,9 @@ class AndroidBluetoothVoiceChannelTest {
             assertSame(abandoned, audio.lastAbandonedAudioFocusRequest)
             // Only the old worker's completion permits platform route cleanup.
             ReflectionHelpers.setField(channel, "workerRetiring", false)
+            // Cleanup has its own failure state; a recoverable mode cancellation
+            // must not erase the retained transient-focus recovery reason.
+            (audio as ModeResetFailureAudioManagerShadow).modeResetFailures.set(1)
             ReflectionHelpers.callInstanceMethod<Void>(channel, "tick")
             assertNull(manager.communicationDevice)
             shadowOf(Looper.getMainLooper()).idleFor(11_000, TimeUnit.MILLISECONDS)

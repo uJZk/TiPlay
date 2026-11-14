@@ -326,6 +326,89 @@ class AndroidBluetoothPlaybackTest {
         } finally { close(channel, states) }
     }
 
+    @Test
+    @Config(shadows = [ModeResetFailureAudioManagerShadow::class,
+        BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
+    fun failedOwnedModeCleanupDoesNotPublishReleasedOrForgetItsPlatformClient() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val audio = shadowOf(manager) as ModeResetFailureAudioManagerShadow
+        val target = "AA:BB:CC:DD:EE:01"
+        audio.setAvailableCommunicationDevices(listOf(device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, target, 1202)))
+        audio.setInputDevices(emptyList())
+        val states = CopyOnWriteArrayList<BluetoothVoiceState>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }.also(::useJvmMixer)
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            audio.modeResetFailures.set(1)
+            channel.stop()
+            awaitBluetoothPlayback { audio.modeResetFailures.get() == 0 }
+            assertEquals("communication device cancellation and mode cancellation are separate", 1, audio.clearClientCalls.get())
+            assertNull(manager.communicationDevice)
+            assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+            assertTrue("a failed mode cancellation must retain this app's platform ownership",
+                ReflectionHelpers.getField(channel, "communicationOwned"))
+            assertFalse("route cleanup has not completed", states.last().released)
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { states.lastOrNull()?.released == true }
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertFalse(ReflectionHelpers.getField(channel, "communicationOwned"))
+            assertEquals("retry only the unfinished mode client", 1, audio.clearClientCalls.get())
+            assertEquals(2, audio.modeResetCalls.get())
+        } finally {
+            audio.modeResetFailures.set(0)
+            channel.close()
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    @Test
+    @Config(shadows = [ModeResetFailureAudioManagerShadow::class,
+        BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
+    fun persistentOwnedModeCleanupFailureKeepsFallbackQuarantinedAndExplicitCloseCanRetry() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val audio = shadowOf(manager) as ModeResetFailureAudioManagerShadow
+        val target = "AA:BB:CC:DD:EE:01"
+        audio.setAvailableCommunicationDevices(listOf(device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, target, 1302)))
+        audio.setInputDevices(emptyList())
+        audio.setOutputDevices(emptyList())
+        audio.modeResetFailures.set(100)
+        BluetoothPlaybackTrackShadow.failNextScoWrite.set(true)
+        val states = CopyOnWriteArrayList<BluetoothVoiceState>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }.also(::useJvmMixer)
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { audio.modeResetCalls.get() == 1 }
+            shadowOf(Looper.getMainLooper()).idleFor(4100, TimeUnit.MILLISECONDS)
+            assertEquals("cleanup attempts are bounded", 3, audio.modeResetCalls.get())
+            assertEquals(1, audio.clearClientCalls.get())
+            assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+            assertTrue(ReflectionHelpers.getField(channel, "communicationOwned"))
+            assertFalse(states.last().released)
+            assertEquals("do not open fallback while our old platform client remains", 1,
+                BluetoothPlaybackTrackShadow.tracks.size)
+            shadowOf(Looper.getMainLooper()).idleFor(31_000, TimeUnit.MILLISECONDS)
+            assertEquals(3, audio.modeResetCalls.get())
+            assertFalse(states.last().released)
+            // Explicit stop/close starts another finite cleanup attempt; another
+            // application's global mode/device is never used as an ownership test.
+            audio.modeResetFailures.set(0)
+            channel.close()
+            awaitBluetoothPlayback { states.lastOrNull()?.released == true }
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertEquals(4, audio.modeResetCalls.get())
+            assertEquals("the successful device cancellation is never repeated", 1, audio.clearClientCalls.get())
+        } finally {
+            audio.modeResetFailures.set(0)
+            channel.close()
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+        }
+    }
+
     private fun config() = MicrophoneConfig("telephony", 16000, 1, 97, 20,
         InetAddress.getLoopbackAddress(), 12345, ByteArray(32))
 
@@ -420,6 +503,26 @@ class PendingCommunicationAudioManagerShadow : ShadowAudioManager() {
     @Implementation override fun clearCommunicationDevice() {
         pendingClientRequest = null
         clearClientCalls.incrementAndGet()
+    }
+}
+
+/** A successful device cancellation does not imply the separate mode-client cancellation succeeded. */
+@Implements(AudioManager::class)
+class ModeResetFailureAudioManagerShadow : ShadowAudioManager() {
+    val modeResetFailures = AtomicInteger()
+    val modeResetCalls = AtomicInteger()
+    val clearClientCalls = AtomicInteger()
+    @Implementation override fun setMode(mode: Int) {
+        if (mode == AudioManager.MODE_NORMAL) {
+            modeResetCalls.incrementAndGet()
+            if (modeResetFailures.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0)
+                throw IllegalStateException("Injected mode-client cancellation failure")
+        }
+        super.setMode(mode)
+    }
+    @Implementation override fun clearCommunicationDevice() {
+        clearClientCalls.incrementAndGet()
+        super.clearCommunicationDevice()
     }
 }
 
