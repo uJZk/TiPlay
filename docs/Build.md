@@ -454,14 +454,21 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v122
+
+Browser/cache **v122**, product **0.2.20-beta.50**, is deployed by
+[Pages run 43590151476](https://github.com/uJZk/TiPlay/actions/runs/43590151476)
+from `ec68c4e4c6c10793e218aa5908689b08a7f60484`.
+Independent anonymous checks match all 226 files (37,828,528 bytes), MIME types,
+20 routes and eight languages on the first attempt. [Beta.50](#beta50-release)
+records signed artifacts and media-proof limits.
+
 ### Browser v121
 
-Browser/cache **v121**, product **0.2.20-beta.49**, is deployed by
+Browser/cache v121, product beta.49, was deployed by
 [Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
 from `95850493cb6bab562992862087cde87fc94b2e0e`.
-Anonymous checks match all 226 files (37,828,528 bytes), MIME types and 20 routes.
-The [beta.49 record](#beta49-release) retains source, artifact and media-proof
-limits. Candidate beta.50/v122 deployment remains pending.
+The [beta.49 record](#beta49-release) retains its verification.
 
 ### Browser v120
 
@@ -505,46 +512,56 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta50-release"></a>
-### Candidate beta.50
+### Published beta.50
 
-The IPv4 link-local audio ICE fix is adopted in
-`aafbf7bb302b7d266e8cbc98a64f84a43616c297`. Candidate beta.50/code92/browser
-v122 metadata is prepared, and scoped web/site/native source checks pass.
-Signed APK, publication and Pages deployment remain pending.
+[Beta.50/code92/browser v122](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.50)
+was published **2026-11-14 19:27:50 (UTC+8)**, release `445239201`, from
+`ec68c4e4c6c10793e218aa5908689b08a7f60484`.
+The IPv4 link-local audio ICE fix was adopted in
+`aafbf7bb302b7d266e8cbc98a64f84a43616c297`.
 [Native producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
-attempt 1, succeeds from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`:
-both native/symbol jobs, 16 symbol contracts, 14 source-preparation checks and
-40 compiled C address cases pass. The patch retains IPv4 link-local candidates;
-loopback and IPv6 link-local exclusions remain.
+attempt 1 from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`, passes both jobs,
+16 symbol contracts, 14 preparation checks and 40 compiled C address cases.
+The patch preserves loopback and IPv6 link-local exclusions.
 
-Both official Actions ZIPs were downloaded and verified against API byte counts
-and SHA-256 digests. All four adopted libraries, their official JSON and source
-lock match those bytes; architecture, Build IDs, symbols and 16 KiB alignment
-pass. Official `artifacts.json` SHA-256 is
+Both official Actions ZIPs match API byte counts/digests. Four adopted libraries,
+official JSON and source lock match; architecture, Build IDs, symbols and 16 KiB
+alignment pass. Official `artifacts.json` SHA-256 is
 `8b2ce0d61cc294873befc3d0591b0f692ba08cfef573631dbd21af5b0f31ebff`.
 Raw producer-index SHA-256 is
 `aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879`,
-retained in durable draft `445164968`. The native producer and adoption commit
-are distinct from any future APK signing source.
+retained in durable draft `445164968`. Producer, adoption and Android-proof
+commits remain distinct from the APK build source.
 
 [Android run 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
-passes from `e6591ef01d96134de2b336dc0903499e69176c97` with the packaged libraries:
-UID 10209, `untrusted_app`, API35/x86_64, initialized main libjingle and actual
-link-local candidates in both native generations. Normal Chromium 151 Worklet
-output covers 17 owners/two peers with zero encoded fallback; a separate tap
-verifies 220 original Opus payloads/RTP timestamps and 32 transforms.
-Each control verifies same-app-UID nonce echo, the actual Wi-Fi user backend and
-unique owned forwards, then removes all three with zero pending/cleanup failures.
-The official 3,835-byte evidence ZIP matches its API digest; its JSON matches
-decoded joblogs.
+passes from `e6591ef01d96134de2b336dc0903499e69176c97`: actual app UID/domain,
+packaged-library initialization, both generations' link-local candidates,
+17-owner/two-peer Chromium Worklet output without fallback, and a separate
+220-frame exact Opus/timestamp tap with 32 transforms. Actual Wi-Fi/HMP forwarding,
+same-app-UID nonce echo and complete cleanup pass. The official evidence ZIP's
+API digest and its extracted JSON/joblog agreement are verified.
 
 Emulator 37.2.13 uses explicit legacy Wi-Fi, an owned HMP socket and test NAT.
-Its exact public source pin remains unmatched. Earlier pre-offer fixture failure
-did not diagnose product ICE. [Testing](Testing.md#current-release-source) and
-[reproduced ICE evidence](Robustness.md#ipv4-link-local-ice) retain the evidence
-boundaries: link-local source egress, active main-peer coexistence, vehicle cause,
-physical sound/capture and mirror picture remain unverified. Full CI is waived
-at the user's request; final signed/public artifact checks remain pending.
+Its exact public source pin remains unmatched. [Testing](Testing.md#current-release-source)
+and [ICE evidence](Robustness.md#ipv4-link-local-ice) retain scoped source checks
+and limits: link-local source egress, active main-peer coexistence, vehicle cause,
+physical sound/capture and mirror picture remain unverified. Full CI was waived.
+
+[Signed run 43588682542](https://github.com/uJZk/TiPlay/actions/runs/43588682542)
+passes all three jobs, twelve artifact groups and the RTC provenance subgate;
+independent review finds no blockers. Signer continuity with beta.49 passes.
+Canonical JNI archive `445239058` inventories 51 libraries (24 JNI/27 prebuilt),
+43 Build IDs and eight confirmed no-ID entries. Matching symbol pairs cover
+32 libraries (24 JNI/eight producer); 19 historical prebuilts lack matched symbols.
+Anonymous first-attempt HTTP 200 downloads match all three signed asset bytes,
+API digests, checksums and the exact public tag commit. The
+[v122 deployment](#browser-v122) uses that same build source.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.50.apk` | 114,598,764 | `d4db0b1235315b8b2b11e7b411a9914e8bda81e9355d70c924f8d7bdcd348db3` |
+| `TiPlay-0.2.20-beta.50-source.zip` | 70,350,141 | `455168053efc6c41e7cf6d0d5f8ca07e46b9b205671207773ab55099418eeacf` |
+| `SHA256SUMS.txt` | 191 | `6988071c012935429ee0037bb8d2d009370d042e8620385b4c7435c790317547` |
 
 <a id="beta49-release"></a>
 ### Published beta.49
@@ -555,7 +572,7 @@ was published **2026-11-14 15:34:45 (UTC+8)** from
 [Signed run 43570628422](https://github.com/uJZk/TiPlay/actions/runs/43570628422)
 and [Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
 passed. The [immutable complete record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Build.md#beta49-release)
-retains all asset hashes, 51-library symbol coverage in draft `445111467`, twelve
+retains all asset hashes, the 51-library identity inventory in draft `445111467`, twelve
 artifact gates, source/hosted proof and public byte checks. It fixes diagnostic
 export loss and unfinished Bluetooth cleanup; vehicle causes and physical media
 remained unverified. Full CI was waived.

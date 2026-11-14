@@ -7,7 +7,10 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Candidate beta.50
+### Beta.50
+
+Beta.50/code92/browser v122 was published from
+`ec68c4e4c6c10793e218aa5908689b08a7f60484` at **2026-11-14 19:27:50 (UTC+8)**.
 
 The IPv4 link-local patch preserves loopback and IPv6 link-local exclusions.
 [Producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
@@ -25,11 +28,11 @@ universally fatal. A separate patched-host run preserves 160. See
 
 [Android proof 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
 passes from `e6591ef01d96134de2b336dc0903499e69176c97` on Emulator 37.2.13 and
-Chromium 151.0.7922.34. The actual target UID 10209/`untrusted_app`, API35/x86_64,
+Chromium 151.0.7922.34. UID 10209/`untrusted_app`, API35/x86_64,
 main-libjingle initialization and adopted packaged-library identities are verified.
 Both generations gather real IPv4 link-local candidates before NAT. The normal
-untapped pipeline passes 17 owners/two peers with nonzero Worklet peaks
-(about 0.35136/0.19214) and zero fallback records. A separate tap verifies 220
+untapped pipeline passes 17 owners/two peers with nonzero Worklet output and zero
+fallback records. A separate tap verifies 220
 original Opus payloads and RTP timestamps across 32 transform initializations.
 The 3,835-byte official ZIP matches its authenticated API digest; extracted JSON
 matches decoded joblogs.
@@ -42,7 +45,7 @@ or failed HMP requests and full cleanup. Earlier
 [pre-offer control 43582970833](https://github.com/uJZk/TiPlay/actions/runs/43582970833)
 fails before NativeOffer and cannot diagnose product ICE. Current source checks
 pass 12 workflow contracts, 25 pure controls (12 adapter/13 HMP), Java compilation
-and 19 shell syntax checks; these are distinct from the runtime proof and beta.49 counts.
+and 19 shell syntax checks, separate from runtime proof and beta.49 counts.
 
 This proves the explicit emulator/NAT topology, without establishing link-local
 SRTP egress, active main-peer coexistence, physical vehicle/Bluetooth output,
@@ -54,10 +57,16 @@ High-profile access units without stderr; removing all SPS/PPS fails with zero
 frames. This proves source decodability, not pixels, forwarding or presentation.
 No images or keys were exported.
 
-Beta.50/code92/browser v122 metadata passes 85 scoped web/version/cache tests
+The release metadata passes 85 scoped web/version/cache tests
 across five files and two site-deployment Python cases. Public-tree, native-library,
-cache-manifest and diff checks pass. Signed packaging, publication and Pages
-verification remain pending; full CI remains waived.
+cache-manifest and diff checks pass; full CI remains waived.
+[Signed run 43588682542](https://github.com/uJZk/TiPlay/actions/runs/43588682542)
+passes all three jobs and twelve artifact groups plus the RTC provenance gate.
+All 51 native identities match; 32 symbol pairs are retained and 19 historical
+libraries still lack symbols. Anonymous APK/source/checksum downloads and exact
+tag identity pass. Pages `43590151476` matches 226 files, 37,828,528 bytes,
+20 routes and eight languages on first requests.
+[Build](Build.md#beta50-release) retains hashes and publication provenance.
 
 <a id="beta49"></a>
 ### Beta.49 reference

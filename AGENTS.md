@@ -44,8 +44,16 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current source and release work at [Build](docs/Build.md#beta50-release).
-Beta.50/code92/browser v122 metadata is prepared locally; signed packaging,
-publication and deployment remain pending. The reproduced
+Beta.50/code92/browser v122 is published from
+`ec68c4e4c6c10793e218aa5908689b08a7f60484` at
+**2026-11-14 19:27:50 (UTC+8)**. Signed run `43588682542` passes all three jobs,
+twelve artifact groups and the RTC source/notice/producer gate. Three anonymous
+asset downloads match signed bytes, API digests, checksums and the exact tag.
+Pages `43590151476` succeeds from that source; all 226 files (37,828,528 bytes),
+20 routes and eight languages match on their first request. Canonical archive
+`445239058` inventories 51 native identities; 32 matching symbol pairs cover
+24 JNI and eight producer libraries, with 19 historical libraries still missing
+symbols. The reproduced
 [IPv4 link-local ICE](docs/Robustness.md#ipv4-link-local-ice) candidate-filter
 defect has a minimal patch and strict producer identity. Official four-ABI
 producer [43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616)
@@ -62,13 +70,13 @@ cannot diagnose product ICE. This explicit emulator/NAT topology does not prove
 link-local SRTP egress, an active main-peer coexistence case or physical vehicle
 output/capture/mirror picture. [Testing](docs/Testing.md#current-release-source)
 retains the source and runtime evidence boundaries.
-The candidate metadata passes 85 scoped web/version/cache cases across five files,
+The release metadata passes 85 scoped web/version/cache cases across five files,
 two site-deployment Python cases and public-tree/native/cache/diff checks; these
 are separate from beta.49's complete browser suite.
 Release verification rejects old native identities. Do not publish another
 diagnostic-only beta or claim the vehicle cause is known.
 
-The current published release is [beta.49/code91/v121](docs/Build.md#beta49-release)
+The previous release is [beta.49/code91/v121](docs/Build.md#beta49-release)
 from `95850493cb6bab562992862087cde87fc94b2e0e`. Signed run `43570628422`,
 Pages `43571756114`, twelve artifact checks, all 51 native identities and
 anonymous release/site bytes pass. The immutable Build/Testing records retain
