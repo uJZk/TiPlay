@@ -34,14 +34,12 @@ public final class RoutedAudioPeerProbe {
         }
     }
     private static void finish(Map<String,Object> result, List<byte[]> records) {
-      synchronized(outputLock) {
         records.addAll(router.drainMetadata());
         result.put("records", records.stream().map(RoutedAudioPeerProbe::encoded).toList());
         result.put("snapshot", router.snapshot()); result.put("failures", new ArrayList<>(failures));
         synchronized(outputLock) {
             System.out.println(WebJson.INSTANCE.write(result)); System.out.flush();
         }
-      }
     }
     private static void error(Map<?,?> command, Throwable failure) {
         Map<String,Object> result = response(command, "error");
@@ -69,7 +67,6 @@ public final class RoutedAudioPeerProbe {
                     });
                     continue;
                 }
-                synchronized(outputLock) {
                   try {
                     List<byte[]> records = new ArrayList<>(router.drainMetadata());
                     Map<String,Object> result;
@@ -99,7 +96,6 @@ public final class RoutedAudioPeerProbe {
                     }
                     finish(result, records);
                   } catch (Throwable failure) { error(command, failure); }
-                }
             }
         } finally {
             router.close(); signaling.shutdownNow(); signaling.awaitTermination(5, TimeUnit.SECONDS);
