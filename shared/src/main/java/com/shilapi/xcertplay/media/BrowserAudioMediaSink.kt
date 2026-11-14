@@ -13,7 +13,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Browser decodes music, navigation and Siri continuously; Android decodes telephony during verified HFP/SCO demand. */
+/** Browser decodes music, navigation and Siri; telephony follows the available Android output. */
 class BrowserAudioMediaSink(
     private val video: MediaSink,
     private val hub: WebAudioHub,
@@ -34,6 +34,7 @@ class BrowserAudioMediaSink(
     @Volatile private var paused = initiallyPaused
     @Volatile private var voiceHeld = false
     @Volatile private var voiceActive = false
+    private var voiceError: String? = null
     @Volatile private var routeEpoch = 0
     private val routeHandler = Handler(Looper.getMainLooper())
     private val routeRetry = Runnable { synchronized(this) { if (!closed && !paused && microphoneDemands.isNotEmpty()) selectMicrophone(force = true) } }
@@ -110,6 +111,7 @@ class BrowserAudioMediaSink(
         microphoneId = entry?.key
         if (entry == null) { stopVoice(); return }
         voiceHeld = true; voiceActive = false
+        voiceError = null
         resetDecoders(voiceOnly = true)
         if (!hub.voiceRoute(this, "connecting", true)) {
             // Reconnect can create the next tap before the previous tap has actually released SCO.
@@ -119,7 +121,7 @@ class BrowserAudioMediaSink(
         }
         routeHandler.removeCallbacks(routeRetry)
         val factory = voiceFactory
-        if (factory == null) { hub.voiceRoute(this, "failed", true, "car-bluetooth-unavailable"); return }
+        if (factory == null) { voiceState(BluetoothVoiceState("failed", "car-bluetooth-unavailable", released = true)); return }
         try {
             voice = voice ?: factory.create(::voiceState)
             voice?.start(entry.value)
@@ -130,6 +132,7 @@ class BrowserAudioMediaSink(
         routeHandler.removeCallbacks(routeRetry)
         voiceHeld = voice != null
         voiceActive = false
+        voiceError = null
         resetDecoders(voiceOnly = true)
         if (voice == null) {
             hub.voiceRoute(this, "idle", false)
@@ -141,21 +144,23 @@ class BrowserAudioMediaSink(
 
     @Synchronized private fun voiceState(next: BluetoothVoiceState) {
         val demanded = !closed && !paused && microphoneId != null
+        // Calls stay out of browser playout throughout demand and Android recovery.
         val held = demanded || !next.released
-        val active = demanded && next.state == "active"
+        val active = demanded && !next.released && next.outputReady
         val changed = voiceHeld != held || voiceActive != active
         voiceHeld = held; voiceActive = active
+        voiceError = next.error.takeIf { demanded || !next.released }
         if (changed) resetDecoders(voiceOnly = true)
-        hub.voiceRoute(this, if (demanded || !next.released) next.state else "idle", held,
-            next.error.takeIf { demanded || !next.released } ?: downlinkError())
+        hub.voiceRoute(this, if (demanded || !next.released) next.state else "idle", demanded || !next.released,
+            voiceError ?: downlinkError())
     }
 
     private fun downlinkError(): String? = if (voiceActive && downlinkFailures.isNotEmpty())
         "bluetooth-downlink-decoder-failed" else null
 
-    /** A failed downlink does not release the working microphone/SCO keepalive route. */
+    /** A failed decoder does not release a working Android playback route. */
     private fun publishDownlinkStatus() {
-        if (voiceActive) hub.voiceRoute(this, "active", voiceHeld, downlinkError())
+        if (voiceActive) hub.voiceRoute(this, "active", voiceHeld, voiceError ?: downlinkError())
     }
 
     private fun decoderFailed(decoder: Decoder, cleanupComplete: Boolean) {

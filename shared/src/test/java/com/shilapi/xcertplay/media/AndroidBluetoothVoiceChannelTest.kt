@@ -9,6 +9,7 @@ import android.os.Looper
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import java.net.InetAddress
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
@@ -20,17 +21,33 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.AudioDeviceInfoBuilder
 import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33], manifest = Config.NONE)
+@Config(sdk = [33], manifest = Config.NONE,
+    shadows = [BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class AndroidBluetoothVoiceChannelTest {
+    @Before fun resetPlaybackShadows() {
+        BluetoothPlaybackTrackShadow.reset()
+        BluetoothPlaybackRecordShadow.reset()
+    }
+
+    private fun closeChannel(channel: AndroidBluetoothVoiceChannel) {
+        channel.close()
+        awaitBluetoothPlayback {
+            !ReflectionHelpers.getField<Boolean>(channel, "acquired") &&
+                !ReflectionHelpers.getField<Boolean>(channel, "workerRetiring")
+        }
+    }
+
     private fun config() = MicrophoneConfig("telephony", 16000, 1, 97, 20, InetAddress.getLoopbackAddress(), 12345, ByteArray(32))
     private fun sco(address: String, id: Int): AudioDeviceInfo {
         val device = AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO).build()
         val port: Any = ReflectionHelpers.getField(device, "mPort")
         ReflectionHelpers.setField(port, "mAddress", address)
+        ReflectionHelpers.setField(port, "mRole", 2) // AudioPort.ROLE_SINK
         val handle: Any = ReflectionHelpers.getField(port, "mHandle")
         ReflectionHelpers.setField(handle, "mId", id)
         return device
@@ -56,11 +73,13 @@ class AndroidBluetoothVoiceChannelTest {
             ReflectionHelpers.setField(channel, "focusWaiting", false)
             ReflectionHelpers.setField(channel, "focusGranted", true)
             ReflectionHelpers.setField(channel, "acquired", true)
+            ReflectionHelpers.setField(channel, "communicationOwned", true)
+            ReflectionHelpers.setField(channel, "scoRoute", true)
             ReflectionHelpers.setField(channel, "selected", car)
-            ReflectionHelpers.setField(channel, "previousMode", AudioManager.MODE_NORMAL)
             ReflectionHelpers.setField(channel, "workerRetiring", true)
             manager.mode = AudioManager.MODE_IN_COMMUNICATION
             assertTrue(manager.setCommunicationDevice(car))
+            ReflectionHelpers.setField(channel, "communicationRequested", true)
             val abandoned = audio.lastAbandonedAudioFocusRequest
             val attempts = states.count { it.state == "connecting" }
             request.listener.onAudioFocusChange(loss)
@@ -77,10 +96,11 @@ class AndroidBluetoothVoiceChannelTest {
             request.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
             shadowOf(Looper.getMainLooper()).idle()
             assertSame(request, audio.lastAudioFocusRequest) // Regained request is reused, not re-requested.
-            assertEquals(attempts + 1, states.count { it.state == "connecting" })
+            assertTrue(states.count { it.state == "connecting" } >= attempts + 1)
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
             assertEquals("bluetooth-input-unavailable", states.last().error)
             assertSame(demand, ReflectionHelpers.getField<MicrophoneConfig>(channel, "wanted"))
-            channel.close(); shadowOf(Looper.getMainLooper()).idle()
+            closeChannel(channel)
         }
     }
 
@@ -111,8 +131,9 @@ class AndroidBluetoothVoiceChannelTest {
         assertNull(manager.communicationDevice)
         replacement.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
         shadowOf(Looper.getMainLooper()).idle()
+        awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
         assertEquals("bluetooth-input-unavailable", states.last().error)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
         val count = states.size
         replacement.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
         shadowOf(Looper.getMainLooper()).idle()
@@ -140,10 +161,10 @@ class AndroidBluetoothVoiceChannelTest {
         request.listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(count, states.size)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
     }
 
-    @Test fun temporaryFocusDenialRetriesTheSameDemandButNeverRequestsFocusDuringAnotherCall() {
+    @Test fun temporaryFocusDenialRetriesPlaybackWithoutPreemptingAnExistingCall() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
@@ -154,21 +175,24 @@ class AndroidBluetoothVoiceChannelTest {
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }
         val demand = config()
-        channel.start(demand); shadowOf(Looper.getMainLooper()).idle()
-        val refused = requireNotNull(audio.lastAudioFocusRequest)
-        assertEquals("audio-focus-unavailable", states.last().error)
-        manager.mode = AudioManager.MODE_IN_CALL
-        audio.setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-        shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
-        assertSame(refused, audio.lastAudioFocusRequest)
-        assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
-        assertEquals("communication-route-busy", states.last().error)
-        manager.mode = AudioManager.MODE_NORMAL
-        shadowOf(Looper.getMainLooper()).idleFor(4100, TimeUnit.MILLISECONDS)
-        assertNotSame(refused, audio.lastAudioFocusRequest)
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-        assertSame(demand, ReflectionHelpers.getField<MicrophoneConfig>(channel, "wanted"))
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(demand); shadowOf(Looper.getMainLooper()).idle()
+            val refused = requireNotNull(audio.lastAudioFocusRequest)
+            assertEquals("audio-focus-unavailable", states.last().error)
+            assertEquals("after SCO focus is refused, the media fallback also requests focus",
+                android.media.AudioAttributes.USAGE_MEDIA, requireNotNull(refused.audioFocusRequest).audioAttributes.usage)
+            manager.mode = AudioManager.MODE_IN_CALL
+            audio.setNextFocusRequestResponse(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+            // This fixture denied both SCO focus and its immediate media fallback. The
+            // second refusal uses the next bounded backoff instead of the initial two seconds.
+            shadowOf(Looper.getMainLooper()).idleFor(4100, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertNotSame(refused, audio.lastAudioFocusRequest)
+            assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
+            assertNull(manager.communicationDevice)
+            assertSame(demand, ReflectionHelpers.getField<MicrophoneConfig>(channel, "wanted"))
+            assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
+        } finally { closeChannel(channel) }
     }
 
     @Test fun permanentLossAfterTransientReleaseDoesNotMistakeTheSameTargetForASelectionChange() {
@@ -190,22 +214,18 @@ class AndroidBluetoothVoiceChannelTest {
         assertEquals("audio-focus-lost", states.last().error)
         assertSame(request, audio.lastAudioFocusRequest)
         assertEquals(1, states.count { it.state == "connecting" })
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
     }
 
-    @Test fun selectedCarMatchesBothScoInputAndOutputWithoutUsingOtherHeadsets() {
+    @Test fun microphoneSelectionStillRequiresTheExactSelectedCarIdentity() {
         val target = "AA:BB:CC:DD:EE:01"
         val carInput = sco(target, 101)
-        val carOutput = sco(target, 102)
         val otherInput = sco("AA:BB:CC:DD:EE:02", 201)
-        val otherOutput = sco("AA:BB:CC:DD:EE:02", 202)
         assertSame(carInput, selectBluetoothAudioDevice(listOf(otherInput, carInput), target) { it.address })
-        assertSame(carOutput, selectBluetoothAudioDevice(listOf(otherOutput, carOutput), target) { it.address })
         assertNull(selectBluetoothAudioDevice(listOf(otherInput), target) { it.address })
-        assertNull(selectBluetoothAudioDevice(listOf(otherOutput), target) { it.address })
     }
 
-    @Test fun changingOrClearingSelectionReleasesOldRouteAndRetriesOnlyAnExplicitTarget() {
+    @Test fun changingOrClearingSelectionPrefersTheNewCarAndKeepsUsablePlaybackWithoutSubstitutingItsMicrophone() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
@@ -218,65 +238,51 @@ class AndroidBluetoothVoiceChannelTest {
         var selection: String? = oldAddress
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add) { selection }
-        // Model an already acquired route without starting Android's native
-        // AudioRecord worker in this JVM-only test.
-        ReflectionHelpers.setField(channel, "wanted", config())
-        ReflectionHelpers.setField(channel, "activeCarAddress", oldAddress)
-        ReflectionHelpers.setField(channel, "selected", old)
-        ReflectionHelpers.setField(channel, "acquired", true)
-        ReflectionHelpers.setField(channel, "previousMode", AudioManager.MODE_NORMAL)
-        manager.mode = AudioManager.MODE_IN_COMMUNICATION
-        selection = newAddress
-        ReflectionHelpers.callInstanceMethod<Void>(channel, "tick")
-        // The new SCO route is acquired; the deliberate missing input then
-        // fails closed rather than selecting the old or phone microphone.
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-        assertTrue(states.last().released)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-
-        // A failure must not pin a continuing voice demand to the previous
-        // target: selecting a different unavailable address is attempted.
-        selection = "AA:BB:CC:DD:EE:03"
-        shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-
-        // An explicitly cleared selection remains waiting, even with a single
-        // other headset; restoring a selection triggers a fresh acquisition.
-        selection = null
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("car-bluetooth-not-selected", states.last().error)
-        assertNull(manager.communicationDevice)
-        selection = newAddress
-        shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertSame(old, manager.communicationDevice)
+            selection = newAddress
+            ReflectionHelpers.callInstanceMethod<Void>(channel, "tick")
+            awaitBluetoothPlayback { manager.communicationDevice?.id == target.id && states.lastOrNull()?.outputReady == true }
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+            selection = "AA:BB:CC:DD:EE:03"
+            ReflectionHelpers.callInstanceMethod<Void>(channel, "tick")
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true &&
+                ReflectionHelpers.getField<String>(channel, "activeCarAddress") == selection }
+            assertNotNull(manager.communicationDevice)
+            selection = null
+            ReflectionHelpers.callInstanceMethod<Void>(channel, "tick")
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true &&
+                ReflectionHelpers.getField<String?>(channel, "activeCarAddress") == null }
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+            assertNotNull(manager.communicationDevice)
+        } finally { closeChannel(channel) }
     }
 
-    @Test fun selectedCarAppearingAfterAnUnavailableFailureRetriesWithBackoff() {
+    @Test fun selectedCarAppearingUpgradesWorkingSystemPlaybackWithoutRequiringANewDemand() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
+        val audio = shadowOf(manager)
         val target = "AA:BB:CC:DD:EE:02"
-        shadowOf(manager).setAvailableCommunicationDevices(emptyList())
-        shadowOf(manager).setInputDevices(emptyList())
+        audio.setAvailableCommunicationDevices(emptyList()); audio.setInputDevices(emptyList())
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        val attempts = states.count { it.state == "connecting" }
-
-        shadowOf(manager).setAvailableCommunicationDevices(listOf(sco(target, 102)))
-        shadowOf(Looper.getMainLooper()).idleFor(1500, TimeUnit.MILLISECONDS)
-        assertEquals(attempts, states.count { it.state == "connecting" })
-        shadowOf(Looper.getMainLooper()).idleFor(600, TimeUnit.MILLISECONDS)
-        assertEquals(attempts + 1, states.count { it.state == "connecting" })
-        // The test supplies no input device; reaching this failure proves the
-        // same target was reacquired without pretending duplex audio started.
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            val demand = config()
+            channel.start(demand)
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertNull(manager.communicationDevice)
+            val car = sco(target, 102)
+            audio.addAvailableCommunicationDevice(car, true)
+            awaitBluetoothPlayback { manager.communicationDevice?.id == car.id && states.lastOrNull()?.outputReady == true }
+            assertSame(demand, ReflectionHelpers.getField<MicrophoneConfig>(channel, "wanted"))
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+        } finally { closeChannel(channel) }
     }
 
-    @Test fun matchingScoArrivalWakesAContinuingDemandBeforeItsBackoffButOtherDevicesDoNot() {
+    @Test fun selectedScoArrivalUpgradesPlaybackButArrivalsAfterStopCannotRestartIt() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
@@ -285,27 +291,20 @@ class AndroidBluetoothVoiceChannelTest {
         val target = "AA:BB:CC:DD:EE:02"
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        val attempts = states.count { it.state == "connecting" }
-
-        audio.addAvailableCommunicationDevice(sco("AA:BB:CC:DD:EE:03", 103), true)
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(attempts, states.count { it.state == "connecting" })
-        audio.addAvailableCommunicationDevice(sco(target, 102), true)
-        shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(attempts + 1, states.count { it.state == "connecting" })
-        // The route is selected, but this fixture deliberately has no input;
-        // reaching this error proves acquisition without opening native audio.
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-
-        channel.stop(); shadowOf(Looper.getMainLooper()).idle()
-        val stopped = states.size
-        audio.addAvailableCommunicationDevice(sco(target, 104), true)
-        shadowOf(Looper.getMainLooper()).idleFor(31_000, TimeUnit.MILLISECONDS)
-        assertEquals(stopped, states.size)
-        assertNull(manager.communicationDevice)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            val car = sco(target, 102)
+            audio.addAvailableCommunicationDevice(car, true)
+            awaitBluetoothPlayback { manager.communicationDevice?.id == car.id && states.lastOrNull()?.outputReady == true }
+            channel.stop()
+            awaitBluetoothPlayback { states.lastOrNull()?.state == "idle" && states.last().released }
+            val stopped = states.size
+            audio.addAvailableCommunicationDevice(sco(target, 104), true)
+            shadowOf(Looper.getMainLooper()).idleFor(31_000, TimeUnit.MILLISECONDS)
+            assertEquals(stopped, states.size)
+            assertNull(manager.communicationDevice)
+        } finally { closeChannel(channel) }
     }
 
     @Test fun scoArrivalDoesNotOverridePermanentFocusLoss() {
@@ -328,7 +327,7 @@ class AndroidBluetoothVoiceChannelTest {
         assertEquals(attempts, states.count { it.state == "connecting" })
         assertSame(focus, audio.lastAudioFocusRequest)
         assertEquals("audio-focus-lost", states.last().error)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
     }
 
     @Test fun temporaryAudioIoFailuresRetryButSecurityDenialsDoNot() {
@@ -346,9 +345,10 @@ class AndroidBluetoothVoiceChannelTest {
             shadowOf(Looper.getMainLooper()).idleFor(1500, TimeUnit.MILLISECONDS)
             assertEquals(0, states.count { it.state == "connecting" })
             shadowOf(Looper.getMainLooper()).idleFor(600, TimeUnit.MILLISECONDS)
-            assertEquals(1, states.count { it.state == "connecting" })
-            assertEquals("car-bluetooth-unavailable", states.last().error)
-            channel.close(); shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(states.count { it.state == "connecting" } >= 1)
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+            closeChannel(channel)
         }
 
         // A platform SecurityException may indicate a privileged restriction
@@ -361,10 +361,10 @@ class AndroidBluetoothVoiceChannelTest {
         shadowOf(Looper.getMainLooper()).idleFor(5000, TimeUnit.MILLISECONDS)
         assertEquals(0, denied.count { it.state == "connecting" })
         assertEquals("bluetooth-permission-denied", denied.last().error)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
     }
 
-    @Test fun busyCallIsNeverPreemptedAndRouteIsRetriedAfterItEnds() {
+    @Test fun busyCallKeepsItsModeWhileSystemPlaybackContinuesWithoutRecording() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
@@ -372,18 +372,16 @@ class AndroidBluetoothVoiceChannelTest {
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add) { "AA:BB:CC:DD:EE:02" }
         manager.mode = AudioManager.MODE_IN_CALL
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("communication-route-busy", states.last().error)
-        shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
-        assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
-        assertEquals("communication-route-busy", states.last().error)
-        manager.mode = AudioManager.MODE_NORMAL
-        shadowOf(Looper.getMainLooper()).idleFor(4100, TimeUnit.MILLISECONDS)
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
+            assertNull(manager.communicationDevice)
+            assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
+        } finally { closeChannel(channel) }
     }
-    @Test fun selectedAddressChoosesOnlyTheMatchingUniqueScoDevice() {
+
+    @Test fun microphoneAddressChoosesOnlyTheMatchingUniqueScoInput() {
         val devices = listOf("AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02")
         assertEquals(devices[1], selectBluetoothAudioDevice(devices, "aa:bb:cc:dd:ee:02") { it })
         assertNull(selectBluetoothAudioDevice(devices, "AA:BB:CC:DD:EE:03") { it })
@@ -426,27 +424,29 @@ class AndroidBluetoothVoiceChannelTest {
         assertTrue(unnamed.contains("scoNameSelectedMatches=0 scoNameOtherMatches=0"))
     }
 
-    @Test fun selectedDeviceWithNoMatchingScoAddressDoesNotUseAnotherDevice() {
+    @Test fun unmatchedScoAddressStillProvidesPlaybackWithoutClaimingItsMicrophone() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
-        val unrelated = AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO).build()
+        val unrelated = sco("02:00:00:00:00:00", 111)
         shadowOf(manager).setAvailableCommunicationDevices(listOf(unrelated))
+        shadowOf(manager).setInputDevices(emptyList())
         val states = mutableListOf<BluetoothVoiceState>()
-        val logs = mutableListOf<String>()
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add, diagnostic = logs::add) { "AA:BB:CC:DD:EE:01" }
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        assertTrue(states.last().released)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertNull(manager.communicationDevice)
-        assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") && it.contains("matches=0") })
-        assertTrue(logs.any { it.contains("stage=failure reason=car-bluetooth-unavailable") })
-        assertTrue(logs.none { it.contains("AA:BB:CC:DD:EE:01") })
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+            assertFalse(states.last().released)
+            assertSame(unrelated, manager.communicationDevice)
+            assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+            assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("matches=0") && it.contains("selected=true") })
+            assertTrue(logs.none { it.contains("AA:BB:CC:DD:EE:01") })
+        } finally { closeChannel(channel) }
     }
 
-    @Test fun anotherScoDeviceStillDiagnosesSelectedCarProfilesOncePerDemandWithoutRerouting() {
+    @Test fun anotherScoOutputStillDiagnosesSelectedCarProfilesOncePerDemandWithoutClaimingItsMicrophone() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
@@ -465,7 +465,7 @@ class AndroidBluetoothVoiceChannelTest {
         bluetooth.setProfileProxy(BluetoothProfile.HEADSET, headset)
         bluetooth.setProfileProxy(BluetoothProfile.A2DP, a2dp)
         val states = mutableListOf<BluetoothVoiceState>()
-        val logs = mutableListOf<String>()
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add, diagnostic = logs::add) { selectedAddress }
         channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
         assertTrue(logs.any { it.contains("stage=communication-devices") && it.contains("candidates=1") &&
@@ -478,14 +478,16 @@ class AndroidBluetoothVoiceChannelTest {
         for (profile in listOf("headset", "a2dp")) {
             assertEquals(1, logs.count { it.contains("stage=headset-diagnostic profile=$profile") && it.contains("result=requested") })
         }
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        assertTrue(states.last().released)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertNull(manager.communicationDevice)
+        awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+        assertEquals("bluetooth-input-unavailable", states.last().error)
+        assertFalse(states.last().released)
+        assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+        assertEquals(otherAddress, manager.communicationDevice?.address)
+        assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
         assertTrue(logs.none { it.contains(selectedAddress) || it.contains(otherAddress) })
         assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.HEADSET))
         assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.A2DP))
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        closeChannel(channel)
     }
 
     @Test fun queuedProfileDiagnosticsCloseProxiesWithoutReportingAfterStopOrClose() {
@@ -502,7 +504,7 @@ class AndroidBluetoothVoiceChannelTest {
                 `when`(proxy.connectedDevices).thenReturn(listOf(adapter.getRemoteDevice("AA:BB:CC:DD:EE:01")))
                 bluetooth.setProfileProxy(profile, proxy)
             }
-            val logs = mutableListOf<String>()
+            val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
             val channel = AndroidBluetoothVoiceChannel(app, {}, diagnostic = logs::add) { "AA:BB:CC:DD:EE:01" }
             channel.start(config())
             if (close) channel.close() else channel.stop()
@@ -511,7 +513,7 @@ class AndroidBluetoothVoiceChannelTest {
             assertTrue(logs.none { it.contains("stage=headset-diagnostic") && it.contains("connected=") })
             assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.HEADSET))
             assertFalse(bluetooth.hasActiveProfileProxy(BluetoothProfile.A2DP))
-            channel.close(); shadowOf(Looper.getMainLooper()).idle()
+            closeChannel(channel)
         }
     }
 
@@ -531,7 +533,7 @@ class AndroidBluetoothVoiceChannelTest {
             bluetooth.setProfileProxy(profile, proxy)
         }
         var selectedAddress = oldCar
-        val logs = mutableListOf<String>()
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
         val channel = AndroidBluetoothVoiceChannel(app, {}, diagnostic = logs::add) { selectedAddress }
         channel.start(config())
         shadowOf(Looper.getMainLooper()).runOneTask()
@@ -544,79 +546,103 @@ class AndroidBluetoothVoiceChannelTest {
             bluetooth.setProfileProxy(profile, proxy)
         }
         shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
+        awaitBluetoothPlayback {
+            ReflectionHelpers.getField<String?>(channel, "activeCarAddress") == newCar &&
+                !ReflectionHelpers.getField<Boolean>(channel, "workerRetiring")
+        }
         for (profile in listOf("headset", "a2dp")) {
             assertEquals(1, logs.count { it.contains("stage=headset-diagnostic profile=$profile") && it.contains("connected=1 selectedMatch=true") })
         }
         assertTrue(logs.none { it.contains(oldCar) || it.contains(newCar) })
-        assertNull(manager.communicationDevice)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        assertNotNull(manager.communicationDevice)
+        closeChannel(channel)
     }
-    @Test fun deniedMicrophoneOrBluetoothPermissionDoesNotSelectThePhoneOrChangeMode() {
+    @Test fun deniedCaptureAndBluetoothPermissionsStillPermitSystemPlaybackWithoutRecording() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).denyPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add)
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("microphone-or-bluetooth-permission", states.last().error)
-        assertTrue(states.last().released)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertNull(manager.communicationDevice)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals("bluetooth-permission-denied", states.last().error)
+            assertFalse(states.last().released)
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertNull(manager.communicationDevice)
+            assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
+        } finally { closeChannel(channel) }
     }
-    @Test fun noCarHeadsetDoesNotFallBackAndExistingCallIsNeverPreempted() {
+
+    @Test fun noBluetoothUsesSystemPlaybackButAnExistingCallIsNeverPreempted() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add)
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("car-bluetooth-unavailable", states.last().error)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        manager.mode = AudioManager.MODE_IN_CALL
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("communication-route-busy", states.last().error)
-        assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            channel.stop()
+            awaitBluetoothPlayback { states.lastOrNull()?.state == "idle" && states.last().released }
+            manager.mode = AudioManager.MODE_IN_CALL
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
+            assertNull(manager.communicationDevice)
+            assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
+        } finally { closeChannel(channel) }
     }
 
-    @Test fun scoSelectionAloneIsNotReadyAndMissingBluetoothInputRestoresModeAndFocus() {
+    @Test fun selectedScoOutputKeepsPlayingWhenOnlyThePhoneMicrophoneIsAvailable() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
-        val car = AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO).build()
+        val car = sco("AA:BB:CC:DD:EE:01", 101)
         shadowOf(manager).setAvailableCommunicationDevices(listOf(car))
         shadowOf(manager).setInputDevices(listOf(AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BUILTIN_MIC).build()))
         val states = mutableListOf<BluetoothVoiceState>()
-        val channel = AndroidBluetoothVoiceChannel(app, states::add)
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertTrue(states.none { it.state == "active" })
-        assertEquals("bluetooth-input-unavailable", states.last().error)
-        assertTrue(states.last().released)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertNull(manager.communicationDevice)
-        assertNotNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
-        channel.stop(); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("idle", states.last().state)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add) { car.address }
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals("bluetooth-input-unavailable", states.last().error)
+            assertFalse(states.last().released)
+            assertEquals(AudioManager.MODE_IN_COMMUNICATION, manager.mode)
+            assertSame(car, manager.communicationDevice)
+            assertEquals(0, BluetoothPlaybackRecordShadow.builds.get())
+            assertNull(shadowOf(manager).lastAbandonedAudioFocusRequest)
+            channel.stop()
+            awaitBluetoothPlayback { states.lastOrNull()?.state == "idle" && states.last().released }
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertNull(manager.communicationDevice)
+        } finally { closeChannel(channel) }
     }
 
-    @Test fun multipleHeadsetsAreNotGuessedAndRejectedSelectionDoesNotLeaveCommunicationMode() {
+    @Test fun multipleOutputsRemainUsableAndRejectedScoSelectionFallsBackWithoutChangingCommunicationMode() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
         val manager = app.getSystemService(AudioManager::class.java)
-        val car = AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BLUETOOTH_SCO).build()
-        shadowOf(manager).setAvailableCommunicationDevices(listOf(car, car))
+        val car = sco("AA:BB:CC:DD:EE:01", 101)
+        val other = sco("AA:BB:CC:DD:EE:02", 102)
+        shadowOf(manager).setAvailableCommunicationDevices(listOf(car, other))
         val states = mutableListOf<BluetoothVoiceState>()
         val channel = AndroidBluetoothVoiceChannel(app, states::add)
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("multiple-bluetooth-headsets", states.last().error)
-        shadowOf(manager).setAvailableCommunicationDevices(listOf(car))
-        shadowOf(manager).lockCommunicationDevice(true)
-        channel.start(config()); shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("bluetooth-route-rejected", states.last().error)
-        assertEquals(AudioManager.MODE_NORMAL, manager.mode)
-        assertTrue(states.last().released)
-        channel.close(); shadowOf(Looper.getMainLooper()).idle()
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertSame(car, manager.communicationDevice)
+            channel.stop()
+            awaitBluetoothPlayback { states.lastOrNull()?.state == "idle" && states.last().released }
+            shadowOf(manager).setAvailableCommunicationDevices(listOf(car))
+            shadowOf(manager).lockCommunicationDevice(true)
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertNull(manager.communicationDevice)
+            assertFalse(states.last().released)
+        } finally { closeChannel(channel) }
     }
+
 }

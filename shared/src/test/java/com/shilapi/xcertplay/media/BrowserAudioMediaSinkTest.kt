@@ -430,7 +430,12 @@ class BrowserAudioMediaSinkTest {
         override fun clear(id: AudioStreamId) {}
         fun ready() { callback(BluetoothVoiceState("active")) }
         fun released() { callback(BluetoothVoiceState("idle", released = true)) }
-        fun failed() { callback(BluetoothVoiceState("failed", "car-bluetooth-unavailable", released = true)) }
+        fun failed(error: String = "car-bluetooth-unavailable", released: Boolean = true) {
+            callback(BluetoothVoiceState("failed", error, released = released))
+        }
+        fun outputReady(error: String) {
+            callback(BluetoothVoiceState("failed", error, outputReady = true))
+        }
     }
     private fun config(type: String) = MicrophoneConfig(type, 16000, 1, 97, 20,
         InetAddress.getLoopbackAddress(), 12345, ByteArray(32))
@@ -621,25 +626,125 @@ class BrowserAudioMediaSinkTest {
         reader.close()
     }
 
-    @Test fun unavailableBluetoothKeepsMusicButNeverFallsBackToBrowserSpeechOrHandsetCapture() {
+    @Test fun releasedBluetoothOrMicrophoneFailureKeepsMusicButDemandedCallsStayOutOfTheBrowser() {
+        for (reason in listOf("car-bluetooth-unavailable", "bluetooth-route-rejected", "microphone-or-bluetooth-permission")) {
+            val hub = WebAudioHub(); lateinit var voice: Voice
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+                voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+            val call = AudioStreamId(100, "telephony")
+            val demand = config("telephony")
+            val reader = hub.subscribe()
+            try {
+                sink.onMicrophoneStarted(call, demand); voice.failed(reason)
+                assertEquals("failed", hub.voiceStatus()["state"])
+                assertEquals(reason, hub.voiceStatus()["error"])
+                assertEquals(false, hub.voiceStatus()["muted"])
+                // The continuing demand retains its lease so another tap cannot race its retry.
+                assertFalse(hub.voiceRoute(Any(), "connecting", true))
+                packet(sink, call, 99)
+                packet(sink, AudioStreamId(103, "media"), 7)
+                assertEquals(7, sampleValue(requireNotNull(pcm(reader))))
+                assertNull("Android playback failure must not reroute a demanded call to the browser", pcm(reader, 50))
+                assertTrue(voice.audio.isEmpty())
+                assertEquals(listOf(demand), voice.starts)
+                sink.onMicrophoneStopped(call); voice.released()
+                assertEquals("idle", hub.voiceStatus()["state"])
+                packet(sink, call, 100)
+                assertEquals(100, sampleValue(requireNotNull(pcm(reader))))
+            } finally { sink.close(); voice.released(); reader.close() }
+        }
+    }
+
+    @Test fun workingOutputKeepsCallDownlinkPlayingWhenTheMicrophoneCannotBeUsed() {
+        for (reason in listOf("bluetooth-input-unavailable", "microphone-or-bluetooth-permission", "bluetooth-input-failed")) {
+            val hub = WebAudioHub(); lateinit var voice: Voice
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+                voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+            val reader = hub.subscribe()
+            val call = AudioStreamId(100, "telephony")
+            val demand = config("telephony")
+            try {
+                sink.onMicrophoneStarted(call, demand)
+                voice.outputReady(reason)
+                packet(sink, call, 99)
+                awaitAudio(voice, 1)
+                assertEquals(call, voice.audio.single().first)
+                assertArrayEquals(byteArrayOf(99, 0), voice.audio.single().second)
+                packet(sink, AudioStreamId(103, "media"), 7)
+                packet(sink, AudioStreamId(100, "navigation"), 8)
+                assertEquals(setOf(7, 8), List(2) { sampleValue(requireNotNull(pcm(reader))) }.toSet())
+                assertNull("the call must not also play in the browser", pcm(reader, 50))
+                assertEquals(listOf(demand), voice.starts)
+                assertEquals(0, voice.stops)
+            } finally { sink.close(); voice.released(); reader.close() }
+        }
+    }
+
+    @Test fun missingAndroidVoiceFactoryDoesNotMoveDemandedCallAudioIntoTheBrowser() {
+        val hub = WebAudioHub()
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub)
+        val reader = hub.subscribe()
+        val call = AudioStreamId(100, "telephony")
+        try {
+            sink.onMicrophoneStarted(call, config("telephony"))
+            assertEquals("car-bluetooth-unavailable", hub.voiceStatus()["error"])
+            packet(sink, call, 99)
+            packet(sink, AudioStreamId(103, "media"), 7)
+            assertEquals(7, sampleValue(requireNotNull(pcm(reader))))
+            assertNull(pcm(reader, 50))
+            sink.onMicrophoneStopped(call)
+            assertEquals("idle", hub.voiceStatus()["state"])
+            packet(sink, call, 100)
+            assertEquals(100, sampleValue(requireNotNull(pcm(reader))))
+        } finally { sink.close(); reader.close() }
+    }
+
+    @Test fun outputFailureKeepsCallsOutOfBrowserUntilBothDemandAndPlaybackOwnershipEnd() {
         val hub = WebAudioHub(); lateinit var voice: Voice
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
             voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
-        val call = AudioStreamId(100, "telephony")
         val reader = hub.subscribe()
+        val call = AudioStreamId(100, "telephony")
         try {
-            sink.onMicrophoneStarted(call, config("telephony")); voice.failed()
-            assertEquals("failed", hub.voiceStatus()["state"])
-            assertEquals("car-bluetooth-unavailable", hub.voiceStatus()["error"])
-            assertEquals(false, hub.voiceStatus()["muted"])
-            assertFalse(hub.voiceRoute(Any(), "connecting", true))
+            sink.onMicrophoneStarted(call, config("telephony"))
+            voice.failed("bluetooth-output-failed", released = false)
             packet(sink, call, 99)
             packet(sink, AudioStreamId(103, "media"), 7)
-            assertEquals(7, sampleValue(pcm(reader)!!))
-            assertNull(pcm(reader))
+            assertEquals(7, sampleValue(requireNotNull(pcm(reader))))
+            assertNull(pcm(reader, 50))
             assertTrue(voice.audio.isEmpty())
-            sink.onMicrophoneStopped(call); voice.released()
-            assertEquals("idle", hub.voiceStatus()["state"])
+            voice.failed("bluetooth-output-failed", released = true)
+            packet(sink, call, 100)
+            assertNull(pcm(reader, 50))
+            assertTrue(voice.audio.isEmpty())
+            assertEquals(1, voice.starts.size)
+            sink.onMicrophoneStopped(call)
+            voice.released()
+            packet(sink, call, 101)
+            assertEquals(101, sampleValue(requireNotNull(pcm(reader))))
+        } finally { sink.close(); voice.released(); reader.close() }
+    }
+
+    @Test fun lateOutputReadyAfterTheLastDemandStopsCannotRestartVoiceOrSuppressReleasedBrowserPlayback() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+        val reader = hub.subscribe()
+        val call = AudioStreamId(100, "telephony")
+        try {
+            sink.onMicrophoneStarted(call, config("telephony"))
+            sink.onMicrophoneStopped(call)
+            voice.outputReady("bluetooth-input-unavailable")
+            packet(sink, call, 99)
+            assertNull(pcm(reader, 50))
+            assertTrue(voice.audio.isEmpty())
+            assertEquals(1, voice.stops)
+            assertEquals(1, voice.starts.size)
+            voice.released()
+            packet(sink, call, 100)
+            assertEquals(100, sampleValue(requireNotNull(pcm(reader))))
+            assertTrue(voice.audio.isEmpty())
+            assertEquals(1, voice.starts.size)
         } finally { sink.close(); voice.released(); reader.close() }
     }
 
@@ -660,6 +765,9 @@ class BrowserAudioMediaSinkTest {
             assertEquals(1, second!!.starts.size)
             second!!.ready()
             assertEquals("active", hub.voiceStatus()["state"])
+            first.outputReady("bluetooth-input-unavailable")
+            assertEquals("active", hub.voiceStatus()["state"])
+            assertEquals(1, second!!.starts.size)
             first.released()
             assertEquals("active", hub.voiceStatus()["state"])
         } finally { next.close(); second?.released() }

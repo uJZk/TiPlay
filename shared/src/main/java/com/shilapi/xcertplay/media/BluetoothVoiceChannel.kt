@@ -4,7 +4,7 @@ import com.shilapi.xcertplay.airplay.AudioStreamId
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import java.io.Closeable
 
-/** No browser capture or software AEC. Only a verified duplex car Bluetooth route is accepted. */
+/** Prefer car Bluetooth playback; microphone capture still requires its verified Bluetooth route. */
 interface BluetoothVoiceChannel : Closeable {
     fun start(config: MicrophoneConfig)
     fun stop()
@@ -12,7 +12,8 @@ interface BluetoothVoiceChannel : Closeable {
     fun clear(id: AudioStreamId)
 }
 
-data class BluetoothVoiceState(val state: String, val error: String? = null, val released: Boolean = false)
+data class BluetoothVoiceState(val state: String, val error: String? = null, val released: Boolean = false,
+    val outputReady: Boolean = state == "active")
 
 fun interface BluetoothVoiceFactory {
     fun create(state: (BluetoothVoiceState) -> Unit): BluetoothVoiceChannel
