@@ -249,8 +249,10 @@ The focused Android proof must use the packaged libraries in an API35 target-app
 UID and `untrusted_app` SELinux domain, initialize the packaged main WebRTC
 library, gather an actual IPv4 link-local candidate and pass the existing normal
 browser/Worklet and separate original-packet checks. Emulator endpoint mapping
-does not prove Android vehicle-network routing or physical output. This proof
-and formal artifact adoption are pending; neither source tests nor new counters
+does not prove Android vehicle-network routing or physical output. Four-ABI
+producer [43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616)
+and authenticated adoption pass: packaged hashes, sizes, Build IDs and 16 KiB
+alignment match the producer. Android proof is pending; neither source tests nor new counters
 justify another blind vehicle log request.
 
 ## Matched post-stop native crash

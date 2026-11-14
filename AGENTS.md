@@ -47,8 +47,8 @@ Resume current source and release work at [Build](docs/Build.md#beta49-release).
 Post-release source work is recorded at
 [IPv4 link-local ICE](docs/Robustness.md#ipv4-link-local-ice): the reproduced
 native candidate-filter defect has a minimal patch and strict producer identity.
-Formal four-ABI adoption and Android app-UID interoperability are pending; old
-prebuilts intentionally fail release verification until replaced. Do not publish
+Four-ABI producer `43578453616` and authenticated adoption pass; Android app-UID
+interoperability is pending. Release verification rejects old identities. Do not publish
 another diagnostic-only beta or claim the vehicle cause is established.
 Beta.49/code91/browser v121 is published from
 `95850493cb6bab562992862087cde87fc94b2e0e`; signed run

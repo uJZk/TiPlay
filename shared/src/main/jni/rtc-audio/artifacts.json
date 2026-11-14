@@ -1,38 +1,154 @@
 {
   "arm64-v8a": {
-    "bytes": 2727560,
-    "sha256": "867b6db8efd07eb33213279f40fba369bc0f5f7c336e6d0e9c55d10bef77afb2",
+    "bytes": 2729112,
+    "sha256": "906ecef841f6afa86c30e548b4ffda2c28759352b7c6010122f6ddc3006e7410",
     "loadAlignments": [
       16384,
       16384,
       16384
-    ]
+    ],
+    "build_id": "98870ee090c7521998d4a54f36945d16a792a9cb",
+    "source_lock_sha256": "68155a9ebf87e1a1ebfc12b94353c8d6074dfa456a29f656222a9b5ef2142522",
+    "source_patches": {
+      "format": "tiplay-native-source-patches-v1",
+      "manifest_sha256": "60d0c1682c93c9a2a10e06a977f17b994904344edf3067390e4fbec9073e6318",
+      "patches": [
+        {
+          "id": "libjuice-ipv4-link-local",
+          "dependency": "libdatachannel/deps/libjuice",
+          "upstream_commit": "b89c792e3612faf2f12cf35bcc56857313a06be3",
+          "file": "libjuice-ipv4-link-local.patch",
+          "sha256": "1fbbe1ff61daff05e13e6ae8df224176e74b5771cc5b9cc976cc753b34070e78",
+          "targets": [
+            {
+              "path": "src/addr.c",
+              "before_sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4",
+              "after_sha256": "0b9744c3afba60b72279450100f25ca060728290a25228ecb9e38fd6c825d956"
+            }
+          ]
+        }
+      ]
+    },
+    "prepared_state_sha256": "cca35db5330e935ad6f3a0f4c6187497f1e4f28bc0fb88e657154a67947de771",
+    "native_symbols": {
+      "format": "tiplay-native-symbols-v1",
+      "index_sha256": "aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_tag": "native-symbols-rtc-audio-aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_visibility": "authenticated-draft-only"
+    }
   },
   "armeabi-v7a": {
-    "bytes": 1825436,
-    "sha256": "7c3f7aa92c53b4bb3d8b134e70124ae48442928a69dab2f027e60eb4861d2524",
+    "bytes": 1826588,
+    "sha256": "450557add7bf7e0b9a5ea59fc3a872d4dd8dfe78a8d2c65942df030a64db4f3d",
     "loadAlignments": [
       16384,
       16384,
       16384
-    ]
+    ],
+    "build_id": "f0c707f4f24840322e5134109a24ec10b641bed0",
+    "source_lock_sha256": "68155a9ebf87e1a1ebfc12b94353c8d6074dfa456a29f656222a9b5ef2142522",
+    "source_patches": {
+      "format": "tiplay-native-source-patches-v1",
+      "manifest_sha256": "60d0c1682c93c9a2a10e06a977f17b994904344edf3067390e4fbec9073e6318",
+      "patches": [
+        {
+          "id": "libjuice-ipv4-link-local",
+          "dependency": "libdatachannel/deps/libjuice",
+          "upstream_commit": "b89c792e3612faf2f12cf35bcc56857313a06be3",
+          "file": "libjuice-ipv4-link-local.patch",
+          "sha256": "1fbbe1ff61daff05e13e6ae8df224176e74b5771cc5b9cc976cc753b34070e78",
+          "targets": [
+            {
+              "path": "src/addr.c",
+              "before_sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4",
+              "after_sha256": "0b9744c3afba60b72279450100f25ca060728290a25228ecb9e38fd6c825d956"
+            }
+          ]
+        }
+      ]
+    },
+    "prepared_state_sha256": "cca35db5330e935ad6f3a0f4c6187497f1e4f28bc0fb88e657154a67947de771",
+    "native_symbols": {
+      "format": "tiplay-native-symbols-v1",
+      "index_sha256": "aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_tag": "native-symbols-rtc-audio-aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_visibility": "authenticated-draft-only"
+    }
   },
   "x86": {
-    "bytes": 2694452,
-    "sha256": "90dd2455517e6e1870f8635f9b68dbeafb1f36eb6a0f0892a282d7eee7a3b784",
+    "bytes": 2695924,
+    "sha256": "a28fa57068ebe7825aa956ab099d870b20146273a394a23b1bbc44582071f676",
     "loadAlignments": [
       16384,
       16384,
       16384
-    ]
+    ],
+    "build_id": "3e009a92d0e7d30230407d85bf50e43e9896e995",
+    "source_lock_sha256": "68155a9ebf87e1a1ebfc12b94353c8d6074dfa456a29f656222a9b5ef2142522",
+    "source_patches": {
+      "format": "tiplay-native-source-patches-v1",
+      "manifest_sha256": "60d0c1682c93c9a2a10e06a977f17b994904344edf3067390e4fbec9073e6318",
+      "patches": [
+        {
+          "id": "libjuice-ipv4-link-local",
+          "dependency": "libdatachannel/deps/libjuice",
+          "upstream_commit": "b89c792e3612faf2f12cf35bcc56857313a06be3",
+          "file": "libjuice-ipv4-link-local.patch",
+          "sha256": "1fbbe1ff61daff05e13e6ae8df224176e74b5771cc5b9cc976cc753b34070e78",
+          "targets": [
+            {
+              "path": "src/addr.c",
+              "before_sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4",
+              "after_sha256": "0b9744c3afba60b72279450100f25ca060728290a25228ecb9e38fd6c825d956"
+            }
+          ]
+        }
+      ]
+    },
+    "prepared_state_sha256": "cca35db5330e935ad6f3a0f4c6187497f1e4f28bc0fb88e657154a67947de771",
+    "native_symbols": {
+      "format": "tiplay-native-symbols-v1",
+      "index_sha256": "aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_tag": "native-symbols-rtc-audio-aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_visibility": "authenticated-draft-only"
+    }
   },
   "x86_64": {
-    "bytes": 2791376,
-    "sha256": "5e454ea96f285c2a3efe38931c2dca563b857c86f000f99018b66781ff01ff85",
+    "bytes": 2792944,
+    "sha256": "f310790ff296ba155badaff199c0aac8f811dfc50382bc1bf33f358bb09c61c0",
     "loadAlignments": [
       16384,
       16384,
       16384
-    ]
+    ],
+    "build_id": "a78a23f8c7a6256e56e8f9d459bc2f2a992b4594",
+    "source_lock_sha256": "68155a9ebf87e1a1ebfc12b94353c8d6074dfa456a29f656222a9b5ef2142522",
+    "source_patches": {
+      "format": "tiplay-native-source-patches-v1",
+      "manifest_sha256": "60d0c1682c93c9a2a10e06a977f17b994904344edf3067390e4fbec9073e6318",
+      "patches": [
+        {
+          "id": "libjuice-ipv4-link-local",
+          "dependency": "libdatachannel/deps/libjuice",
+          "upstream_commit": "b89c792e3612faf2f12cf35bcc56857313a06be3",
+          "file": "libjuice-ipv4-link-local.patch",
+          "sha256": "1fbbe1ff61daff05e13e6ae8df224176e74b5771cc5b9cc976cc753b34070e78",
+          "targets": [
+            {
+              "path": "src/addr.c",
+              "before_sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4",
+              "after_sha256": "0b9744c3afba60b72279450100f25ca060728290a25228ecb9e38fd6c825d956"
+            }
+          ]
+        }
+      ]
+    },
+    "prepared_state_sha256": "cca35db5330e935ad6f3a0f4c6187497f1e4f28bc0fb88e657154a67947de771",
+    "native_symbols": {
+      "format": "tiplay-native-symbols-v1",
+      "index_sha256": "aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_tag": "native-symbols-rtc-audio-aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879",
+      "archive_visibility": "authenticated-draft-only"
+    }
   }
 }
