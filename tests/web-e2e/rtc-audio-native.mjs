@@ -55,7 +55,7 @@ const server = createServer((request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const fixture = JSON.parse(readFileSync(resolve(root, 'tests/web/fixtures/neteq-opus.json'), 'utf8'));
 let browser, child, page, blackhole, blackholeEndpoint, blackholeRequests = 0, encodedFallbackRecordsDelivered = 0, stderr = '', sequence = 0;
-let outcomeReport;
+let outcomeReport, topologyFixture;
 const pending = new Map(), events = [], ownerBindings = new Map(), expectedFrames = new Map();
 function verifiedAndroidProof(requireFinished = false) {
   if (runtimeBackend !== 'android') return null;
@@ -65,6 +65,7 @@ function verifiedAndroidProof(requireFinished = false) {
   assert.match(runtime.selinuxType, /^untrusted_app(?:_[0-9]+)?$/, 'Android proof must use the ordinary app SELinux domain.');
   assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64');
   assert.equal(runtime.mainWebRtcInitialized, true, 'The packaged main WebRTC library was not initialized first.');
+  assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean', 'Missing observation of the emulator redirection address.');
   assert.match(proof.apkSha256, /^[0-9a-f]{64}$/);
   assert.match(proof.testApkSha256, /^[0-9a-f]{64}$/);
   assert.match(proof.sourceCommit, /^[0-9a-f]{40}$/);
@@ -111,6 +112,44 @@ async function closeHarnessResources(actions) {
     }
   }
   return failures;
+}
+async function closeAndroidChild() {
+  const errors = [];
+  if (child?.exitCode === null) {
+    try { await command('close'); } catch (error) { errors.push(error); }
+  }
+  try { await child?.close(); } catch (error) { errors.push(error); }
+  if (errors.length) throw new AggregateError(errors, 'Android test driver cleanup failed.');
+}
+async function collectAndroidUdpFixture(command, backend) {
+  const fixture = { host: null, guest: null, passed: false };
+  let error;
+  try {
+    const started = await command('udp-probe-start');
+    assert.ok(Number.isInteger(started.port) && started.port > 0 && started.port <= 65535, 'Invalid Android UDP probe port.');
+    fixture.host = await backend.probeUdpFixture(started.port);
+  } catch (cause) { error = cause; fixture.failureClass = cause.constructor.name; }
+  finally {
+    try { fixture.guest = (await command('udp-probe-result')).udpProbe ?? null; }
+    catch (cause) { fixture.guestResultFailureClass = cause.constructor.name; error ??= cause; }
+  }
+  if (fixture.host === null) {
+    try { fixture.host = backend.proof?.udpFixture ?? null; }
+    catch (cause) { fixture.proofFailureClass = cause.constructor.name; error ??= cause; }
+  }
+  return { fixture, error };
+}
+function verifyAndroidUdpFixture(fixture) {
+  assert.equal(fixture.host?.nonceMatched, true, 'Android UDP fixture did not return the original nonce.');
+  assert.equal(fixture.host.timedOut, false); assert.equal(fixture.host.errors, 0);
+  for (const name of ['attempts', 'sentDatagrams', 'receivedDatagrams'])
+    assert.ok(Number.isSafeInteger(fixture.host[name]) && fixture.host[name] > 0, 'No completed host UDP probe exchange was recorded.');
+  assert.equal(fixture.host.cleanupComplete, true, 'UDP fixture mappings did not finish cleanup.');
+  for (const name of ['receivedDatagrams', 'echoedDatagrams'])
+    assert.ok(Number.isSafeInteger(fixture.guest?.[name]) && fixture.guest[name] > 0, 'The app did not observe and echo the UDP probe.');
+  assert.equal(fixture.guest.errors, 0); assert.equal(fixture.guest.closed, true);
+  assert.equal(fixture.guest.workerTerminated, true, 'The app UDP fixture worker did not terminate.');
+  fixture.passed = true;
 }
 function injectedSdp(sdp) {
   if (fault === 'wrong-ice-password') return sdp.replace(/^a=ice-pwd:(\S+)/gm,
@@ -178,6 +217,12 @@ try {
       page?.evaluate(value => nativeAudioEvent(value), value).catch(() => {});
     }
   });
+  if (runtimeBackend === 'android') {
+    const collected = await collectAndroidUdpFixture(command, child);
+    topologyFixture = collected.fixture;
+    if (collected.error) throw collected.error;
+    verifyAndroidUdpFixture(topologyFixture);
+  }
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM || '/usr/bin/chromium', headless: true,
     args: ['--no-sandbox', '--no-proxy-server', '--autoplay-policy=no-user-gesture-required'] });
   page = await browser.newPage(); const pageErrors = [];
@@ -361,7 +406,7 @@ try {
       encodedFramesVerified: encodedTapEnabled ? result.encodedFrames.length : null,
       encodedPayloadsByteExact: encodedTapEnabled ? true : null, rtpTimestampsExact: encodedTapEnabled ? true : null,
       encodedTapInitializations: encodedTapEnabled ? result.encodedTapInitializations.length : null,
-      encodedFallbackRecordsDelivered, androidRuntimeProof,
+      encodedFallbackRecordsDelivered, androidRuntimeProof, topologyFixture: topologyFixture ?? null,
       physicalOutputMeasured: false });
   }
 } catch (cause) {
@@ -381,13 +426,14 @@ try {
   const snapshot = child?.exitCode === null ? await command('snapshot').catch(() => null) : null;
   const blocked = diagnostics?.peers?.some(peer => peer.localCandidates === 0) === true;
   await report({ status: blocked ? 'blocked' : 'failed', injectedFault: fault, runtimeBackend, diagnostics,
+    topologyFixture: topologyFixture ?? null,
     androidRuntimeProof: runtimeBackend === 'android' ? child?.proof ?? null : null,
     native: snapshot?.snapshot, nativeStderrBytes: stderr.length, failureClass: cause.constructor.name });
   console.error(cause.message);
   process.exitCode = 1;
 } finally {
   const cleanupFailures = await closeHarnessResources([
-    ['child', () => runtimeBackend === 'android' ? child?.close() : child?.kill()],
+    ['child', () => runtimeBackend === 'android' ? closeAndroidChild() : child?.kill()],
     ['browser', () => browser?.close()],
     ['blackhole', () => blackhole && new Promise((resolve, reject) => {
       try { blackhole.close(resolve); } catch (error) { reject(error); }
@@ -397,6 +443,8 @@ try {
       if (runtimeBackend !== 'android' || !outcomeReport) return;
       outcomeReport = { ...outcomeReport, androidRuntimeProof: null };
       outcomeReport.androidRuntimeProof = child?.proof ?? null;
+      if (outcomeReport.topologyFixture && outcomeReport.androidRuntimeProof?.udpFixture)
+        outcomeReport.topologyFixture = { ...outcomeReport.topologyFixture, host: outcomeReport.androidRuntimeProof.udpFixture };
     }],
   ]);
   if (cleanupFailures.length) {

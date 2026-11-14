@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { isIPv4 } from 'node:net';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { countIpv4LinkLocalHostCandidates, drainAndRemoveMappings, instrumentationResultCollector,
+import { acceptUpstreamDatagram, countIpv4LinkLocalHostCandidates, drainAndRemoveMappings, instrumentationResultCollector,
   removeAndroidMapping, runCleanupActions } from './android-audio-probe.mjs';
 
 test('cleanup attempts every owned resource and retains failed emulator redirects', async () => {
@@ -29,6 +30,97 @@ test('cleanup attempts every owned resource and retains failed emulator redirect
   failFirst = false;
   await removeAndroidMapping({ key: 'one', value: mappings.get('one'), mappings, nat, runAdb });
   assert.equal(mappings.size, 0); assert.equal(nat.activeMappings, 0); assert.equal(nat.redirectCommandsRemoved, 2);
+});
+
+test('upstream counters distinguish raw replies and each strict filter rejection', () => {
+  const counters = { upstreamReceivedDatagrams: 0, fromGuestDatagrams: 0, droppedAddressDatagrams: 0, droppedPortDatagrams: 0 };
+  assert.equal(acceptUpstreamDatagram(counters, { address: '192.0.2.1', port: 1234 }, 1234), false);
+  assert.equal(acceptUpstreamDatagram(counters, { address: '127.0.0.1', port: 9999 }, 1234), false);
+  assert.equal(acceptUpstreamDatagram(counters, { address: '127.0.0.1', port: 1234 }, 1234), true);
+  assert.deepEqual(counters, { upstreamReceivedDatagrams: 3, fromGuestDatagrams: 1, droppedAddressDatagrams: 1, droppedPortDatagrams: 1 });
+});
+
+function fixtureController({ echo = false, failSetup = false, failRemove = false, failSend = false } = {}) {
+  const source = readFileSync(new URL('./android-audio-probe.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('  function probeUdpFixture('), end = source.indexOf('\n  async function mapAnswer(', start);
+  assert.ok(start > 0 && end > start);
+  const mappings = new Map(), calls = [], timers = {}, mediaCounters = { peerGenerationsCreated: 0, mappingsCreated: 0 };
+  const counters = () => ({ mappingsCreated: 0, activeMappings: 0, toGuestDatagrams: 0, fromGuestDatagrams: 0,
+    upstreamReceivedDatagrams: 0, droppedAddressDatagrams: 0, droppedPortDatagrams: 0, forwardingErrors: 0,
+    redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 });
+  const mapping = async (owner, port, counts) => {
+    assert.equal(owner, 'udp-fixture'); assert.notEqual(counts, mediaCounters);
+    if (failSetup) throw Error('private setup endpoint');
+    const value = { port: 40001, counters: counts };
+    mappings.set(owner + ':' + port, value);
+    counts.mappingsCreated++; counts.activeMappings++; counts.redirectCommandsSucceeded++;
+    return value;
+  };
+  const removeMapping = async (key, entry) => {
+    calls.push('remove');
+    if (failRemove) throw Error('private redirection endpoint');
+    mappings.delete(key); entry.counters.activeMappings--; entry.counters.redirectCommandsRemoved++;
+  };
+  const createSocket = () => {
+    const socket = new EventEmitter();
+    socket.bind = (port, address, done) => done();
+    socket.close = done => { calls.push('client-close'); done(); };
+    socket.send = (bytes, port, address, done) => {
+      calls.push('send');
+      if (failSend) throw Error('private synchronous send endpoint');
+      done(null);
+      if (echo) queueMicrotask(() => socket.emit('message', Buffer.from(bytes), { port, address }));
+    };
+    return socket;
+  };
+  const controller = new Function('assert', 'udpCounters', 'randomBytes', 'mapping', 'createSocket', 'hostAddress', 'mappings', 'removeMapping', 'runCleanupActions',
+    'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+    'let udpFixtureRun, udpFixtureProof; const closingStarted = false;\n' + source.slice(start, end) + '\nreturn {probeUdpFixture, get proof() { return udpFixtureProof; }};')(
+    assert, counters, size => Buffer.alloc(size, 7), mapping, createSocket, '192.0.2.10', mappings, removeMapping, runCleanupActions,
+    callback => { timers.deadline = callback; return 'deadline'; }, callback => { timers.retry = callback; return 'retry'; },
+    name => { calls.push('clear-' + name); }, name => { calls.push('clear-' + name); });
+  return { controller, mappings, calls, timers, mediaCounters };
+}
+
+test('actual UDP fixture verifies nonce and cleans its separate mapping before returning', async () => {
+  const { controller, mappings, mediaCounters, calls } = fixtureController({ echo: true });
+  const result = await controller.probeUdpFixture(12345);
+  assert.equal(result.nonceMatched, true); assert.equal(result.timedOut, false);
+  assert.equal(result.errors, 0); assert.equal(result.cleanupComplete, true);
+  assert.equal(result.counters.redirectCommandsSucceeded, 1); assert.equal(result.counters.redirectCommandsRemoved, 1);
+  assert.equal(mappings.size, 0); assert.deepEqual(mediaCounters, { peerGenerationsCreated: 0, mappingsCreated: 0 });
+  assert.deepEqual(calls.slice(-2), ['client-close', 'remove']);
+  assert.ok(!('port' in result) && !('nonce' in result));
+});
+
+test('actual UDP fixture timeout returns evidence and preserves failed redirect ownership', async () => {
+  const { controller, mappings, timers } = fixtureController({ failRemove: true });
+  const pending = controller.probeUdpFixture(12345);
+  while (!timers.deadline) await Promise.resolve();
+  for (let count = 0; count < 7; count++) timers.retry();
+  timers.deadline();
+  const result = await pending;
+  assert.equal(result.timedOut, true); assert.equal(result.nonceMatched, false);
+  assert.equal(result.attempts, 5); assert.equal(result.sentDatagrams, 5);
+  assert.equal(result.cleanupComplete, false); assert.equal(result.errors, 1);
+  assert.equal(result.counters.activeMappings, 1); assert.equal(mappings.size, 1);
+});
+
+test('actual UDP fixture infrastructure failure retains safe proof and exposes no raw endpoint', async () => {
+  const { controller } = fixtureController({ failSetup: true });
+  await assert.rejects(controller.probeUdpFixture(12345), error => {
+    assert.equal(error.message, 'Android UDP topology control infrastructure failed.'); return true;
+  });
+  assert.equal(controller.proof.failureClass, 'Error'); assert.equal(controller.proof.errors, 1);
+  assert.equal(controller.proof.cleanupComplete, true); assert.equal(controller.proof.counters.activeMappings, 0);
+});
+
+test('actual UDP fixture synchronous send failure clears timers and returns evidence for guest retrieval', async () => {
+  const { controller, mappings, calls } = fixtureController({ failSend: true });
+  const result = await controller.probeUdpFixture(12345);
+  assert.equal(result.nonceMatched, false); assert.equal(result.errors, 1);
+  assert.equal(result.cleanupComplete, true); assert.equal(mappings.size, 0);
+  assert.deepEqual(calls, ['send', 'clear-deadline', 'clear-retry', 'client-close', 'remove']);
 });
 
 test('cleanup drains a pending redirect add before taking its mapping snapshot', async () => {

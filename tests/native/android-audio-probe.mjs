@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 
 const execFile = promisify(execFileCallback);
 const targetPackage = 'com.ujzk.tiplay.hudtest';
@@ -70,7 +71,22 @@ export async function removeAndroidMapping({ key, value, mappings, nat, runAdb }
   })));
   const removed = await runAdb(['emu', 'redir', 'del', `udp:${value.redirectPort}`]);
   assert.match(removed.stdout, /\bOK\b/, 'The emulator did not remove the owned UDP mapping.');
-  mappings.delete(key); nat.activeMappings = mappings.size; nat.redirectCommandsRemoved++;
+  mappings.delete(key);
+  nat.activeMappings = [...mappings.values()].filter(entry => !entry.counters || entry.counters === nat).length;
+  nat.redirectCommandsRemoved++;
+}
+
+export function acceptUpstreamDatagram(counters, sender, redirectPort) {
+  counters.upstreamReceivedDatagrams++;
+  if (sender.address !== '127.0.0.1') { counters.droppedAddressDatagrams++; return false; }
+  if (sender.port !== redirectPort) { counters.droppedPortDatagrams++; return false; }
+  counters.fromGuestDatagrams++; return true;
+}
+
+function udpCounters() {
+  return { mappingsCreated: 0, activeMappings: 0, toGuestDatagrams: 0, fromGuestDatagrams: 0,
+    upstreamReceivedDatagrams: 0, droppedAddressDatagrams: 0, droppedPortDatagrams: 0,
+    forwardingErrors: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 };
 }
 
 export async function drainAndRemoveMappings(responseChain, mappings, removeMapping) {
@@ -133,12 +149,12 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
   const stdout = new PassThrough(), stderr = new PassThrough();
   const portReady = deferred(), proofReady = deferred(), exited = deferred();
   const mappings = new Map(), generations = new Set(), linkLocalGenerations = new Set();
-  const nat = { peerGenerationsCreated: 0, mappingsCreated: 0, activeMappings: 0,
-    toGuestDatagrams: 0, fromGuestDatagrams: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0,
+  const nat = { ...udpCounters(), peerGenerationsCreated: 0,
     linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0 };
   const instrumentationResult = instrumentationResultCollector();
   let instrumentation, socket, forwardPort, runtimeProof, finishedNormally = false, exitCode = null, closing, closingStarted = false;
   let responseChain = Promise.resolve();
+  let udpFixtureRun, udpFixtureProof;
   const startupTimer = setTimeout(() => { portReady.reject(Error('Android instrumentation startup timed out.'));
     proofReady.reject(Error('Android runtime proof timed out.')); }, 60000);
 
@@ -146,14 +162,15 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     const sourceCommit = process.env.GITHUB_SHA || process.env.ANDROID_AUDIO_SOURCE_SHA;
     return { ...(runtimeProof || {}), testApkSha256: inspected.test.sha256,
       sourceCommit: /^[0-9a-f]{40}$/.test(sourceCommit || '') ? sourceCommit : null,
-      nat: { ...nat }, finishedNormally, instrumentationResult: { ...instrumentationResult.result } };
+      nat: { ...nat }, udpFixture: udpFixtureProof ? { ...udpFixtureProof, counters: { ...udpFixtureProof.counters } } : null,
+      finishedNormally, instrumentationResult: { ...instrumentationResult.result } };
   }
 
   async function removeMapping(key, value) {
-    await removeAndroidMapping({ key, value, mappings, nat, runAdb });
+    await removeAndroidMapping({ key, value, mappings, nat: value.counters, runAdb });
   }
 
-  async function mapping(generation, guestPort) {
+  async function mapping(generation, guestPort, counters = nat) {
     assert.equal(closingStarted, false, 'Android probe is closing.');
     const key = `${generation}:${guestPort}`;
     if (mappings.has(key)) return mappings.get(key);
@@ -162,7 +179,11 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
       udp.once('error', reject); udp.bind(0, address, () => { udp.removeListener('error', reject); resolve(); });
     });
     const forwardingError = () => {
-      if (!closingStarted && mappings.has(key)) socket?.destroy(Error('Android UDP forwarding failed.'));
+      if (!closingStarted && mappings.has(key)) {
+        counters.forwardingErrors++;
+        // A failed fixture relay must leave RPC available for guest counters.
+        if (counters === nat) socket?.destroy(Error('Android UDP forwarding failed.'));
+      }
     };
     let redirectPort, redirectInstalled = false;
     try {
@@ -172,9 +193,9 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
       assert.equal(closingStarted, false, 'Android probe is closing.');
       const added = await runAdb(['emu', 'redir', 'add', `udp:${redirectPort}:${guestPort}`]);
       assert.match(added.stdout, /\bOK\b/, 'The emulator did not create the UDP mapping.');
-      redirectInstalled = true; nat.redirectCommandsSucceeded++;
-      const value = { publicSocket, flows, redirectPort, port: publicSocket.address().port };
-      mappings.set(key, value); nat.mappingsCreated++; nat.activeMappings = mappings.size;
+      redirectInstalled = true; counters.redirectCommandsSucceeded++;
+      const value = { publicSocket, flows, redirectPort, port: publicSocket.address().port, counters };
+      mappings.set(key, value); counters.mappingsCreated++; counters.activeMappings++;
       // A close may have begun while adb was adding the owned redirect. Record
       // it first, then withdraw it through the same confirmed cleanup path.
       assert.equal(closingStarted, false, 'Android probe is closing.');
@@ -191,12 +212,11 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
           flow.ready.then(() => upstream.on('error', forwardingError), forwardingError);
           // Keep each browser source tuple distinct through the emulator NAT.
           upstream.on('message', (response, sender) => {
-            if (sender.address !== '127.0.0.1' || sender.port !== redirectPort) return;
-            nat.fromGuestDatagrams++;
+            if (!acceptUpstreamDatagram(counters, sender, redirectPort)) return;
             publicSocket.send(response, peer.port, peer.address, error => { if (error) forwardingError(); });
           });
         }
-        nat.toGuestDatagrams++;
+        counters.toGuestDatagrams++;
         flow.ready.then(() => {
           if (closingStarted || !mappings.has(key)) return;
           flow.socket.send(bytes, redirectPort, '127.0.0.1', error => { if (error) forwardingError(); });
@@ -208,6 +228,70 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
       if (redirectInstalled) await removeMapping(key, mappings.get(key)).catch(() => {});
       throw error;
     }
+  }
+
+  function probeUdpFixture(guestPort) {
+    assert.ok(!udpFixtureRun, 'Run the Android UDP topology control once.');
+    assert.ok(Number.isInteger(guestPort) && guestPort > 0 && guestPort <= 65535, 'Invalid UDP control port.');
+    const counters = udpCounters(), nonce = randomBytes(32);
+    const result = { nonceMatched: false, timedOut: false, attempts: 0, sentDatagrams: 0,
+      receivedDatagrams: 0, unexpectedPayloadDatagrams: 0, errors: 0, cleanupComplete: false, counters };
+    udpFixtureProof = result;
+    udpFixtureRun = (async () => {
+      let client, entry, infrastructureError;
+      const key = `udp-fixture:${guestPort}`;
+      try {
+        entry = await mapping('udp-fixture', guestPort, counters);
+        assert.equal(closingStarted, false, 'Android probe is closing.');
+        client = createSocket('udp4');
+        await new Promise((resolve, reject) => {
+          client.once('error', reject);
+          client.bind(0, hostAddress, () => { client.removeListener('error', reject); resolve(); });
+        });
+        await new Promise(resolve => {
+          let done = false;
+          const finish = () => {
+            if (done) return; done = true;
+            clearTimeout(deadline); clearInterval(retry); resolve();
+          };
+          const send = () => {
+            if (closingStarted) { result.errors++; finish(); return; }
+            if (result.attempts >= 5) return;
+            result.attempts++;
+            try {
+              client.send(nonce, entry.port, hostAddress, error => {
+                if (error) { result.errors++; finish(); } else result.sentDatagrams++;
+              });
+            } catch { result.errors++; finish(); }
+          };
+          const deadline = setTimeout(() => { result.timedOut = true; finish(); }, 3000);
+          const retry = setInterval(send, 500);
+          client.on('error', () => { result.errors++; finish(); });
+          client.on('message', (bytes, sender) => {
+            result.receivedDatagrams++;
+            if (sender.address === hostAddress && sender.port === entry.port && bytes.equals(nonce)) {
+              result.nonceMatched = true; finish();
+            } else result.unexpectedPayloadDatagrams++;
+          });
+          send();
+        });
+      } catch (error) {
+        result.failureClass = error.constructor.name;
+        result.errors++; infrastructureError = true;
+      } finally {
+        try {
+          await runCleanupActions([
+            ['udp-control-client', async () => { if (client) await new Promise(resolve => { try { client.close(resolve); } catch { resolve(); } }); }],
+            ['udp-control-mapping', async () => { if (mappings.has(key)) await removeMapping(key, mappings.get(key)); }],
+          ]);
+          result.cleanupComplete = counters.activeMappings === 0;
+        } catch { result.errors++; }
+        result.errors += counters.forwardingErrors;
+      }
+      if (infrastructureError) throw Error('Android UDP topology control infrastructure failed.');
+      return { ...result, counters: { ...counters } };
+    })();
+    return udpFixtureRun;
   }
 
   async function mapAnswer(value) {
@@ -249,6 +333,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     assert.ok(Number.isInteger(runtime.uid) && runtime.uid >= 10000 && runtime.uid === runtime.applicationUid);
     assert.match(runtime.selinuxType, /^untrusted_app(?:_\d+)?$/);
     assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64'); assert.equal(runtime.mainWebRtcInitialized, true);
+    assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean');
     for (const name of libraryNames) assert.deepEqual(value.libraries[name], inspected.app.libraries[name], 'Packaged Android library changed.');
     runtimeProof = value; clearTimeout(startupTimer); proofReady.resolve();
   }
@@ -268,7 +353,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
         ['rpc-destroy', async () => { socket?.destroy(); }],
         // No new response may enqueue once closingStarted is true. Drain the
         // in-flight mapper before taking the owned-redirection snapshot.
-        ['response-and-mappings', () => drainAndRemoveMappings(responseChain, mappings, removeMapping)],
+        ['response-and-mappings', () => drainAndRemoveMappings(Promise.allSettled([responseChain, udpFixtureRun]), mappings, removeMapping)],
         ['adb-forward', async () => { if (forwardPort) await runAdb(['forward', '--remove', `tcp:${forwardPort}`]); }],
         ['stdout-end', async () => { stdout.end(); }],
         ['stderr-end', async () => { stderr.end(); }],
@@ -322,7 +407,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     });
     await proofReady.promise;
     return { stdin: socket, stdout, stderr, get exitCode() { return exitCode; }, get proof() { return proof(); },
-      kill() { void close().catch(() => {}); return true; }, close };
+      kill() { void close().catch(() => {}); return true; }, close, probeUdpFixture };
   } catch (error) {
     await close().catch(() => {});
     throw error;

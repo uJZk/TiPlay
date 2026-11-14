@@ -66,7 +66,7 @@ class AudioInteropWorkflowTest(unittest.TestCase):
         self.assertIn("runtimeBackend === 'host' || fault === 'none'", source)
         self.assertIn("if (runtimeBackend === 'host')", source)
         self.assertIn("await import('../native/android-audio-probe.mjs')", source)
-        self.assertIn("runtimeBackend === 'android' ? child?.close()", source)
+        self.assertIn("runtimeBackend === 'android' ? closeAndroidChild()", source)
         self.assertIn("await child.close()", source)
         self.assertIn("/^emulator-[0-9]+$/", source)
         self.assertIn("runtime.uid, runtime.applicationUid", source)
@@ -80,7 +80,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(process.argv[1], 'utf8');
 const body = source.slice(source.indexOf('function verifiedAndroidProof('), source.indexOf('async function report('));
 const base = { runtime: { uid: 10123, applicationUid: 10123, selinuxType: 'untrusted_app_32', api: 35,
-  abi: 'x86_64', mainWebRtcInitialized: true }, apkSha256: 'a'.repeat(64), testApkSha256: 'b'.repeat(64),
+  abi: 'x86_64', mainWebRtcInitialized: true, qemuDefaultIpv4Present: false }, apkSha256: 'a'.repeat(64), testApkSha256: 'b'.repeat(64),
   sourceCommit: 'd'.repeat(40), nat: { peerGenerationsCreated: 2, mappingsCreated: 2, activeMappings: 0,
     toGuestDatagrams: 123, fromGuestDatagrams: 456, redirectCommandsSucceeded: 2, redirectCommandsRemoved: 2,
     linkLocalCandidateGenerations: 2, observedLinkLocalHostCandidates: 2 },
@@ -116,33 +116,89 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const source = readFileSync(process.argv[1], 'utf8');
 const helperBody = source.slice(source.indexOf('async function closeHarnessResources('), source.indexOf('function injectedSdp('));
-const helper = new Function(helperBody + '; return closeHarnessResources;')();
+const build = new Function('child', 'command', 'assert', helperBody + '; return {closeHarnessResources, closeAndroidChild};');
+const helper = build(null, null, assert).closeHarnessResources;
 const tail = source.slice(source.lastIndexOf('} finally {') + '} finally {'.length).trim();
 assert.equal(tail.endsWith('}'), true);
 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
 const cleanup = new AsyncFunction('runtimeBackend', 'child', 'browser', 'blackhole', 'server',
-  'closeHarnessResources', 'persistReport', 'process', 'outcomeReport', tail.slice(0, -1) + '; return outcomeReport;');
+  'closeHarnessResources', 'closeAndroidChild', 'persistReport', 'process', 'outcomeReport', tail.slice(0, -1) + '; return outcomeReport;');
 for (const initial of [{ status: 'passed' }, { status: 'blocked', failureClass: 'OriginalFailure' }]) {
   const attempted = [], written = [], processState = {}, finalProof = { nat: { activeMappings: 2 } };
   const fail = name => { attempted.push(name); throw Error('private-error-that-must-not-reach-the-report'); };
-  const result = await cleanup('android', { close: () => { finalProof.nat.activeMappings = 1; return fail('child'); },
-    get proof() { return structuredClone(finalProof); } }, { close: () => fail('browser') },
+  const child = { exitCode: null, close: () => { finalProof.nat.activeMappings = 1; return fail('child'); },
+    get proof() { return structuredClone(finalProof); } };
+  const closeChild = build(child, async kind => { assert.equal(kind, 'close'); attempted.push('close-rpc'); }, assert).closeAndroidChild;
+  const result = await cleanup('android', child, { close: () => fail('browser') },
     { close: () => fail('blackhole') }, { close: callback => { attempted.push('server'); callback(); } },
-    helper, value => written.push(value), processState, initial);
-  assert.deepEqual(attempted, ['child', 'browser', 'blackhole', 'server']);
+    helper, closeChild, value => written.push(value), processState, initial);
+  assert.deepEqual(attempted, ['close-rpc', 'child', 'browser', 'blackhole', 'server']);
   assert.equal(processState.exitCode, 1); assert.equal(written.length, 1);
   assert.equal(result.status, initial.status === 'passed' ? 'failed' : 'blocked');
   assert.equal(result.failureClass, initial.failureClass);
   assert.equal(result.androidRuntimeProof.nat.activeMappings, 1, 'Persist the post-cleanup residue, not the earlier snapshot.');
-  assert.deepEqual(result.cleanupFailures, ['child', 'browser', 'blackhole'].map(stage => ({ stage, exception: 'Error' })));
+  assert.deepEqual(result.cleanupFailures, [{stage: 'child', exception: 'AggregateError'},
+    {stage: 'browser', exception: 'Error'}, {stage: 'blackhole', exception: 'Error'}]);
   assert.equal(JSON.stringify(result).includes('private-error'), false);
 }
 const attempted = [], processState = {}, written = [];
 const result = await cleanup('host', { kill: () => attempted.push('child') }, { close: () => attempted.push('browser') },
-  null, { close: callback => { attempted.push('server'); callback(); } }, helper, value => written.push(value), processState,
+  null, { close: callback => { attempted.push('server'); callback(); } }, helper, null, value => written.push(value), processState,
   { status: 'passed' });
 assert.deepEqual(attempted, ['child', 'browser', 'server']); assert.equal(result.status, 'passed');
 assert.equal(processState.exitCode, undefined); assert.equal(written.length, 1);
+const order = [], closedProof = {finishedNormally: false};
+const android = {exitCode: null, close: async () => { order.push('backend'); closedProof.finishedNormally = true; },
+  get proof() { return closedProof; }};
+const closeChild = build(android, async () => { order.push('rpc'); throw Error('close-rpc-failed'); }, assert).closeAndroidChild;
+const failedProcess = {}, failedReport = [];
+const failed = await cleanup('android', android, null, null, {close: callback => callback()}, helper, closeChild,
+  value => failedReport.push(value), failedProcess, {status: 'failed', failureClass: 'OriginalMediaTimeout'});
+assert.deepEqual(order, ['rpc', 'backend']); assert.equal(failedProcess.exitCode, 1);
+assert.equal(failed.failureClass, 'OriginalMediaTimeout'); assert.equal(failed.androidRuntimeProof.finishedNormally, true);
+android.exitCode = 0; order.length = 0;
+await build(android, async () => assert.fail('Do not repeat a successful close RPC.'), assert).closeAndroidChild();
+assert.deepEqual(order, ['backend']);
+"""
+        completed = subprocess.run(["node", "--input-type=module", "-e", script, str(HARNESS)],
+                                   text=True, capture_output=True, timeout=10)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_udp_fixture_collects_guest_result_before_accepting_or_failing(self):
+        script = r"""
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const source = readFileSync(process.argv[1], 'utf8');
+const body = source.slice(source.indexOf('async function collectAndroidUdpFixture('), source.indexOf('function injectedSdp('));
+const {collectAndroidUdpFixture: collect, verifyAndroidUdpFixture: verify} = new Function('assert', body
+  + '; return {collectAndroidUdpFixture, verifyAndroidUdpFixture};')(assert);
+const host = {nonceMatched: true, timedOut: false, attempts: 1, sentDatagrams: 1, receivedDatagrams: 1,
+  errors: 0, cleanupComplete: true};
+const guest = {receivedDatagrams: 1, echoedDatagrams: 1, errors: 0, closed: true, workerTerminated: true};
+for (const mode of ['success', 'timeout', 'throw']) {
+  const order = [], failure = Error('private-endpoint-message');
+  const backend = {probeUdpFixture: async port => {
+    order.push('host'); assert.equal(port, 12345);
+    if (mode === 'throw') throw failure;
+    return mode === 'success' ? structuredClone(host) : {...host, nonceMatched: false, timedOut: true, receivedDatagrams: 0};
+  }, proof: {udpFixture: {...host, nonceMatched: false, cleanupComplete: false}}};
+  const result = await collect(async kind => {
+    order.push(kind); return kind === 'udp-probe-start' ? {port: 12345} : {udpProbe: structuredClone(guest)};
+  }, backend);
+  assert.deepEqual(order, ['udp-probe-start', 'host', 'udp-probe-result']);
+  assert.deepEqual(result.fixture.guest, guest);
+  if (mode === 'success') { verify(result.fixture); assert.equal(result.fixture.passed, true); }
+  else { assert.throws(() => verify(result.fixture)); assert.equal(result.fixture.passed, false); }
+  if (mode === 'throw') assert.equal(result.error, failure);
+  assert.equal(JSON.stringify(result.fixture).includes('private-endpoint'), false);
+  assert.equal(JSON.stringify(result.fixture).includes('12345'), false);
+}
+const result = await collect(async kind => {
+  if (kind === 'udp-probe-result') throw Error('result-failed'); return {port: 12345};
+}, {probeUdpFixture: async () => structuredClone(host)});
+assert.equal(result.fixture.guest, null); assert.equal(result.fixture.guestResultFailureClass, 'Error');
+assert.throws(() => verify(result.fixture));
+assert.ok(source.indexOf('await collectAndroidUdpFixture(command, child)') < source.indexOf('browser = await chromium.launch'));
 """
         completed = subprocess.run(["node", "--input-type=module", "-e", script, str(HARNESS)],
                                    text=True, capture_output=True, timeout=10)

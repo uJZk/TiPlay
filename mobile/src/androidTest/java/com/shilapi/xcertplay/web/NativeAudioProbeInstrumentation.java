@@ -16,8 +16,13 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -30,6 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import kotlin.Unit;
@@ -42,6 +48,7 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
     private PrintWriter output;
     private Bundle arguments;
     private String stage = "instrumentation-start";
+    private UdpEchoProbe udpProbe;
 
     @Override public void onCreate(Bundle values) {
         arguments = values == null ? new Bundle() : new Bundle(values);
@@ -95,6 +102,18 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
                             Map<String, Object> value;
                             List<byte[]> records = new ArrayList<>(router.drainMetadata());
                             switch (kind) {
+                                case "udp-probe-start":
+                                    if (udpProbe != null) throw new IllegalStateException("probe-udp-already-started");
+                                    udpProbe = new UdpEchoProbe();
+                                    value = response(command, "udp-probe-start");
+                                    value.put("port", udpProbe.port());
+                                    break;
+                                case "udp-probe-result":
+                                    if (udpProbe == null) throw new IllegalStateException("probe-udp-not-started");
+                                    udpProbe.close();
+                                    value = response(command, "udp-probe-result");
+                                    value.put("udpProbe", udpProbe.snapshot());
+                                    break;
                                 case "ready":
                                     value = response(command, "readyok");
                                     Object fields = command.get("fields");
@@ -131,6 +150,16 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             recordFailure(result, error);
         } finally {
             // Each owned cleanup is attempted, and failure cannot skip finish().
+            try {
+                if (udpProbe != null) {
+                    udpProbe.close();
+                    if (!udpProbe.terminated()) throw new IllegalStateException("probe-udp-stop-timeout");
+                }
+            } catch (Throwable error) {
+                if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                stage = "udp-probe-close"; recordFailure(result, error);
+                resultCode = Activity.RESULT_CANCELED; result.remove("tiplayProbeCompleted");
+            }
             try { if (router != null) router.close(); }
             catch (Throwable error) {
                 stage = "native-router-close"; recordFailure(result, error);
@@ -201,9 +230,18 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             loader.loadClass(BrowserRtcAudioRouter.class.getName()) != BrowserRtcAudioRouter.class)
             throw new IllegalStateException("probe-product-classloader-mismatch");
         PackageInfo info = target.getPackageManager().getPackageInfo(target.getPackageName(), 0);
+        boolean qemuDefaultIpv4Present = false;
+        java.util.Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces != null && interfaces.hasMoreElements()) {
+            java.util.Enumeration<InetAddress> addresses = interfaces.nextElement().getInetAddresses();
+            while (addresses.hasMoreElements()) {
+                if ("10.0.2.15".equals(addresses.nextElement().getHostAddress())) qemuDefaultIpv4Present = true;
+            }
+        }
         return map("runtime", map("uid", Process.myUid(), "applicationUid", application.uid,
                 "selinuxType", type, "api", Build.VERSION.SDK_INT, "abi", Build.SUPPORTED_ABIS[0],
-                "mainWebRtcInitialized", true, "mainPeerCreatedByProbe", false),
+                "mainWebRtcInitialized", true, "mainPeerCreatedByProbe", false,
+                "qemuDefaultIpv4Present", qemuDefaultIpv4Present),
             "packageName", target.getPackageName(), "versionName", info.versionName,
             "versionCode", info.getLongVersionCode(), "apkSha256", apkHash, "libraries", libraries);
     }
@@ -227,7 +265,8 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             case "probe-packaged-library-missing": case "probe-target-apk-hash":
             case "probe-product-classloader-mismatch": case "probe-command-too-large":
             case "probe-closed-before-completion": case "probe-rpc-write-failed":
-            case "probe-signaling-stop-timeout": return message;
+            case "probe-signaling-stop-timeout": case "probe-udp-stop-timeout":
+            case "probe-udp-already-started": case "probe-udp-not-started": return message;
             default: return "probe-runtime-failure";
         }
     }
@@ -239,6 +278,52 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
         result.putString("tiplayProbeErrorStage", stage);
         result.putString("tiplayProbeErrorCode", safeCode(cause));
         result.putString("tiplayProbeErrorClass", cause.getClass().getSimpleName());
+    }
+
+    /** Bounded app-UID socket control, independent of the product's native peer. */
+    private static final class UdpEchoProbe implements AutoCloseable {
+        private final DatagramSocket socket;
+        private final Thread worker;
+        private final AtomicInteger received = new AtomicInteger();
+        private final AtomicInteger echoed = new AtomicInteger();
+        private final AtomicInteger errors = new AtomicInteger();
+        private volatile boolean stopping;
+
+        UdpEchoProbe() throws Exception {
+            socket = new DatagramSocket(new InetSocketAddress(InetAddress.getByName("0.0.0.0"), 0));
+            try {
+                socket.setSoTimeout(500);
+                worker = new Thread(() -> {
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(7);
+                    try {
+                        while (!stopping && received.get() < 8 && System.nanoTime() < deadline) {
+                            DatagramPacket packet = new DatagramPacket(new byte[64], 64);
+                            try { socket.receive(packet); }
+                            catch (SocketTimeoutException ignored) { continue; }
+                            received.incrementAndGet();
+                            if (packet.getLength() != 32) { errors.incrementAndGet(); continue; }
+                            socket.send(packet); echoed.incrementAndGet();
+                        }
+                    } catch (Exception error) { if (!stopping) errors.incrementAndGet(); }
+                    finally { socket.close(); }
+                }, "TiPlay-UDP-control");
+                worker.start();
+            } catch (Exception | Error error) {
+                stopping = true; socket.close(); throw error;
+            }
+        }
+
+        int port() { return socket.getLocalPort(); }
+        boolean terminated() { return !worker.isAlive(); }
+        Map<String, Object> snapshot() {
+            return map("receivedDatagrams", received.get(), "echoedDatagrams", echoed.get(),
+                "errors", errors.get(), "closed", socket.isClosed(), "workerTerminated", terminated());
+        }
+        @Override public void close() {
+            stopping = true; socket.close();
+            try { worker.join(2_000); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); }
+        }
     }
 
     private static String digest(InputStream input) throws Exception {

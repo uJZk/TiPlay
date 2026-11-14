@@ -183,6 +183,7 @@ jobs:
           set -euo pipefail
           if [ ! -c /dev/kvm ]; then echo 'Blocked: hosted runner KVM is unavailable.' >&2; exit 1; fi
           sudo chmod a+rw /dev/kvm
+          "$ANDROID_HOME/emulator/emulator" -version
           "$ANDROID_HOME/emulator/emulator" -accel-check
           mkdir -p "$ANDROID_AVD_HOME"
           printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -f -n tiplay-audio \
