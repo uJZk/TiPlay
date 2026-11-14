@@ -9,7 +9,8 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ### Beta.48
 
-**Beta.48/code90 and browser/cache v120 are in preparation.** Android call output
+**Beta.48/code90 is published** from `eccd1f6f6762574974c698a400426761cfe68faf`
+with browser/cache v120. Android call output
 prefers the selected car Bluetooth device, then another usable Bluetooth output,
 then the system AudioTrack route. Playback readiness is independent of microphone
 capture. Mic failures retain working output and retry capture with bounded backoff
@@ -33,7 +34,10 @@ state cases. All **716 browser tests** and 27 Python release/native-symbol/site
 cases pass. The real final Gradle classes plus C JNI/libdatachannel replay two
 tracks of 80 original Opus packets: payload and RTP timestamps match; diagnostic
 assertions cover not-selected, invalid SDP, selected pair and close retention.
-Signed packaging and public artifact checks are pending. Full CI remains explicitly waived. The managed browser policy
+Signed packaging and all twelve independent artifact checks pass, including
+per-ABI JNI exports/imports and exact source identity. Anonymous downloads match
+all three assets; public site checks match 226 files and 20 routes.
+[Build](Build.md#beta48-release) records precise publication provenance. Full CI remains explicitly waived. The managed browser policy
 still disables non-proxied UDP; there is no attached Android vehicle test device.
 Native vehicle Opus ICE and actual mirror picture still need physical evidence.
 The initially failing update fixture exposed a real cache-coherence race, now

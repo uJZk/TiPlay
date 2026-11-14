@@ -44,24 +44,24 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current release work at [Build](docs/Build.md#beta48-release).
-Beta.48/code90 and browser/cache v120 are in preparation. Android output now tries
-selected-car Bluetooth, another usable Bluetooth route and system AudioTrack;
-MIC failures do not stop playback, while capture retains its verified identity.
-The user explicitly requires browser telephone downlink to remain suppressed
-throughout call/MIC demand. Restore browser telephone playback only after demand
-ends and owned Android output cleanup completes. This supersedes old blanket
-selected-only output/no-speaker fallback statements; input permission/identity
-and non-interference with another application's call remain separate requirements.
-Focused checks pass 580 shared Android cases in 74 classes, 716 browser tests,
-27 Python cases and a real 160-packet original-Opus JNI replay. Signed/public
-artifact checks are pending. The Service Worker cache-coherence race is fixed;
-enhanced Chromium lifecycle checks and all 132 production cache resources
-(12,219,931 bytes, offline integrity/UI boot) pass. Physical codec/media decode
-is not established by these static-resource checks.
-Native ICE diagnostics add evidence and do not establish an ICE root cause.
-The user authorized beta publication and explicitly waived full CI; preserve focused
-checks, existing complete validation and independent artifact verification.
-Actual mirror picture and vehicle native Opus ICE still need physical evidence.
+Beta.48/code90 and browser/cache v120 are published from
+`eccd1f6f6762574974c698a400426761cfe68faf`. Focused checks pass 580 shared cases in
+74 classes, 716 browser cases, 27 Python cases and a real 160-packet original-Opus
+JNI replay. Signed packaging, twelve independent artifact checks, all 51 native
+identities and anonymous APK/source/checksum bytes pass. The public site matches
+226 files and 20 routes; enhanced Chromium cache checks and all 132 production
+cache resources (12,219,931 bytes, offline integrity/UI boot) pass.
+Android call output prefers selected-car Bluetooth, then another usable Bluetooth
+or system AudioTrack route. MIC failures do not stop playback; capture retains
+its verified identity. The user explicitly requires browser telephone downlink to
+remain suppressed throughout call/MIC demand, including Android output failure.
+Restore it only after demand ends and owned output cleanup completes. This
+supersedes old blanket selected-only output/no-speaker rules; input permission
+and non-interference with another app's call remain independent requirements.
+The user authorized beta publication and waived full CI; keep focused checks,
+previous complete validation and artifact identity separate. Native ICE diagnosis
+is improved, but its vehicle cause, actual mirror picture and physical output/capture
+still require new evidence. Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Previously, beta.38/code80 with browser/cache v113 was published from

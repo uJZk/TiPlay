@@ -16,7 +16,8 @@ Version code 90. Browser/cache v120.
 
 Focused validation passes 580 Android, 716 browser and 27 Python cases, plus
 a real two-track, 160-packet original-Opus JNI replay. Enhanced Chromium cache
-lifecycle and all 132 production cache resources pass; signed packaging is pending. These changes do not establish the vehicle's ICE
+lifecycle and all 132 production cache resources pass. Signed packaging, twelve
+artifact checks and anonymous public bytes match. These changes do not establish the vehicle's ICE
 failure cause or physical playback/capture behavior; device acceptance remains open.
 
 ## 0.2.20-beta.47
