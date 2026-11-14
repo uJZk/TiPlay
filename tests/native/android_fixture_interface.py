@@ -2,13 +2,15 @@
 """Select an actual UP IPv4 interface from ip address output without logging endpoints."""
 import argparse
 import ipaddress
+import json
 import re
 import sys
-import json
 
 
-def inspect_interfaces(text):
-    selected = ""
+def inspect_interfaces(text, require_interface=None, address_output=False):
+    if require_interface is not None and not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", require_interface):
+        raise ValueError("Invalid configured fixture interface.")
+    candidates = set()
     device, device_up = "", True
     formats = set()
     counts = dict(ipv4Records=0, normalIpv4Records=0, linkLocalIpv4Records=0,
@@ -49,14 +51,25 @@ def inspect_interfaces(text):
                 counts["downInterfaceRecords"] += 1
             elif not re.fullmatch(r"[A-Za-z0-9_.-]{1,15}", device):
                 counts["invalidInterfaceRecords"] += 1
-            elif not selected:
-                selected = device
-    return selected, {"formats": sorted(formats), **counts, "interfaceSelected": bool(selected)}
+            elif require_interface is None or device == require_interface:
+                candidates.add((device, str(address)))
+    selected = next(iter(candidates)) if len(candidates) == 1 else None
+    value = selected[1 if address_output else 0] if selected else ""
+    return value, {"formats": sorted(formats), **counts, "interfaceSelected": bool(selected),
+                   "matchingNormalIpv4Records": len(candidates), "ambiguous": len(candidates) > 1,
+                   "configuredInterfaceRequired": require_interface is not None}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", action="store_true", help="Print only format/address-class counts.")
+    parser.add_argument("--require-interface", help="Accept only the explicitly configured fixture interface.")
+    parser.add_argument("--address", action="store_true", help="Print the selected operational IPv4 address; never persist it.")
     args = parser.parse_args()
-    interface, summary = inspect_interfaces(sys.stdin.read())
+    if args.address and not args.require_interface:
+        parser.error("Operational address output requires an explicit fixture interface.")
+    try:
+        interface, summary = inspect_interfaces(sys.stdin.read(), args.require_interface, args.address)
+    except ValueError as error:
+        parser.error(str(error))
     print(json.dumps(summary, sort_keys=True) if args.summary else interface)

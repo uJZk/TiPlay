@@ -66,6 +66,11 @@ function verifiedAndroidProof(requireFinished = false) {
   assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64');
   assert.equal(runtime.mainWebRtcInitialized, true, 'The packaged main WebRTC library was not initialized first.');
   assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean', 'Missing observation of the emulator redirection address.');
+  assert.equal(runtime.configuredGuestIpv4Present, true, 'The explicitly selected emulator guest address is not present.');
+  const forwarding = proof.qemuForwarding;
+  assert.equal(forwarding?.mode, 'qemu-hmp-slirp'); assert.equal(forwarding.backendType, 'user');
+  for (const name of ['monitorVerified', 'capabilitiesVerified', 'backendVerified', 'wifiNicVerified'])
+    assert.equal(forwarding[name], true, 'The explicit WiFi SLIRP backend was not verified.');
   assert.match(proof.apkSha256, /^[0-9a-f]{64}$/);
   assert.match(proof.testApkSha256, /^[0-9a-f]{64}$/);
   assert.match(proof.sourceCommit, /^[0-9a-f]{40}$/);
@@ -76,14 +81,18 @@ function verifiedAndroidProof(requireFinished = false) {
   if (requireFinished) {
     assert.equal(proof.finishedNormally, true, 'Android instrumentation did not complete normally.');
     assert.equal(child.exitCode, 0, 'Android instrumentation exited unsuccessfully.');
+    assert.equal(forwarding.closed, true); assert.equal(forwarding.connected, false);
+    assert.equal(forwarding.pendingMappings, 0); assert.equal(forwarding.unconfirmedMappings, 0);
+    assert.equal(forwarding.failures, 0, 'Forwarding control failures must not be hidden by recovery.');
     const nat = proof.nat;
     for (const name of ['peerGenerationsCreated', 'mappingsCreated', 'activeMappings', 'toGuestDatagrams',
-      'fromGuestDatagrams', 'redirectCommandsSucceeded', 'redirectCommandsRemoved', 'linkLocalCandidateGenerations',
+      'fromGuestDatagrams', 'redirectCommandsAttempted', 'redirectCommandsSucceeded', 'redirectCommandsRemoved', 'linkLocalCandidateGenerations',
       'observedLinkLocalHostCandidates'])
       assert.ok(Number.isSafeInteger(nat?.[name]) && nat[name] >= 0, 'Missing emulator NAT evidence.');
     assert.equal(nat.peerGenerationsCreated, 2); assert.ok(nat.mappingsCreated >= 2);
     assert.equal(nat.activeMappings, 0, 'Owned emulator mappings were not removed.');
     assert.equal(nat.redirectCommandsSucceeded, nat.mappingsCreated);
+    assert.equal(nat.redirectCommandsAttempted, nat.redirectCommandsSucceeded);
     assert.equal(nat.redirectCommandsRemoved, nat.mappingsCreated);
     assert.ok(nat.toGuestDatagrams > 0 && nat.fromGuestDatagrams > 0, 'No bidirectional emulator UDP forwarding was observed.');
     assert.equal(nat.linkLocalCandidateGenerations, 2, 'Both native peer generations must retain a real link-local host candidate.');
@@ -145,6 +154,9 @@ function verifyAndroidUdpFixture(fixture) {
   for (const name of ['attempts', 'sentDatagrams', 'receivedDatagrams'])
     assert.ok(Number.isSafeInteger(fixture.host[name]) && fixture.host[name] > 0, 'No completed host UDP probe exchange was recorded.');
   assert.equal(fixture.host.cleanupComplete, true, 'UDP fixture mappings did not finish cleanup.');
+  assert.equal(fixture.host.counters?.redirectCommandsAttempted, fixture.host.counters?.redirectCommandsSucceeded);
+  assert.ok(Number.isSafeInteger(fixture.host.counters?.redirectCommandsSucceeded) && fixture.host.counters.redirectCommandsSucceeded > 0,
+    'The UDP fixture did not establish a confirmed forwarding rule.');
   for (const name of ['receivedDatagrams', 'echoedDatagrams'])
     assert.ok(Number.isSafeInteger(fixture.guest?.[name]) && fixture.guest[name] > 0, 'The app did not observe and echo the UDP probe.');
   assert.equal(fixture.guest.errors, 0); assert.equal(fixture.guest.closed, true);
@@ -427,7 +439,9 @@ try {
   const blocked = diagnostics?.peers?.some(peer => peer.localCandidates === 0) === true;
   await report({ status: blocked ? 'blocked' : 'failed', injectedFault: fault, runtimeBackend, diagnostics,
     topologyFixture: topologyFixture ?? null,
-    androidRuntimeProof: runtimeBackend === 'android' ? child?.proof ?? null : null,
+    androidRuntimeProof: runtimeBackend === 'android' ? child?.proof ?? cause.androidRuntimeProof ??
+      (cause.qemuForwarding ? { qemuForwarding: cause.qemuForwarding } : null) : null,
+    failureCode: typeof cause.code === 'string' && /^qemu-hmp-[a-z0-9-]{1,64}$/.test(cause.code) ? cause.code : undefined,
     native: snapshot?.snapshot, nativeStderrBytes: stderr.length, failureClass: cause.constructor.name });
   console.error(cause.message);
   process.exitCode = 1;
@@ -440,7 +454,7 @@ try {
     })],
     ['server', () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))],
     ['android-proof', () => {
-      if (runtimeBackend !== 'android' || !outcomeReport) return;
+      if (runtimeBackend !== 'android' || !outcomeReport || !child) return;
       outcomeReport = { ...outcomeReport, androidRuntimeProof: null };
       outcomeReport.androidRuntimeProof = child?.proof ?? null;
       if (outcomeReport.topologyFixture && outcomeReport.androidRuntimeProof?.udpFixture)

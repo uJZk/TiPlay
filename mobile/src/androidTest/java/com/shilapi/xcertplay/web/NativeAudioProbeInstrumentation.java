@@ -230,18 +230,31 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             loader.loadClass(BrowserRtcAudioRouter.class.getName()) != BrowserRtcAudioRouter.class)
             throw new IllegalStateException("probe-product-classloader-mismatch");
         PackageInfo info = target.getPackageManager().getPackageInfo(target.getPackageName(), 0);
+        // The fixture supplies a numeric address for one explicit SLIRP netdev.
+        // Keep it in memory; export only whether this app sees that address.
+        String configuredGuestAddress = arguments.getString("expectedGuestAddress");
+        if (configuredGuestAddress == null ||
+            !configuredGuestAddress.matches("(?:(?:0|[1-9][0-9]{0,2})\\.){3}(?:0|[1-9][0-9]{0,2})"))
+            throw new IllegalStateException("probe-configured-guest-not-ipv4");
+        for (String octet : configuredGuestAddress.split("\\.")) {
+            if (Integer.parseInt(octet) > 255) throw new IllegalStateException("probe-configured-guest-not-ipv4");
+        }
         boolean qemuDefaultIpv4Present = false;
+        boolean configuredGuestIpv4Present = false;
         java.util.Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
         while (interfaces != null && interfaces.hasMoreElements()) {
             java.util.Enumeration<InetAddress> addresses = interfaces.nextElement().getInetAddresses();
             while (addresses.hasMoreElements()) {
-                if ("10.0.2.15".equals(addresses.nextElement().getHostAddress())) qemuDefaultIpv4Present = true;
+                String address = addresses.nextElement().getHostAddress();
+                if ("10.0.2.15".equals(address)) qemuDefaultIpv4Present = true;
+                if (configuredGuestAddress.equals(address)) configuredGuestIpv4Present = true;
             }
         }
         return map("runtime", map("uid", Process.myUid(), "applicationUid", application.uid,
                 "selinuxType", type, "api", Build.VERSION.SDK_INT, "abi", Build.SUPPORTED_ABIS[0],
                 "mainWebRtcInitialized", true, "mainPeerCreatedByProbe", false,
-                "qemuDefaultIpv4Present", qemuDefaultIpv4Present),
+                "qemuDefaultIpv4Present", qemuDefaultIpv4Present,
+                "configuredGuestIpv4Present", configuredGuestIpv4Present),
             "packageName", target.getPackageName(), "versionName", info.versionName,
             "versionCode", info.getLongVersionCode(), "apkSha256", apkHash, "libraries", libraries);
     }
@@ -266,7 +279,8 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             case "probe-product-classloader-mismatch": case "probe-command-too-large":
             case "probe-closed-before-completion": case "probe-rpc-write-failed":
             case "probe-signaling-stop-timeout": case "probe-udp-stop-timeout":
-            case "probe-udp-already-started": case "probe-udp-not-started": return message;
+            case "probe-udp-already-started": case "probe-udp-not-started":
+            case "probe-configured-guest-not-ipv4": return message;
             default: return "probe-runtime-failure";
         }
     }

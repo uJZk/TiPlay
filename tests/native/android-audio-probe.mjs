@@ -10,6 +10,7 @@ import { PassThrough } from 'node:stream';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { openQemuUdpForwarding } from './qemu-udp-forwarding.mjs';
 
 const execFile = promisify(execFileCallback);
 const targetPackage = 'com.ujzk.tiplay.hudtest';
@@ -62,15 +63,14 @@ export async function runCleanupActions(actions) {
   if (failed.length) throw Error('Android cleanup failed: ' + failed.join(', ') + '.');
 }
 
-export async function removeAndroidMapping({ key, value, mappings, nat, runAdb }) {
+export async function removeAndroidMapping({ key, value, mappings, nat, forwarding }) {
   if (!mappings.has(key)) return;
   // Local sockets and an emulator redirect are distinct owned resources. A
   // failed redirect stays pending even after every local socket was closed.
   await Promise.all([value.publicSocket, ...[...value.flows.values()].map(flow => flow.socket)].map(udp => new Promise(resolve => {
     try { udp.close(resolve); } catch { resolve(); }
   })));
-  const removed = await runAdb(['emu', 'redir', 'del', `udp:${value.redirectPort}`]);
-  assert.match(removed.stdout, /\bOK\b/, 'The emulator did not remove the owned UDP mapping.');
+  await forwarding.remove(value.forwardingRecord);
   mappings.delete(key);
   nat.activeMappings = [...mappings.values()].filter(entry => !entry.counters || entry.counters === nat).length;
   nat.redirectCommandsRemoved++;
@@ -86,7 +86,7 @@ export function acceptUpstreamDatagram(counters, sender, redirectPort) {
 function udpCounters() {
   return { mappingsCreated: 0, activeMappings: 0, toGuestDatagrams: 0, fromGuestDatagrams: 0,
     upstreamReceivedDatagrams: 0, droppedAddressDatagrams: 0, droppedPortDatagrams: 0,
-    forwardingErrors: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 };
+    forwardingErrors: 0, redirectCommandsAttempted: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 };
 }
 
 export async function drainAndRemoveMappings(responseChain, mappings, removeMapping) {
@@ -127,9 +127,12 @@ export function instrumentationResultCollector() {
 }
 
 export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', serial = process.env.ANDROID_SERIAL || 'emulator-5554',
-  appApk = process.env.ANDROID_AUDIO_APP_APK, testApk = process.env.ANDROID_AUDIO_TEST_APK, hostAddress } = {}) {
+  appApk = process.env.ANDROID_AUDIO_APP_APK, testApk = process.env.ANDROID_AUDIO_TEST_APK, hostAddress,
+  qemuSocketPath = process.env.TIPLAY_QEMU_HMP_SOCKET, qemuNetdevId = process.env.TIPLAY_QEMU_NETDEV_ID,
+  qemuGuestAddress = process.env.TIPLAY_QEMU_GUEST_IPV4 } = {}) {
   assert.match(serial, /^emulator-[0-9]+$/, 'The Android audio proof accepts a disposable emulator only.');
   assert.ok(appApk && testApk, 'Supply ANDROID_AUDIO_APP_APK and ANDROID_AUDIO_TEST_APK.');
+  assert.ok(qemuSocketPath && qemuNetdevId && isIPv4(qemuGuestAddress), 'Supply the owned QEMU monitor, netdev and guest IPv4 fixture.');
   const adbArgs = ['-s', serial];
   const runAdb = async args => {
     try { return await execFile(adb, [...adbArgs, ...args], { timeout: 60000, maxBuffer: 1024 * 1024 }); }
@@ -153,6 +156,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0 };
   const instrumentationResult = instrumentationResultCollector();
   let instrumentation, socket, forwardPort, runtimeProof, finishedNormally = false, exitCode = null, closing, closingStarted = false;
+  let forwarding;
   let responseChain = Promise.resolve();
   let udpFixtureRun, udpFixtureProof;
   const startupTimer = setTimeout(() => { portReady.reject(Error('Android instrumentation startup timed out.'));
@@ -162,12 +166,13 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     const sourceCommit = process.env.GITHUB_SHA || process.env.ANDROID_AUDIO_SOURCE_SHA;
     return { ...(runtimeProof || {}), testApkSha256: inspected.test.sha256,
       sourceCommit: /^[0-9a-f]{40}$/.test(sourceCommit || '') ? sourceCommit : null,
-      nat: { ...nat }, udpFixture: udpFixtureProof ? { ...udpFixtureProof, counters: { ...udpFixtureProof.counters } } : null,
+      nat: { ...nat }, qemuForwarding: forwarding?.snapshot() ?? null,
+      udpFixture: udpFixtureProof ? { ...udpFixtureProof, counters: { ...udpFixtureProof.counters } } : null,
       finishedNormally, instrumentationResult: { ...instrumentationResult.result } };
   }
 
   async function removeMapping(key, value) {
-    await removeAndroidMapping({ key, value, mappings, nat: value.counters, runAdb });
+    await removeAndroidMapping({ key, value, mappings, nat: value.counters, forwarding });
   }
 
   async function mapping(generation, guestPort, counters = nat) {
@@ -189,12 +194,13 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     try {
       await bind(publicSocket, hostAddress); await bind(reservation, '127.0.0.1');
       redirectPort = reservation.address().port;
+      const publicPort = publicSocket.address().port;
       await new Promise(resolve => reservation.close(resolve));
       assert.equal(closingStarted, false, 'Android probe is closing.');
-      const added = await runAdb(['emu', 'redir', 'add', `udp:${redirectPort}:${guestPort}`]);
-      assert.match(added.stdout, /\bOK\b/, 'The emulator did not create the UDP mapping.');
+      counters.redirectCommandsAttempted++;
+      const forwardingRecord = await forwarding.add({ hostPort: redirectPort, guestPort });
       redirectInstalled = true; counters.redirectCommandsSucceeded++;
-      const value = { publicSocket, flows, redirectPort, port: publicSocket.address().port, counters };
+      const value = { publicSocket, flows, redirectPort, forwardingRecord, port: publicPort, counters };
       mappings.set(key, value); counters.mappingsCreated++; counters.activeMappings++;
       // A close may have begun while adb was adding the owned redirect. Record
       // it first, then withdraw it through the same confirmed cleanup path.
@@ -334,6 +340,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     assert.match(runtime.selinuxType, /^untrusted_app(?:_\d+)?$/);
     assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64'); assert.equal(runtime.mainWebRtcInitialized, true);
     assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean');
+    assert.equal(runtime.configuredGuestIpv4Present, true, 'The configured QEMU guest IPv4 is absent from this application runtime.');
     for (const name of libraryNames) assert.deepEqual(value.libraries[name], inspected.app.libraries[name], 'Packaged Android library changed.');
     runtimeProof = value; clearTimeout(startupTimer); proofReady.resolve();
   }
@@ -354,6 +361,10 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
         // No new response may enqueue once closingStarted is true. Drain the
         // in-flight mapper before taking the owned-redirection snapshot.
         ['response-and-mappings', () => drainAndRemoveMappings(Promise.allSettled([responseChain, udpFixtureRun]), mappings, removeMapping)],
+        ['qemu-forwarding', async () => { await forwarding?.close(); }],
+        // Provider close also retries uncertain adds/removes. Reconcile only
+        // records that it can now confirm withdrawn; unknown records stay owned.
+        ['mapping-reconcile', () => runCleanupActions([...mappings].map(([key, entry]) => ['udp-mapping', () => removeMapping(key, entry)]))],
         ['adb-forward', async () => { if (forwardPort) await runAdb(['forward', '--remove', `tcp:${forwardPort}`]); }],
         ['stdout-end', async () => { stdout.end(); }],
         ['stderr-end', async () => { stderr.end(); }],
@@ -368,10 +379,13 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
   }
 
   try {
+    forwarding = await openQemuUdpForwarding({ socketPath: qemuSocketPath, netdevId: qemuNetdevId,
+      guestAddress: qemuGuestAddress, timeoutMs: 5000 });
     await runAdb(['install', '-r', '-t', appApk]);
     await runAdb(['install', '-r', '-t', testApk]);
     instrumentation = spawn(adb, [...adbArgs, 'shell', 'am', 'instrument', '-w', '-r',
-      '-e', 'expectedApkSha256', inspected.app.sha256, testComponent], { stdio: ['ignore', 'pipe', 'pipe'] });
+      '-e', 'expectedApkSha256', inspected.app.sha256, '-e', 'expectedGuestAddress', qemuGuestAddress,
+      testComponent], { stdio: ['ignore', 'pipe', 'pipe'] });
     instrumentation.once('error', error => { portReady.reject(commandError(error)); proofReady.reject(commandError(error)); exited.resolve(); });
     instrumentation.stderr.on('data', bytes => stderr.write(bytes));
     createInterface({ input: instrumentation.stdout }).on('line', line => {

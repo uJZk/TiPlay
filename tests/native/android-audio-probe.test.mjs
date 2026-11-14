@@ -11,25 +11,27 @@ test('cleanup attempts every owned resource and retains failed emulator redirect
   const calls = [], mappings = new Map(), nat = { activeMappings: 2, redirectCommandsRemoved: 0 };
   const closed = label => ({ close(done) { calls.push(label); done(); } });
   for (const [key, port] of [['one', 10001], ['two', 10002]]) mappings.set(key, {
-    publicSocket: closed(key + '-public'), flows: new Map([['flow', { socket: closed(key + '-flow') }]]), redirectPort: port,
+    publicSocket: closed(key + '-public'), flows: new Map([['flow', { socket: closed(key + '-flow') }]]),
+    forwardingRecord: Object.freeze({ fixtureId: port }),
   });
   let failFirst = true;
-  const runAdb = async args => {
-    calls.push(args.at(-1));
-    if (args.at(-1) === 'udp:10001' && failFirst) throw Error('private endpoint must never reach cleanup output');
-    return { stdout: 'OK\n' };
-  };
-  const actions = [...mappings].map(([key, value]) => ['udp-mapping', () => removeAndroidMapping({ key, value, mappings, nat, runAdb })]);
+  const forwarding = { remove: async record => {
+    calls.push('record:' + record.fixtureId);
+    if (record.fixtureId === 10001 && failFirst) throw Error('private endpoint must never reach cleanup output');
+  } };
+  const actions = [...mappings].map(([key, value]) => ['udp-mapping', () => removeAndroidMapping({ key, value, mappings, nat, forwarding })]);
   actions.push(['adb-forward', async () => { calls.push('forward'); throw Error('private-forward'); }],
     ['streams', async () => { calls.push('streams'); }], ['force-stop', async () => { calls.push('force-stop'); }]);
   await assert.rejects(runCleanupActions(actions), error => {
     assert.equal(error.message, 'Android cleanup failed: udp-mapping, adb-forward.'); return true;
   });
-  assert.deepEqual(calls, ['one-public', 'one-flow', 'udp:10001', 'two-public', 'two-flow', 'udp:10002', 'forward', 'streams', 'force-stop']);
+  assert.deepEqual(calls, ['one-public', 'one-flow', 'record:10001', 'two-public', 'two-flow', 'record:10002', 'forward', 'streams', 'force-stop']);
   assert.deepEqual([...mappings.keys()], ['one']); assert.equal(nat.activeMappings, 1); assert.equal(nat.redirectCommandsRemoved, 1);
   failFirst = false;
-  await removeAndroidMapping({ key: 'one', value: mappings.get('one'), mappings, nat, runAdb });
+  await removeAndroidMapping({ key: 'one', value: mappings.get('one'), mappings, nat, forwarding });
   assert.equal(mappings.size, 0); assert.equal(nat.activeMappings, 0); assert.equal(nat.redirectCommandsRemoved, 2);
+  await removeAndroidMapping({ key: 'one', mappings, nat, forwarding });
+  assert.equal(nat.redirectCommandsRemoved, 2);
 });
 
 test('upstream counters distinguish raw replies and each strict filter rejection', () => {
@@ -40,6 +42,50 @@ test('upstream counters distinguish raw replies and each strict filter rejection
   assert.deepEqual(counters, { upstreamReceivedDatagrams: 3, fromGuestDatagrams: 1, droppedAddressDatagrams: 1, droppedPortDatagrams: 1 });
 });
 
+test('actual mapper counts an unconfirmed provider add and closes sockets without inventing success', async () => {
+  const source = readFileSync(new URL('./android-audio-probe.mjs', import.meta.url), 'utf8');
+  const start = source.indexOf('  async function mapping('), end = source.indexOf('\n  function probeUdpFixture(', start);
+  assert.ok(start > 0 && end > start);
+  const mappings = new Map(), closed = [], nat = { mappingsCreated: 0, activeMappings: 0,
+    redirectCommandsAttempted: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 };
+  let nextId = 0, pendingMappings = 0;
+  const createSocket = () => {
+    const id = ++nextId, socket = new EventEmitter();
+    socket.bind = (port, address, ready) => ready();
+    socket.address = () => ({ port: 41000 + id });
+    socket.close = ready => { closed.push(id); ready?.(); };
+    return socket;
+  };
+  const forwarding = { add: async () => { pendingMappings++; throw Error('safe add timeout'); },
+    close: async () => { pendingMappings--; } };
+  const mapping = new Function('assert', 'mappings', 'createSocket', 'hostAddress', 'nat', 'forwarding',
+    'const closingStarted=false; const socket=null; const removeMapping=()=>{ throw Error("unconfirmed record must stay provider owned"); };\nreturn ' + source.slice(start, end).trim())(
+    assert, mappings, createSocket, '192.0.2.10', nat, forwarding);
+  await assert.rejects(mapping(1, 12345), /safe add timeout/);
+  assert.equal(nat.redirectCommandsAttempted, 1); assert.equal(nat.redirectCommandsSucceeded, 0);
+  assert.equal(nat.mappingsCreated, 0); assert.equal(nat.activeMappings, 0);
+  assert.equal(mappings.size, 0); assert.equal(pendingMappings, 1);
+  assert.ok(closed.includes(1) && closed.includes(2));
+  await forwarding.close(); assert.equal(pendingMappings, 0);
+});
+
+test('provider close can confirm a previously failed withdrawal before adapter reconciliation', async () => {
+  const nat = { activeMappings: 1, redirectCommandsRemoved: 0 }, record = Object.freeze({ fixtureId: 1 });
+  const socket = { close(done) { done(); } };
+  const value = { publicSocket: socket, flows: new Map(), forwardingRecord: record, counters: nat };
+  const mappings = new Map([['one', value]]);
+  let confirmedRemoved = false, attempts = 0;
+  const forwarding = { remove: async owner => {
+    assert.equal(owner, record);
+    if (!confirmedRemoved) { attempts++; throw Error('safe withdrawal timeout'); }
+  }, close: async () => { attempts++; confirmedRemoved = true; } };
+  await assert.rejects(removeAndroidMapping({ key: 'one', value, mappings, nat, forwarding }), /withdrawal timeout/);
+  assert.equal(nat.activeMappings, 1); assert.equal(nat.redirectCommandsRemoved, 0);
+  await forwarding.close();
+  await removeAndroidMapping({ key: 'one', value, mappings, nat, forwarding });
+  assert.equal(attempts, 2); assert.equal(nat.activeMappings, 0); assert.equal(nat.redirectCommandsRemoved, 1);
+});
+
 function fixtureController({ echo = false, failSetup = false, failRemove = false, failSend = false } = {}) {
   const source = readFileSync(new URL('./android-audio-probe.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('  function probeUdpFixture('), end = source.indexOf('\n  async function mapAnswer(', start);
@@ -47,13 +93,13 @@ function fixtureController({ echo = false, failSetup = false, failRemove = false
   const mappings = new Map(), calls = [], timers = {}, mediaCounters = { peerGenerationsCreated: 0, mappingsCreated: 0 };
   const counters = () => ({ mappingsCreated: 0, activeMappings: 0, toGuestDatagrams: 0, fromGuestDatagrams: 0,
     upstreamReceivedDatagrams: 0, droppedAddressDatagrams: 0, droppedPortDatagrams: 0, forwardingErrors: 0,
-    redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 });
+    redirectCommandsAttempted: 0, redirectCommandsSucceeded: 0, redirectCommandsRemoved: 0 });
   const mapping = async (owner, port, counts) => {
     assert.equal(owner, 'udp-fixture'); assert.notEqual(counts, mediaCounters);
     if (failSetup) throw Error('private setup endpoint');
     const value = { port: 40001, counters: counts };
     mappings.set(owner + ':' + port, value);
-    counts.mappingsCreated++; counts.activeMappings++; counts.redirectCommandsSucceeded++;
+    counts.mappingsCreated++; counts.activeMappings++; counts.redirectCommandsAttempted++; counts.redirectCommandsSucceeded++;
     return value;
   };
   const removeMapping = async (key, entry) => {

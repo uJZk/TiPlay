@@ -159,6 +159,7 @@ jobs:
         run: |
           python3 tests/native/test_audio_interop_workflow.py
           node --test tests/native/android-audio-probe.test.mjs
+          node --test tests/native/qemu-udp-forwarding.test.mjs
       - name: Assemble only the source-only debug application and instrumentation
         run: |
           python3 scripts/rtc-audio/build.py --verify
@@ -188,8 +189,15 @@ jobs:
           mkdir -p "$ANDROID_AVD_HOME"
           printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -f -n tiplay-audio \
             -k 'system-images;android-35;google_apis;x86_64'
+          task_hmp_dir=$(mktemp -d /tmp/tiplay-hmp.XXXXXX)
+          task_hmp_socket="$task_hmp_dir/monitor.sock"
+          printf 'TIPLAY_QEMU_HMP_SOCKET=%s\n' "$task_hmp_socket" >> "$GITHUB_ENV"
+          printf 'TIPLAY_QEMU_HMP_DIR=%s\n' "$task_hmp_dir" >> "$GITHUB_ENV"
+          printf 'TIPLAY_QEMU_NETDEV_ID=virtio-wifi\n' >> "$GITHUB_ENV"
+          # Explicit test-only legacy WiFi/SLIRP fixture; this is not a production routing change.
           nohup "$ANDROID_HOME/emulator/emulator" -avd tiplay-audio -port 5554 -no-window -no-audio \
-            -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on \
+            -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on -feature -WiFiPacketStream \
+            -qemu -monitor "unix:$task_hmp_socket,server,nowait" \
             > "$RUNNER_TEMP/tiplay-audio-emulator.log" 2>&1 &
           timeout 300 "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 wait-for-device
           booted=0
@@ -208,16 +216,20 @@ jobs:
           if ! "$task_adb" -s emulator-5554 root > "$RUNNER_TEMP/tiplay-audio-adb-root.log" 2>&1; then echo 'Blocked: emulator root is unavailable.' >&2; exit 1; fi
           timeout 60 "$task_adb" -s emulator-5554 wait-for-device
           if [ "$("$task_adb" -s emulator-5554 shell id -u | tr -d '\r')" != 0 ]; then echo 'Blocked: emulator root is unavailable.' >&2; exit 1; fi
-          task_interface=''
+          task_interface='wlan0'
+          task_guest_ipv4=''
           task_network_listing=''
           task_network_deadline=$((SECONDS + 60))
           while (( SECONDS < task_network_deadline )); do
             task_network_listing=$(timeout 5 "$task_adb" -s emulator-5554 shell ip -o -4 addr show up scope global || true)
-            task_interface=$(printf '%s\n' "$task_network_listing" | python3 tests/native/android_fixture_interface.py)
-            if [ -n "$task_interface" ]; then break; fi
+            task_guest_ipv4=$(printf '%s\n' "$task_network_listing" | python3 tests/native/android_fixture_interface.py --require-interface "$task_interface" --address)
+            if [ -n "$task_guest_ipv4" ]; then break; fi
             sleep 2
           done
-          case "$task_interface" in ''|*[!a-zA-Z0-9_.-]*) printf '%s\n' "$task_network_listing" | python3 tests/native/android_fixture_interface.py --summary; echo 'Blocked: emulator has no normal UP IPv4 interface after its readiness budget.' >&2; exit 1;; esac
+          if [ -z "$task_guest_ipv4" ]; then printf '%s\n' "$task_network_listing" | python3 tests/native/android_fixture_interface.py --require-interface "$task_interface" --summary; echo 'Blocked: configured WiFi interface has no unique normal UP IPv4 address.' >&2; exit 1; fi
+          if ! "$task_adb" -s emulator-5554 shell 'test -d /sys/class/net/wlan0/phy80211 || test -d /sys/class/net/wlan0/wireless'; then echo 'Blocked: configured interface is not verified as WiFi.' >&2; exit 1; fi
+          printf '::add-mask::%s\n' "$task_guest_ipv4"
+          printf 'TIPLAY_QEMU_GUEST_IPV4=%s\n' "$task_guest_ipv4" >> "$GITHUB_ENV"
           if ! "$task_adb" -s emulator-5554 shell ip addr add 169.254.111.111/32 dev "$task_interface"; then echo 'Blocked: emulator link-local fixture could not be established.' >&2; exit 1; fi
           if ! "$task_adb" -s emulator-5554 shell ip -o -4 addr show dev "$task_interface" | grep -Fq '169.254.111.111/32'; then echo 'Blocked: emulator link-local fixture verification failed.' >&2; exit 1; fi
       - name: Install the pinned default Chromium test browser
@@ -241,6 +253,10 @@ jobs:
         if: always()
         run: |
           "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+          if [ -n "${TIPLAY_QEMU_HMP_DIR:-}" ]; then
+            rm -f -- "$TIPLAY_QEMU_HMP_DIR/monitor.sock"
+            rmdir -- "$TIPLAY_QEMU_HMP_DIR"
+          fi
       - name: Upload bounded synthetic Android interoperability evidence
         if: always()
         uses: actions/upload-artifact@v4

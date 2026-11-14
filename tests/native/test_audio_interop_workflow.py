@@ -80,9 +80,12 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(process.argv[1], 'utf8');
 const body = source.slice(source.indexOf('function verifiedAndroidProof('), source.indexOf('async function report('));
 const base = { runtime: { uid: 10123, applicationUid: 10123, selinuxType: 'untrusted_app_32', api: 35,
-  abi: 'x86_64', mainWebRtcInitialized: true, qemuDefaultIpv4Present: false }, apkSha256: 'a'.repeat(64), testApkSha256: 'b'.repeat(64),
+  abi: 'x86_64', mainWebRtcInitialized: true, qemuDefaultIpv4Present: false, configuredGuestIpv4Present: true },
+  qemuForwarding: {mode: 'qemu-hmp-slirp', backendType: 'user', monitorVerified: true, capabilitiesVerified: true,
+    backendVerified: true, wifiNicVerified: true, closed: true, connected: false, pendingMappings: 0, unconfirmedMappings: 0, failures: 0},
+  apkSha256: 'a'.repeat(64), testApkSha256: 'b'.repeat(64),
   sourceCommit: 'd'.repeat(40), nat: { peerGenerationsCreated: 2, mappingsCreated: 2, activeMappings: 0,
-    toGuestDatagrams: 123, fromGuestDatagrams: 456, redirectCommandsSucceeded: 2, redirectCommandsRemoved: 2,
+    toGuestDatagrams: 123, fromGuestDatagrams: 456, redirectCommandsAttempted: 2, redirectCommandsSucceeded: 2, redirectCommandsRemoved: 2,
     linkLocalCandidateGenerations: 2, observedLinkLocalHostCandidates: 2 },
   libraries: Object.fromEntries(['libdatachannel.so', 'libtiplay_rtc_audio.so', 'libjingle_peerconnection_so.so']
     .map(name => [name, { sha256: 'c'.repeat(64), bytes: 123 }])), finishedNormally: true };
@@ -97,7 +100,10 @@ for (const alter of [
   value => { delete value.libraries['libdatachannel.so']; }, value => { value.finishedNormally = false; },
   value => { value.nat.activeMappings = 1; }, value => { value.nat.fromGuestDatagrams = 0; },
   value => { value.nat.redirectCommandsRemoved = 1; }, value => { delete value.sourceCommit; },
-  value => { value.nat.linkLocalCandidateGenerations = 1; }, value => { value.nat.observedLinkLocalHostCandidates = 0; }
+  value => { value.nat.linkLocalCandidateGenerations = 1; }, value => { value.nat.observedLinkLocalHostCandidates = 0; },
+  value => { value.runtime.configuredGuestIpv4Present = false; }, value => { value.qemuForwarding.wifiNicVerified = false; },
+  value => { value.qemuForwarding.pendingMappings = 1; }, value => { value.qemuForwarding.unconfirmedMappings = 1; },
+  value => { value.qemuForwarding.failures = 1; }, value => { value.nat.redirectCommandsAttempted++; }
 ]) {
   child.proof = structuredClone(base); alter(child.proof); assert.throws(() => validate(true));
 }
@@ -159,6 +165,11 @@ assert.equal(failed.failureClass, 'OriginalMediaTimeout'); assert.equal(failed.a
 android.exitCode = 0; order.length = 0;
 await build(android, async () => assert.fail('Do not repeat a successful close RPC.'), assert).closeAndroidChild();
 assert.deepEqual(order, ['backend']);
+const initializationProof = {qemuForwarding: {closed: true, backendVerified: false, commandsSent: 2}};
+const startup = await cleanup('android', null, null, null, {close: callback => callback()}, helper,
+  build(null, null, assert).closeAndroidChild, () => {}, {},
+  {status: 'failed', failureClass: 'QemuUdpForwardingError', androidRuntimeProof: initializationProof});
+assert.equal(startup.androidRuntimeProof, initializationProof, 'Keep the post-cleanup startup error evidence when no backend was returned.');
 """
         completed = subprocess.run(["node", "--input-type=module", "-e", script, str(HARNESS)],
                                    text=True, capture_output=True, timeout=10)
@@ -173,7 +184,7 @@ const body = source.slice(source.indexOf('async function collectAndroidUdpFixtur
 const {collectAndroidUdpFixture: collect, verifyAndroidUdpFixture: verify} = new Function('assert', body
   + '; return {collectAndroidUdpFixture, verifyAndroidUdpFixture};')(assert);
 const host = {nonceMatched: true, timedOut: false, attempts: 1, sentDatagrams: 1, receivedDatagrams: 1,
-  errors: 0, cleanupComplete: true};
+  errors: 0, cleanupComplete: true, counters: {redirectCommandsAttempted: 1, redirectCommandsSucceeded: 1}};
 const guest = {receivedDatagrams: 1, echoedDatagrams: 1, errors: 0, closed: true, workerTerminated: true};
 for (const mode of ['success', 'timeout', 'throw']) {
   const order = [], failure = Error('private-endpoint-message');
@@ -251,7 +262,31 @@ assert.ok(source.indexOf('await collectAndroidUdpFixture(command, child)') < sou
         self.assertIn("task_network_deadline=$((SECONDS + 60))", android)
         self.assertIn("timeout 5", android)
         self.assertIn("python3 tests/native/android_fixture_interface.py", android)
-        self.assertIn("android_fixture_interface.py --summary", android)
+        self.assertIn('android_fixture_interface.py --require-interface "$task_interface" --summary', android)
+
+    def test_explicit_wifi_selection_never_defaults_to_an_address_or_first_interface(self):
+        path = ROOT / "tests/native/android_fixture_interface.py"
+        spec = importlib.util.spec_from_file_location("fixture_interface", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        text = "2: eth0 inet 10.0.2.15/24 scope global eth0\n3: wlan0 inet 10.0.2.16/24 scope global wlan0\n"
+        self.assertEqual("", module.inspect_interfaces(text)[0], "Multiple ordinary interfaces are ambiguous.")
+        self.assertEqual("10.0.2.16", module.inspect_interfaces(text, "wlan0", True)[0])
+        self.assertEqual("wlan0", module.inspect_interfaces(text, "wlan0")[0])
+        self.assertEqual("", module.inspect_interfaces(text, "unknown", True)[0])
+        ambiguous = text + "3: wlan0 inet 10.0.2.17/24 scope global wlan0\n"
+        value, summary = module.inspect_interfaces(ambiguous, "wlan0", True)
+        self.assertEqual("", value); self.assertTrue(summary["ambiguous"])
+        self.assertNotIn("10.0.2.", str(summary))
+        self.assertEqual("", module.inspect_interfaces("3: wlan0: <BROADCAST> mtu 1500\n    inet 10.0.2.16/24\n", "wlan0", True)[0])
+        source = WORKFLOW.read_text().split("  android-interop:\n", 1)[1].split("  symbols:\n", 1)[0]
+        self.assertIn("-feature -WiFiPacketStream", source)
+        self.assertIn('-qemu -monitor "unix:$task_hmp_socket,server,nowait"', source)
+        self.assertIn("TIPLAY_QEMU_NETDEV_ID=virtio-wifi", source)
+        self.assertIn("task_interface='wlan0'", source)
+        self.assertIn("/sys/class/net/wlan0/phy80211", source)
+        self.assertIn("printf '::add-mask::%s", source)
+        self.assertIn("node --test tests/native/qemu-udp-forwarding.test.mjs", source)
 
     def test_no_machine_policy_or_browser_ice_policy_override(self):
         source = WORKFLOW.read_text() + HARNESS.read_text()
