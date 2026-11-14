@@ -101,10 +101,11 @@ cache. Source/subscription replacement and shutdown cancel that wait. Mirror
 startup completes only on the browser's first presentation acknowledgment;
 forwarding an incoming frame alone does not cancel its startup deadline.
 
-The independent audio offer waits for complete host-candidate gathering within
-the existing finite budget. A slot announces readiness only after transport,
+The independent audio offer waits for gathering completion, but its twelve-second
+gathering deadline accepts a candidate-bearing partial snapshot. Later candidates
+are not trickled. A slot announces readiness only after transport,
 Worklet binding and silent playout activation are ready; SDP installation alone
-does not authorize sending. Initial transport setup has a twenty-second budget,
+does not authorize sending. Initial negotiation, gathering and transport share a twenty-second budget,
 graph readiness a separate five seconds, and a disconnected established peer a
 five-second recovery window. Metadata negotiation is bounded by 25 seconds;
 original-packet staging has a separate five-second age limit, 256 KiB per stream,
@@ -131,15 +132,22 @@ retained. Radio-on rechecks browser, permission, menu, ownership and AirPlay gat
 it cannot bypass them. USB and TiPlay's intentional Bluetooth suspension are not
 blocked, and a working Wi-Fi session is not restarted merely because Bluetooth is off.
 
-For a continuing Bluetooth voice demand, a matching SCO device arrival wakes
-acquisition without waiting for the remaining retry backoff. Acquisition still
-validates the selected address, available communication route, permissions and
-audio focus. An unrelated headset or permanent focus loss cannot trigger it;
-stop and close remove the observer. A saved/paired car is not necessarily a
-connected HFP audio device, and this recovery cannot create a missing system
-route or substitute the handset microphone. The recorded microphone foreground
+For a continuing Bluetooth voice demand, device arrivals can wake output recovery
+without waiting for the remaining backoff. Output prefers the selected car, then
+another usable Bluetooth or system route; permissions, audio focus and ownership
+still apply. Capture independently requires the verified car input, and permanent
+focus loss cannot trigger recovery. Stop and close remove the observer. A paired
+car is not necessarily a connected HFP device, and recovery cannot create a
+missing system route or substitute the handset microphone. The recorded microphone foreground
 service exception is covered by the existing permission/type fallback; current
 successful service starts do not reproduce that historical crash.
+
+Device-route and audio-mode clients are cancelled independently. A platform
+exception retains only the unfinished ownership and retries at most three times,
+one second apart. Already completed cancellations are not repeated, including
+after another app takes over. Cleanup failure cannot publish `released=true` or
+overwrite the business/focus failure needed for recovery. Permanent failure stays
+unreleased; an explicit stop/close can grant another finite cleanup attempt.
 
 The earlier recovery validation passed the required Android command with 4,579 zero-failure, zero-skip JUnit
 report cases (2,652 shared, 1,921 common, six home), all three Debug lint and
@@ -183,6 +191,22 @@ produce identical complete native transport classifications. Thus
 credential cause. This experiment neither uses Chromium nor reproduces the
 vehicle failure. No additional vehicle retest should be requested merely to
 prove these local diagnostic contracts.
+
+Two observed audio startups reach their offers near that twelve-second
+gathering limit; all twelve audio samples still report `gathering`. A full scan of
+the journal finds no outgoing audio answer, so neither gathering completion nor
+the answer's actual candidate/credential contents can be reconstructed. Compare
+the implemented deadline behavior with those observations; do not describe them
+as proof of complete gathering or its causal role.
+
+The captured browser is Chromium 148. Independent controls accept an actual Chromium 151 sixteen-track offer through
+the product Router/JNI and install its answer in that browser. Sixteen tracks,
+mid/BUNDLE and DTLS role admission pass, but managed UDP prevents connectivity.
+The muted anchor's `play()` fulfills even before any RTP arrives in that browser,
+so no first-RTP/play-promise deadlock is reproduced. Additional native C-API
+controls preserve 2,560 original Opus packets across sixteen bundled tracks and
+a forced remote peer-reflexive path. These rule out general lack of BUNDLE/prflx
+support; they do not establish Android socket routing or vehicle interoperability.
 
 ## Matched post-stop native crash
 

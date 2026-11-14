@@ -7,61 +7,55 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Diagnostic sufficiency after beta.48
+### Beta.49 source verification — publication pending
 
-The post-release audit found dropped browser text fields, failed generations
-replaced before periodic reporting, and native lines truncated by redaction.
-The source corrections and TXT/ZIP fixture proofs are separate from the published
-beta.48 package. A controlled actual Kotlin/JNI/native-C-API experiment delivers
-160 original packets, then obtains identical native diagnostics from a UDP
-blackhole and deliberately mismatched ICE passwords. Success-path replay therefore
-does not establish unique failure attribution. This is neither Chromium
-interoperability nor vehicle acceptance; see [Robustness](Robustness.md#diagnostic-sufficiency).
-Focused checks pass 101 Android cases across ten classes, including five actual
-TXT/ZIP roundtrips, and all 721 browser cases. The latter requires normal test-file
-process isolation for AudioWorklet registration fixtures.
+Source metadata targets beta.49/code91/browser v121; publication is pending.
+The post-beta.48 source fixes preserve failed browser generations through immediate
+bounded reporting and actual TXT/ZIP export, and split native fields before
+redaction. They also retain this app's unfinished audio-mode client when cleanup
+throws, retry finitely and preserve transient/duck focus recovery. Successful device
+cancellation alone must not publish `released=true`.
 
-### Beta.48
+Focused verification passes **164 distinct Android cases**: 101 diagnostic/transport
+cases plus 63 Bluetooth playback/voice/Sink cases. Five Robolectric tests run
+synthetic observations through actual app admission, persistence and TXT/ZIP export;
+the saved reports and Debug journal were independently read back for all 14 browser
+ICE and 23 named native fields. They do not exercise actual browser `getStats()` or
+network delivery. All **721 browser cases** pass with normal test-file process
+isolation. Four new workflow contract checks are separate from beta.48's 27 Python
+release/native-symbol/site checks; full CI remains waived.
 
-**Beta.48/code90 is published** from `eccd1f6f6762574974c698a400426761cfe68faf`
-with browser/cache v120. Android call output
-prefers the selected car Bluetooth device, then another usable Bluetooth output,
-then the system AudioTrack route. Playback readiness is independent of microphone
-capture. Mic failures retain working output and retry capture with bounded backoff
-only under the existing verified microphone identity. Pending SCO requests and mode
-ownership are withdrawn through this app's platform client before output handoff.
+A controlled Kotlin/JNI/native-C-API run delivers 160 original packets, then obtains
+identical native diagnostics from a UDP blackhole and wrong ICE passwords. Further
+native controls preserve 2,560 Opus payloads/timestamps across sixteen-track BUNDLE
+and forced remote `prflx`. Chromium 151 accepts the actual Router/JNI answer, but
+managed local UDP prevents media; the captured vehicle browser is Chromium 148.
+None of these proves vehicle ICE, speaker output or mirror picture.
 
-During call/microphone demand, browser telephone downlink remains suppressed even
-if Android output fails or is released. It resumes only after demand ends and
-owned Android output cleanup completes. Music, navigation and Siri keep their
-existing browser paths.
+[Hosted proof 43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973)
+passes for source `c7e1614a8bc02c6be967a5c2c94616e1f958a6f4`: normal Chromium 151
+produces nonzero Worklet output across 17 owners/two peers with no encoded fallback.
+A separate opt-in receive tap verifies 220 original Opus frames and RTP timestamps.
+UDP-blackhole and wrong-password controls both fail with zero output; their actual
+35 non-age browser fields match, and their 23 native fields match.
+Joblog JSON and API source/status were verified; the Actions ZIP download returned
+403, so its digest is unverified. The v121 offline probe verifies 132 resources,
+12,223,215 bytes, MIME and UI boot. These are not physical media acceptance.
+[Robustness](Robustness.md#diagnostic-sufficiency) records attribution limits;
+[Build](Build.md#beta49-release) tracks release preparation.
 
-Browser audio uses official `getStats()` with per-peer cache ownership, selected
-versus aggregate pair scope, real request/reply counters and sample age. Missing
-fields stay unknown. JNI adds official state/description/pair classifications;
-closing retains its last snapshot. Neither diagnostics path emits addresses,
-credentials or SDP, and no new native STUN counters are claimed.
+### Beta.48 reference
 
-Final focused validation passes **580 shared cases in 74 classes**, with no
-failures, errors or skips, including 59 Android-output/Sink cases and five native
-state cases. All **716 browser tests** and 27 Python release/native-symbol/site
-cases pass. The real final Gradle classes plus C JNI/libdatachannel replay two
-tracks of 80 original Opus packets: payload and RTP timestamps match; diagnostic
-assertions cover not-selected, invalid SDP, selected pair and close retention.
-Signed packaging and all twelve independent artifact checks pass, including
-per-ABI JNI exports/imports and exact source identity. Anonymous downloads match
-all three assets; public site checks match 226 files and 20 routes.
-[Build](Build.md#beta48-release) records precise publication provenance. Full CI remains explicitly waived. The managed browser policy
-still disables non-proxied UDP; there is no attached Android vehicle test device.
-Native vehicle Opus ICE and actual mirror picture still need physical evidence.
-The initially failing update fixture exposed a real cache-coherence race, now
-fixed with durable ownership and versioned module URLs. All twelve SW unit cases
-and enhanced Chromium checks pass: delayed takeover, failed navigation, restart,
-legacy unknown clients, multiple versions, module Worker/Worklet/Wasm and offline.
-A separate real-browser probe verifies all 132 production cache resources
-(12,219,931 bytes) offline against disk SHA-256, size and MIME, with UI boot and
-no external requests. This establishes resource integrity and lifecycle behavior,
-not codec execution, phone connectivity or physical media output.
+**Beta.48/code90/browser v120 remains published** from
+`eccd1f6f6762574974c698a400426761cfe68faf`. It prefers selected-car Bluetooth,
+then usable Bluetooth/system playback, independently of microphone readiness.
+During call/MIC demand, browser telephone downlink stays suppressed until demand
+ends and owned Android cleanup completes; music/navigation/Siri retain their paths.
+Its 580 shared, 716 browser and 27 Python checks, signed artifacts, public bytes,
+cache lifecycle and production-resource evidence are retained in the
+[immutable verification record](https://github.com/uJZk/TiPlay/blob/43e4e0954774f054f4959148421e9d81f69a140d/docs/Testing.md#current-release-source)
+and [Build](Build.md#beta48-release). Later diagnostic-retention fixes are not in
+that package. Physical media and vehicle ICE remained unverified.
 
 ### Beta.47 reference
 
@@ -409,7 +403,7 @@ pass, including four new tests of the actual SDK adaptation helper, original
 buffer/timestamp preservation, source-drop recovery, pixel rejection and lifecycle
 release. They do not load Android JNI or exercise native congestion feedback.
 
-For native audio, a Chromium 156 control received 80 original Opus packets through
+In the historical native-audio control, Chromium 156 received 80 original Opus packets through
 the product router/JNI but produced no decoded samples through WebAudio alone.
 A detached, permanently muted audio playout anchor starts decoding without adding
 another audible path; the existing Worklet still owns mixing and ducking.
@@ -417,7 +411,7 @@ another audible path; the existing Worklet still owns mixing and ducking.
 continued music under the production CSP. `rtc-audio-native.mjs` now uses the
 actual router, Kotlin/JNI/libdatachannel, all sixteen offered slots and the product
 ready barrier. Seventeen source owners force generation two; actual nonzero
-Worklet output and old/new anchor cleanup are required. The corrected native run
+Worklet output and old/new anchor cleanup are required. That historical corrected run
 recorded independent first/replacement-peer peaks of about 0.324 and 0.192.
 Muted-element `totalAudioEnergy=0` alone cannot
 establish missing decoder output; use decoded samples and actual Worklet samples.

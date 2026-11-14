@@ -43,14 +43,15 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current release work at [Build](docs/Build.md#beta48-release).
+Resume current source and release work at [Build](docs/Build.md#beta49-release).
 Beta.48/code90 and browser/cache v120 are published from
-`eccd1f6f6762574974c698a400426761cfe68faf`. Focused checks pass 580 shared cases in
-74 classes, 716 browser cases, 27 Python cases and a real 160-packet original-Opus
-JNI replay. Signed packaging, twelve independent artifact checks, all 51 native
-identities and anonymous APK/source/checksum bytes pass. The public site matches
-226 files and 20 routes; enhanced Chromium cache checks and all 132 production
-cache resources (12,219,931 bytes, offline integrity/UI boot) pass.
+`eccd1f6f6762574974c698a400426761cfe68faf`; [Build](docs/Build.md#beta48-release)
+retains their signed-artifact, site and source-verification provenance.
+Source metadata targets beta.49/code91/browser v121; signed publication is pending.
+The isolated source branch adds complete diagnostic retention and fixes false
+`released=true` after this app's mode-client cancellation throws. Failed cleanup
+retains ownership and retries at most three times, one second apart, without
+re-clearing an already withdrawn device request or losing transient-focus recovery.
 Android call output prefers selected-car Bluetooth, then another usable Bluetooth
 or system AudioTrack route. MIC failures do not stop playback; capture retains
 its verified identity. The user explicitly requires browser telephone downlink to
@@ -64,14 +65,20 @@ is improved, but its vehicle cause, actual mirror picture and physical output/ca
 still require new evidence. Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
-Post-beta.48 diagnostic source fixes are local and unpublished: preserve browser
+Post-beta.48 diagnostic source fixes remain unpublished: preserve browser
 failure generations through immediate bounded reporting, Standard/Debug text
-admission and complete native split records. Focused checks pass 101 Android
-cases and 721 browser cases, including five actual TXT/ZIP fixture roundtrips.
-Controlled JNI UDP-blackhole and wrong-password failures produce identical
-native diagnostics; do not promise unique vehicle attribution or request another
+admission and complete native split records. Source checks pass 164 distinct
+focused Android cases (101 diagnostics/transport plus 63 Bluetooth/Sink) and 721
+browser cases, including five actual TXT/ZIP fixture roundtrips. Focused hosted
+proof [43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973) passes
+normal Chromium/native Worklet output across 17 owners, a separate 220-frame
+byte/timestamp-exact receive tap, and both ICE failure controls. Full CI remains waived.
+UDP-blackhole and wrong-password controls produce identical native diagnostics
+and browser failure observations except sample age; do not promise unique attribution or request another
 field test merely to verify local logging. See the diagnostic-sufficiency section
-in Robustness for the evidence boundary.
+in Robustness for the evidence boundary. Actual Chromium 151 SDP admission and
+2,560 byte/timestamp-exact native C-API packets across BUNDLE/prflx controls pass;
+the captured vehicle browser is Chromium 148. These are not vehicle playback proof.
 Previously, beta.38/code80 with browser/cache v113 was published from
 `ab629363e6af9d7ea914fd8808baf84ab5f391fb`. Build records signed packaging,
 independent public bytes and 28 matching symbol pairs across the app-JNI and

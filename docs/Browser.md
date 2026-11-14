@@ -51,7 +51,7 @@ revision and the Performance monitor switch. Opening it does not enable Android
 Debug capture. Failure reports preserve the stage and bounded anonymous
 candidate/state counters without SDP, addresses or pairing secrets. The retry
 countdown describes the next attempt, not Android response time.
-The complete gathered SDP snapshot is covered by the authenticated transcript;
+The gathered SDP snapshot is covered by the authenticated transcript;
 no fictitious candidate or end-of-candidates marker is invented.
 
 Network failure retries with a countdown; rejected codes stop retries and require the

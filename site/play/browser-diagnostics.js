@@ -4,7 +4,7 @@ import { createVideoDiagnosticTracker, videoDiagnosticValues, packVideoDiagnosti
 export { VIDEO_DIAGNOSTIC_BYTES } from './video-diagnostics.js';
 
 // Keep this identifier in step with the offline cache; the receiver records the loaded page.
-export const PAGE_VERSION = 'v120';
+export const PAGE_VERSION = 'v121';
 export const AUDIO_DIAGNOSTIC_BYTES = 16 * 1024;
 const AUDIO_ICE_FIELDS = ['iceStatsState', 'iceStatsSampleAgeMs', 'icePairScope', 'icePairCount', 'icePairState',
   'icePairNominated', 'iceSelectedPairPresent', 'iceRequestsSent', 'iceRequestsReceived', 'iceResponsesSent',

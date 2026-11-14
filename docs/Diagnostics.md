@@ -288,25 +288,25 @@ of a particular audio gap. Older captures cannot supply these fields retroactive
 
 ## Browser audio evidence
 
-Current live audio uses negotiated browser RTP tracks or the PCM/libav.js-to-NetEq
-software path, with shared AudioWorklet mixing/ducking. See [Audio tempo](Audio-tempo.md).
-The worklet loads precompiled NetEq/audio-core modules with private memories;
-it does not run the retired PD/SoundTouch or browser libsoxr controller. The bundled
-NetEq Opus API is exercised by library tests, while product Opus requires native
-RTP negotiation. A retained schema/allowlist field does not prove a retired path runs.
+Post-beta.48 source changes below remain unpublished; the current APK does not yet
+include the failure-retention fixes.
 
-Before browser v117, `nativeAudio.state=ready` meant only SDP installation. Current
-readiness requires connected peer/ICE, Worklet binding and fulfilled playout-anchor
-`play()`. Read `peerState`, `iceState` and `gatheringState` separately.
-`rtcGeneration` fences replacements; `tracks`, `boundSlots`, `readySlots` and
-`streams` distinguish reception, graph binding, readiness and active owners.
-Standard retains native failure summaries; Debug adds healthy snapshots. Missing
-fields are unknown. Failed/retired/closed peers have zero live counts and no pending
-drain. `drainUnknown=true` preserves an ended owner's receiver for its buffered tail,
-not proof of completion or sound. Software AAC music does not establish native
-Opus guidance playback. Expiry drops stale queued speech without failing a newly
-negotiated peer; a continuing live owner's fresh packets retain their epoch.
-Transport/metadata readiness has an independent deadline, not proof of connectivity.
+Live audio uses negotiated browser RTP or PCM/libav.js-to-NetEq with shared
+AudioWorklet mixing/ducking; see [Audio tempo](Audio-tempo.md). Its precompiled
+NetEq/audio-core modules use private memories, without retired PD/SoundTouch/browser
+libsoxr. Bundled NetEq Opus tests do not establish product native-RTP negotiation;
+a retained schema field does not prove a retired path runs.
+
+Before v117, `nativeAudio.state=ready` meant SDP installation; it now requires
+connected peer/ICE, Worklet binding and fulfilled anchor `play()`. Read `peerState`,
+`iceState` and `gatheringState` separately. `rtcGeneration` fences replacements;
+`tracks`, `boundSlots`, `readySlots` and `streams` distinguish reception, binding,
+readiness and owners. Standard keeps native failures; Debug adds healthy snapshots.
+Missing fields are unknown. Retired/failed/closed peers have zero live counts;
+`drainUnknown=true` preserves a buffered tail, not proof of completion or sound.
+Expiry drops stale speech without failing a fresh peer; continuing owners retain
+their epoch. Software AAC and readiness deadlines do not establish native Opus
+connectivity or playback.
 
 Browser official `getStats()` supplies `iceStatsState`, `iceStatsSampleAgeMs`,
 pair scope/count/state/nomination, selection, ICE role, DTLS state and STUN
@@ -325,6 +325,9 @@ stage/peer/part to survive redaction. It supplies no STUN counters.
 SDP `ice-candidates` retains host counts and matching IPv4 /24 counts; matching
 prefixes do not prove reachability, and mDNS cannot be compared. These summaries
 omit addresses, ports, SDP and credentials; they do not identify or fix the ICE cause.
+Actual hosted UDP-blackhole and wrong-password controls produce identical browser
+failure observations except age and identical native fields. Even complete
+request/response counters cannot uniquely distinguish those causes.
 
 When the selected car has no matching SCO route,
 `communication-devices` records device `types`, `namedCandidates` and `validAddresses`
@@ -339,6 +342,10 @@ disconnected or wrongly selected car; the communication-device mismatch remains 
 selection alone does not verify microphone capture.
 `output-preference` is a request; `output-route`/`output-ready` observe playback.
 `output-ready` means routed/primed playback, not capture or physical sound.
+`communication-release-failed` retains unfinished app-owned device/mode clients.
+Device cancellation alone cannot prove mode cleanup. At most three attempts run
+one second apart; persistent failure keeps `released=false`. An explicit stop/close
+can start another bounded cleanup attempt. Other apps' routes remain independently owned.
 Route type/`selectedCarMatch` report exact-address correlation; false does not resolve aliases.
 `microphone-unavailable` can coexist with active playback. Microphone demand alone
 still suppresses browser telephony even after Android output failure/release;
@@ -451,15 +458,12 @@ preparation fields describe older captures only. Their detailed interpretation i
 [retained in Git](https://github.com/uJZk/TiPlay/blob/5c47dd00/docs/Diagnostics.md#browser-audio-evidence);
 current implementations and tests must not be inferred from that schema.
 
-In beta.12/v78, two CarPlay clock-step recoveries over 55.019 seconds versus
-beta.11's 188/730.046 seconds used different sources/load, so they do not establish
-acoustic improvement. Mirror underruns rose 116→618 render quanta, not 502 pops.
-Continuous source coordinates coexisted with 260 ms input/265 ms send-attempt gaps;
-iPhone/network, scheduling and capture interference remained unseparated. Seven of
-fifty native timestamps were over 20 ms ahead (maximum 98.2 ms), without proving
-acceptance. Reference decoding of 6,088 packets/5,401,600 frames found no decode,
-non-finite or over-full-scale errors. These observations cannot measure physical
-output, establish a universal click cause or validate the replacement NetEq graph.
+Beta.12/v78 clock-step and underrun observations used different sources/load from
+beta.11, so they establish no acoustic improvement. Continuous source coordinates
+coexisted with input/send gaps; timing-invalidations and scheduling/capture effects
+remained unseparated. Reference decoding found no decode, non-finite or
+over-full-scale error. The [immutable measurements](https://github.com/uJZk/TiPlay/blob/43e4e0954774f054f4959148421e9d81f69a140d/docs/Diagnostics.md#historical-audio-controller-evidence)
+cannot establish physical output, a universal click cause or replacement-NetEq behavior.
 
 ### CarPlay capture replay evidence
 
