@@ -10,6 +10,7 @@ on:
         options:
           - android-binaries
           - host-interop
+          - android-interop
 
 permissions:
   contents: read
@@ -20,13 +21,15 @@ concurrency:
 
 jobs:
   native:
-    if: ${{ inputs.mode != 'host-interop' }}
+    if: ${{ inputs.mode == '' || inputs.mode == 'android-binaries' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - name: Check native symbol pairing and draft-only archive contracts
-        run: python3 -m unittest discover -s tests -p 'test_native_symbols.py'
+        run: |
+          python3 -m unittest discover -s tests -p 'test_native_symbols.py'
+          python3 tests/native/test_rtc_audio_source_patches.py
       - uses: android-actions/setup-android@v3
         with:
           packages: ndk;28.2.13676358 cmake;3.31.6
@@ -39,6 +42,8 @@ jobs:
             --work-dir "$RUNNER_TEMP/tiplay-rtc-audio" \
             --symbols-dir "$RUNNER_TEMP/tiplay-audio-symbols"
           python3 scripts/rtc-audio/build.py --verify
+          python3 tests/native/test_rtc_audio_address_policy.py \
+            --source-dir "$RUNNER_TEMP/tiplay-rtc-audio/src/libdatachannel/deps/libjuice"
           python3 scripts/native_symbols.py verify "$RUNNER_TEMP/tiplay-audio-symbols"
       - uses: actions/upload-artifact@v4
         with:
@@ -125,6 +130,114 @@ jobs:
         with:
           name: tiplay-native-audio-interop
           path: ${{ runner.temp }}/tiplay-audio-interop/*.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  android-interop:
+    if: ${{ inputs.mode == 'android-interop' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358 emulator system-images;android-35;google_apis;x86_64
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Check focused interoperability harness contracts
+        run: |
+          python3 tests/native/test_audio_interop_workflow.py
+          node --test tests/native/android-audio-probe.test.mjs
+      - name: Assemble only the source-only debug application and instrumentation
+        run: |
+          python3 scripts/rtc-audio/build.py --verify
+          ./gradlew :mobile:assembleDebug :mobile:assembleDebugAndroidTest --no-daemon --max-workers=1 --no-parallel \
+            --no-configuration-cache -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -I gradle/ci-memory.init.gradle
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          app = list(Path('mobile/build/outputs/apk/debug').glob('*.apk'))
+          test = list(Path('mobile/build/outputs/apk/androidTest/debug').glob('*.apk'))
+          assert len(app) == len(test) == 1, 'Expected exactly one debug app APK and one test APK.'
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('ANDROID_AUDIO_APP_APK=' + str(app[0].resolve()) + '\n')
+              output.write('ANDROID_AUDIO_TEST_APK=' + str(test[0].resolve()) + '\n')
+          PY
+      - name: Start one accelerated API35 x86_64 emulator
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/tiplay-audio-avd
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then echo 'Blocked: hosted runner KVM is unavailable.' >&2; exit 1; fi
+          sudo chmod a+rw /dev/kvm
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -f -n tiplay-audio \
+            -k 'system-images;android-35;google_apis;x86_64'
+          nohup "$ANDROID_HOME/emulator/emulator" -avd tiplay-audio -port 5554 -no-window -no-audio \
+            -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on \
+            > "$RUNNER_TEMP/tiplay-audio-emulator.log" 2>&1 &
+          timeout 300 "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 wait-for-device
+          booted=0
+          for attempt in $(seq 1 150); do
+            if [ "$("$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then booted=1; break; fi
+            sleep 2
+          done
+          if [ "$booted" != 1 ]; then echo 'Blocked: Android emulator did not boot within its budget.' >&2; exit 1; fi
+          printf 'ANDROID_SERIAL=emulator-5554\n' >> "$GITHUB_ENV"
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell input keyevent 82
+      - name: Add the IPv4 link-local fixture only inside the disposable emulator
+        run: |
+          set -euo pipefail
+          task_adb="$ANDROID_HOME/platform-tools/adb"
+          if [ "$("$task_adb" -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" != 1 ]; then echo 'Blocked: fixture target is not an emulator.' >&2; exit 1; fi
+          if ! "$task_adb" -s emulator-5554 root > "$RUNNER_TEMP/tiplay-audio-adb-root.log" 2>&1; then echo 'Blocked: emulator root is unavailable.' >&2; exit 1; fi
+          timeout 60 "$task_adb" -s emulator-5554 wait-for-device
+          if [ "$("$task_adb" -s emulator-5554 shell id -u | tr -d '\r')" != 0 ]; then echo 'Blocked: emulator root is unavailable.' >&2; exit 1; fi
+          task_interface=$("$task_adb" -s emulator-5554 shell ip -o -4 addr show up scope global | awk '$4 !~ /^169[.]254[.]/ && $4 !~ /^127[.]/ {sub(/@.*/, "", $2); print $2; exit}' | tr -d '\r')
+          case "$task_interface" in ''|*[!a-zA-Z0-9_.-]*) echo 'Blocked: emulator has no normal UP IPv4 interface.' >&2; exit 1;; esac
+          if ! "$task_adb" -s emulator-5554 shell ip addr add 169.254.111.111/32 dev "$task_interface"; then echo 'Blocked: emulator link-local fixture could not be established.' >&2; exit 1; fi
+          if ! "$task_adb" -s emulator-5554 shell ip -o -4 addr show dev "$task_interface" | grep -Fq '169.254.111.111/32'; then echo 'Blocked: emulator link-local fixture verification failed.' >&2; exit 1; fi
+      - name: Install the pinned default Chromium test browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/tiplay-interop-pw" --no-audit --no-fund playwright-core@1.62.1
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/tiplay-interop-browsers"
+          node "$RUNNER_TEMP/tiplay-interop-pw/node_modules/playwright-core/cli.js" install --with-deps chromium
+          printf 'NODE_PATH=%s\n' "$RUNNER_TEMP/tiplay-interop-pw/node_modules" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" >> "$GITHUB_ENV"
+          NODE_PATH="$RUNNER_TEMP/tiplay-interop-pw/node_modules" node -e \
+            'console.log("CHROMIUM=" + require("playwright-core").chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Verify app-UID Android JNI through the normal production browser pipeline
+        env:
+          RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-android-audio-interop/baseline.json
+        run: node tests/web-e2e/rtc-audio-native.mjs --backend=android
+      - name: Verify original Android Opus bytes with the separate receive tap
+        env:
+          RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-android-audio-interop/encoded-payloads.json
+        run: node tests/web-e2e/rtc-audio-native.mjs --backend=android --encoded-tap
+      - name: Stop only the test emulator
+        if: always()
+        run: |
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+      - name: Upload bounded synthetic Android interoperability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiplay-android-audio-interop
+          path: ${{ runner.temp }}/tiplay-android-audio-interop/*.json
           if-no-files-found: warn
           retention-days: 3
 

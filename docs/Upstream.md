@@ -12,8 +12,17 @@ TiPlay is a GPL-3.0 derivative of [DiPlay by shihabal3amri](https://github.com/s
 | [libsoxr](https://github.com/chirlu/soxr) | Native Android SCO resampling; [native source inputs](../scripts/soxr/vendor/README.md) and [Android C/JNI subset](../shared/src/main/jni/soxr/README.md). |
 | [UxPlay](https://github.com/FDH2/UxPlay) | Ordinary AirPlay protocol reference and native transport-key modules; `ec203121355220dd90278a369eeabb0b8ba4f14a`, [native provenance](../shared/src/main/jni/airplay/README.md). |
 | [WebRTC Android SDK](https://github.com/webrtc-sdk/android) | Pinned M150 source and TiPlay source-rate AAR for local transports; component notices and [exact provenance](Third-party-notices.md#android-webrtc-datachannels) accompany the APK. |
+| [libdatachannel](https://github.com/paullouisageneau/libdatachannel) and [libjuice](https://github.com/paullouisageneau/libjuice) | Independent original-audio RTP transport; [pinned inputs and build](../shared/src/main/jni/rtc-audio/README.md). One exact libjuice patch retains IPv4 link-local candidates needed by the hotspot alias. |
 
 Review security, protocol, playback and lifecycle changes since each baseline. Update adopted code, pins, provenance, licenses and validation together. Source ancestry and the runtime identity selected for an APK are separate; see [Build](Build.md#runtime-identity).
+
+The audio patch changes only IPv4 link-local classification, including mapped
+IPv4; loopback and IPv6 link-local exclusions remain. Preserve its pre/post-image
+hashes, manifest, dirty-source rejection and matching APK notices. The producer
+records lock, patch and prepared-recipe identities for every ABI and symbol
+archive. Source verification must reject old binaries after a patch change;
+adopt authenticated producer artifacts before signing. See the reproduced
+[ICE evidence and limits](Robustness.md#ipv4-link-local-ice).
 
 ## WebRTC build maintenance
 

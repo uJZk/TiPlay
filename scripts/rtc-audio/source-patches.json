@@ -1,0 +1,19 @@
+{
+  "format": "tiplay-native-source-patches-v1",
+  "patches": [
+    {
+      "id": "libjuice-ipv4-link-local",
+      "dependency": "libdatachannel/deps/libjuice",
+      "upstream_commit": "b89c792e3612faf2f12cf35bcc56857313a06be3",
+      "file": "libjuice-ipv4-link-local.patch",
+      "sha256": "1fbbe1ff61daff05e13e6ae8df224176e74b5771cc5b9cc976cc753b34070e78",
+      "targets": [
+        {
+          "path": "src/addr.c",
+          "before_sha256": "a4b93cb969da87e529747f8b696c16b88550f4537dc95bfc56ba3104c4a607f4",
+          "after_sha256": "0b9744c3afba60b72279450100f25ca060728290a25228ecb9e38fd6c825d956"
+        }
+      ]
+    }
+  ]
+}

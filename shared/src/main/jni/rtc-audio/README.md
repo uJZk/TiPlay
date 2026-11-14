@@ -4,22 +4,22 @@
 
 ## Source and licensing
 
-The native library contains unmodified libdatachannel v0.24.6, Mbed TLS 3.6.7, and the exact libdatachannel libjuice/usrsctp/libsrtp/plog submodule revisions. `sources.lock.json` records every source commit, download URL and archive SHA-256. No private libWebRTC C++ ABI, encoder substitution or payload-encryptor hook is used.
+The native library contains libdatachannel v0.24.6, Mbed TLS 3.6.7, and the exact libdatachannel libjuice/usrsctp/libsrtp/plog submodule revisions. `sources.lock.json` records every upstream source commit, download URL and archive SHA-256. TiPlay applies the recorded `libjuice-ipv4-link-local.patch` to libjuice: IPv4 link-local host candidates, including IPv4-mapped addresses, remain available for local-only links. Loopback and IPv6 link-local exclusion is unchanged. This fixes a reproduced candidate-gathering compatibility case; it does not establish the cause of any particular vehicle failure. No private libWebRTC C++ ABI, encoder substitution or payload-encryptor hook is used.
 
-`licenses/` contains the corresponding upstream licenses. Android packages identical notices, `sources.lock.json`, `artifacts.json` and a source availability notice under `assets/licenses/rtc-audio/`; `build.py --verify` also checks these copies. libdatachannel and libjuice use MPL-2.0, usrsctp/libsrtp use BSD licenses, plog uses MIT, and Mbed TLS is used under its Apache-2.0 option. This directory's JNI bridge is TiPlay GPL-3.0-only code. Source archives are retrievable with the checked-in build script; retain their upstream license files and this source provenance when distributing binaries.
+`licenses/` contains the corresponding upstream licenses. Android packages identical notices, `sources.lock.json`, `artifacts.json`, `source-patches.json`, the patch itself and a source availability notice under `assets/licenses/rtc-audio/`; `build.py --verify` also checks these copies. The patch manifest records its upstream commit, patch SHA-256 and exact target pre/post hashes. libdatachannel and libjuice use MPL-2.0, usrsctp/libsrtp use BSD licenses, plog uses MIT, and Mbed TLS is used under its Apache-2.0 option. This directory's JNI bridge is TiPlay GPL-3.0-only code. Source archives and the complete modification are available through the checked-in build script and patch files; retain their upstream license files and this source provenance when distributing binaries.
 
 `include/rtc.h` and `include/version.h` are copied from the exact libdatachannel revision. `artifacts.json` records the packaged library checksums. NDK 28.2.13676358, CMake 3.31.6 and Ninja 1.13.0 built arm64-v8a, armeabi-v7a, x86 and x86_64; all ELF LOAD segments use 16 KiB alignment. Each transport statically links its dependencies and C++ runtime; the JNI module is C and preserves the project's `APP_STL := none` setting.
 
 ## Rebuild and verification
 
-Use Python 3.12+, NDK 28.2.13676358, CMake and Ninja:
+Use Python 3.12+, GNU patch, NDK 28.2.13676358, CMake and Ninja:
 
 ```sh
 python3 scripts/rtc-audio/build.py --ndk "$ANDROID_NDK_HOME" --work-dir /tmp/tiplay-rtc-audio
 python3 scripts/rtc-audio/build.py --verify
 ```
 
-`--abi` may be repeated to rebuild selected architectures. The source archive checksums are always verified. `export-c-api.map` exports only the stable `rtc*` C surface and hides static C++/crypto symbols from the separate libWebRTC library in the same process. The work directory holds downloads/build intermediates; only stripped shared libraries and their manifest are written into this directory. Byte-identical output across different compiler versions or source paths is not claimed.
+`--abi` may be repeated to rebuild selected architectures. Preparation verifies archive checksums and the extracted files against those pinned archives, applies the exact patch without fuzz, and accepts an already prepared tree only with matching content. Unknown files, modified source, stale markers and incorrect patch identities are rejected. Compilation writes intermediates outside the source tree, whose contents are checked again before adopting output. Each ABI and the native-symbol producer record the prepared recipe identity; `--verify` rejects older or mismatched identities. `export-c-api.map` exports only the stable `rtc*` C surface and hides static C++/crypto symbols from the separate libWebRTC library in the same process. The work directory holds downloads/build intermediates; only stripped shared libraries and their manifest are written into this directory. Byte-identical output across different compiler versions or source paths is not claimed.
 
 Mbed TLS's default configuration disables DTLS-SRTP. Both dependencies and libdatachannel are compiled consistently with `MBEDTLS_SSL_DTLS_SRTP`. Android builds retain a 16 KiB linker page-size setting. The host build groups static crypto archives to satisfy GNU ld's archive ordering; Android lld handles the same dependency graph directly.
 

@@ -19,8 +19,8 @@ android {
         targetSdk = 37
         versionCode = providers.gradleProperty("tiplayVersionCode").get().toInt()
         versionName = providers.gradleProperty("tiplayVersionName").get()
-
-
+        testInstrumentationRunner = "com.shilapi.xcertplay.web.NativeAudioProbeInstrumentation"
+        testApplicationId = "com.ujzk.tiplay.audiointerop.test"
     }
 
 

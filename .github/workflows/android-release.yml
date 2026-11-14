@@ -37,6 +37,7 @@ jobs:
               raise SystemExit('Missing repository signing secrets: ' + ', '.join(missing))
           PY
           python3 scripts/check_public_tree.py
+          python3 scripts/rtc-audio/build.py --verify
           python3 -m unittest discover -s tests -p 'test_release_draft.py'
           python3 -m unittest discover -s tests -p 'test_native_symbols.py'
       - uses: actions/setup-java@v4

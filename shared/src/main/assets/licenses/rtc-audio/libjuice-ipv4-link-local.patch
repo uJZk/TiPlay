@@ -1,0 +1,30 @@
+diff --git a/src/addr.c b/src/addr.c
+--- a/src/addr.c
++++ b/src/addr.c
+@@ -81,6 +81,8 @@
+ 	}
+ }
+ 
++/* TiPlay: retain IPv4 link-local host candidates for local-only links.
++ * Loopback and IPv6 link-local candidates remain excluded. */
+ bool addr_is_local(const struct sockaddr *sa) {
+ 	switch (sa->sa_family) {
+ 	case AF_INET: {
+@@ -88,8 +90,6 @@
+ 		const uint8_t *b = (const uint8_t *)&sin->sin_addr;
+ 		if (b[0] == 127) // loopback
+ 			return true;
+-		if (b[0] == 169 && b[1] == 254) // link-local
+-			return true;
+ 		return false;
+ 	}
+ 	case AF_INET6: {
+@@ -103,8 +103,6 @@
+ 		if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+ 			const uint8_t *b = (const uint8_t *)&sin6->sin6_addr + 12;
+ 			if (b[0] == 127) // loopback
+-				return true;
+-			if (b[0] == 169 && b[1] == 254) // link-local
+ 				return true;
+ 			return false;
+ 		}

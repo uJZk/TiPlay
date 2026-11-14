@@ -218,6 +218,41 @@ also exercise actual browser `getStats()`: all 35 non-age browser fields and all
 Therefore full counters still cannot uniquely attribute the vehicle failure.
 This does not establish Android socket routing, physical output or mirror picture.
 
+### IPv4 link-local ICE
+
+Post-beta.49 investigation reproduces a native candidate-filter defect relevant
+to the hotspot's default `169.254.111.111` alias. Pinned libjuice excludes IPv4
+link-local addresses while the main WebRTC transport retains them. Both current
+and captured main-peer configuration disable Android network monitoring; do not
+attribute the difference to a main-peer `Network.bindSocket()` call. Binding a
+local IP and explicitly binding an Android Network are separate operations.
+
+An isolated, native-only two-namespace fixture runs the actual product
+NativeRtcAudioPeer/Kotlin/JNI and an official C-API receiver. With only a link-local path
+reachable and ordinary candidates unreachable, the original library times out.
+Removing only the IPv4 link-local gather exclusion delivers all 80 original Opus
+packets with identical bytes and RTP timestamps. A reachable-offer control also
+delivers 80 with the original library through peer-reflexive discovery, so the
+filter is not a universal failure. These tests leave the host network and managed
+browser policy unchanged and do not identify the recorded vehicle's cause.
+
+The minimal patch retains ordinary and mapped IPv4 link-local candidates while
+preserving loopback and IPv6 link-local exclusions. Forty cases compile the real
+C address classifier; fourteen real archive/patch controls cover preparation,
+identity, idempotence and dirty-source rejection. A fresh patched host build
+also forwards 160 byte/timestamp-exact original packets. Exact patch and manifest
+notices accompany the source; the old four-ABI prebuilts intentionally fail the
+new source-identity gate until formal producer adoption. Release preflight must
+reject that transition state.
+
+The focused Android proof must use the packaged libraries in an API35 target-app
+UID and `untrusted_app` SELinux domain, initialize the packaged main WebRTC
+library, gather an actual IPv4 link-local candidate and pass the existing normal
+browser/Worklet and separate original-packet checks. Emulator endpoint mapping
+does not prove Android vehicle-network routing or physical output. This proof
+and formal artifact adoption are pending; neither source tests nor new counters
+justify another blind vehicle log request.
+
 ## Matched post-stop native crash
 
 The November 2 beta.37/code79 capture contains a real Android tombstone whose

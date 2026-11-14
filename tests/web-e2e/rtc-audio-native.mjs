@@ -13,25 +13,34 @@ import { resolve, delimiter, join, dirname, extname, sep } from 'node:path';
 const { chromium } = createRequire(import.meta.url)('playwright-core');
 const root = resolve(import.meta.dirname, '../..'), site = resolve(root, 'site/play');
 const native = process.env.RTC_AUDIO_HOST_DIR;
+const runtimeBackend = process.argv.find(value => value.startsWith('--backend='))?.slice('--backend='.length) ?? 'host';
 const fault = process.argv.find(value => value.startsWith('--fault='))?.slice('--fault='.length) ?? 'none';
 const encodedTapEnabled = process.argv.includes('--encoded-tap');
+assert.ok(['host', 'android'].includes(runtimeBackend), 'Unknown native runtime backend.');
 assert.ok(['none', 'udp-blackhole', 'wrong-ice-password'].includes(fault), 'Unknown test fault.');
 assert.ok(fault === 'none' || !encodedTapEnabled, 'Run byte measurement separately from fault controls.');
-assert.ok(native, 'Build scripts/rtc-audio/build.py --host and set RTC_AUDIO_HOST_DIR to its build/host directory.');
+assert.ok(runtimeBackend === 'host' || fault === 'none', 'Android runs only the normal and separate byte-measurement controls.');
 const classes = resolve(root, 'shared/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes');
-let stdlib = process.env.KOTLIN_STDLIB;
-if (!stdlib) {
-  const base = join(process.env.GRADLE_USER_HOME, 'caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib');
-  const jars = [];
-  for (const version of await readdir(base)) for (const hash of await readdir(join(base, version)))
-    for (const file of await readdir(join(base, version, hash))) if (file.endsWith('.jar')) jars.push(join(base, version, hash, file));
-  stdlib = jars.sort().at(-1);
+let stdlib = process.env.KOTLIN_STDLIB, probeClasses;
+if (runtimeBackend === 'host') {
+  assert.ok(native, 'Build scripts/rtc-audio/build.py --host and set RTC_AUDIO_HOST_DIR to its build/host directory.');
+  if (!stdlib) {
+    const base = join(process.env.GRADLE_USER_HOME, 'caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib');
+    const jars = [];
+    for (const version of await readdir(base)) for (const hash of await readdir(join(base, version)))
+      for (const file of await readdir(join(base, version, hash))) if (file.endsWith('.jar')) jars.push(join(base, version, hash, file));
+    stdlib = jars.sort().at(-1);
+  }
+  assert.ok(stdlib, 'KOTLIN_STDLIB must point at a Kotlin standard library JAR.');
+  probeClasses = resolve(native, 'probe-classes'); await mkdir(probeClasses, { recursive: true });
+  const compiled = spawnSync('javac', ['-cp', [classes, stdlib].join(delimiter), '-d', probeClasses,
+    resolve(root, 'tests/native/RoutedAudioPeerProbe.java')], { encoding: 'utf8' });
+  assert.equal(compiled.status, 0, compiled.stderr);
+} else {
+  assert.ok(process.env.ANDROID_AUDIO_APP_APK && process.env.ANDROID_AUDIO_TEST_APK,
+    'Set ANDROID_AUDIO_APP_APK and ANDROID_AUDIO_TEST_APK to the focused source-only debug build.');
+  assert.match(process.env.ANDROID_SERIAL ?? '', /^emulator-[0-9]+$/, 'Select the dedicated test emulator explicitly.');
 }
-assert.ok(stdlib, 'KOTLIN_STDLIB must point at a Kotlin standard library JAR.');
-const probeClasses = resolve(native, 'probe-classes'); await mkdir(probeClasses, { recursive: true });
-const compiled = spawnSync('javac', ['-cp', [classes, stdlib].join(delimiter), '-d', probeClasses,
-  resolve(root, 'tests/native/RoutedAudioPeerProbe.java')], { encoding: 'utf8' });
-assert.equal(compiled.status, 0, compiled.stderr);
 const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(readFileSync(resolve(site, 'index.html'), 'utf8'))[1];
 const server = createServer((request, response) => {
   response.setHeader('Content-Security-Policy', csp);
@@ -46,14 +55,62 @@ const server = createServer((request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const fixture = JSON.parse(readFileSync(resolve(root, 'tests/web/fixtures/neteq-opus.json'), 'utf8'));
 let browser, child, page, blackhole, blackholeEndpoint, blackholeRequests = 0, encodedFallbackRecordsDelivered = 0, stderr = '', sequence = 0;
+let outcomeReport;
 const pending = new Map(), events = [], ownerBindings = new Map(), expectedFrames = new Map();
+function verifiedAndroidProof(requireFinished = false) {
+  if (runtimeBackend !== 'android') return null;
+  const proof = child?.proof, runtime = proof?.runtime;
+  assert.ok(runtime && Number.isInteger(runtime.uid) && runtime.uid >= 10000, 'Android probe did not run under an application UID.');
+  assert.equal(runtime.uid, runtime.applicationUid, 'Instrumentation UID differs from the installed target application.');
+  assert.match(runtime.selinuxType, /^untrusted_app(?:_[0-9]+)?$/, 'Android proof must use the ordinary app SELinux domain.');
+  assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64');
+  assert.equal(runtime.mainWebRtcInitialized, true, 'The packaged main WebRTC library was not initialized first.');
+  assert.match(proof.apkSha256, /^[0-9a-f]{64}$/);
+  assert.match(proof.testApkSha256, /^[0-9a-f]{64}$/);
+  assert.match(proof.sourceCommit, /^[0-9a-f]{40}$/);
+  for (const name of ['libdatachannel.so', 'libtiplay_rtc_audio.so', 'libjingle_peerconnection_so.so']) {
+    assert.match(proof.libraries?.[name]?.sha256, /^[0-9a-f]{64}$/, 'Missing packaged Android library identity.');
+    assert.ok(Number.isSafeInteger(proof.libraries[name].bytes) && proof.libraries[name].bytes > 0);
+  }
+  if (requireFinished) {
+    assert.equal(proof.finishedNormally, true, 'Android instrumentation did not complete normally.');
+    assert.equal(child.exitCode, 0, 'Android instrumentation exited unsuccessfully.');
+    const nat = proof.nat;
+    for (const name of ['peerGenerationsCreated', 'mappingsCreated', 'activeMappings', 'toGuestDatagrams',
+      'fromGuestDatagrams', 'redirectCommandsSucceeded', 'redirectCommandsRemoved', 'linkLocalCandidateGenerations',
+      'observedLinkLocalHostCandidates'])
+      assert.ok(Number.isSafeInteger(nat?.[name]) && nat[name] >= 0, 'Missing emulator NAT evidence.');
+    assert.equal(nat.peerGenerationsCreated, 2); assert.ok(nat.mappingsCreated >= 2);
+    assert.equal(nat.activeMappings, 0, 'Owned emulator mappings were not removed.');
+    assert.equal(nat.redirectCommandsSucceeded, nat.mappingsCreated);
+    assert.equal(nat.redirectCommandsRemoved, nat.mappingsCreated);
+    assert.ok(nat.toGuestDatagrams > 0 && nat.fromGuestDatagrams > 0, 'No bidirectional emulator UDP forwarding was observed.');
+    assert.equal(nat.linkLocalCandidateGenerations, 2, 'Both native peer generations must retain a real link-local host candidate.');
+    assert.ok(nat.observedLinkLocalHostCandidates >= 2, 'No native link-local candidates were observed before NAT translation.');
+  }
+  return proof;
+}
 async function report(value) {
+  outcomeReport = value;
+}
+async function persistReport(value) {
   if (process.env.RTC_AUDIO_INTEROP_OUTPUT) {
     const output = resolve(process.env.RTC_AUDIO_INTEROP_OUTPUT);
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, JSON.stringify(value, null, 2) + '\n');
   }
   console.log(JSON.stringify(value));
+}
+async function closeHarnessResources(actions) {
+  const failures = [];
+  for (const [stage, close] of actions) {
+    try { await close(); }
+    catch (error) {
+      const name = error?.constructor?.name;
+      failures.push({ stage, exception: typeof name === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(name) ? name : 'Error' });
+    }
+  }
+  return failures;
 }
 function injectedSdp(sdp) {
   if (fault === 'wrong-ice-password') return sdp.replace(/^a=ice-pwd:(\S+)/gm,
@@ -103,8 +160,15 @@ try {
     await new Promise((resolve, reject) => { blackhole.once('error', reject); blackhole.bind(0, '0.0.0.0', resolve); });
     blackholeEndpoint = { address, port: blackhole.address().port };
   }
-  child = spawn('java', ['--enable-native-access=ALL-UNNAMED', '-Djava.library.path=' + [native, resolve(native, 'libdatachannel')].join(delimiter),
-    '-cp', [probeClasses, classes, stdlib].join(delimiter), 'com.shilapi.xcertplay.web.RoutedAudioPeerProbe'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  if (runtimeBackend === 'android') {
+    const { startAndroidAudioProbe } = await import('../native/android-audio-probe.mjs');
+    child = await startAndroidAudioProbe({ adb: process.env.ADB || 'adb', serial: process.env.ANDROID_SERIAL,
+      appApk: process.env.ANDROID_AUDIO_APP_APK, testApk: process.env.ANDROID_AUDIO_TEST_APK });
+    verifiedAndroidProof();
+  } else {
+    child = spawn('java', ['--enable-native-access=ALL-UNNAMED', '-Djava.library.path=' + [native, resolve(native, 'libdatachannel')].join(delimiter),
+      '-cp', [probeClasses, classes, stdlib].join(delimiter), 'com.shilapi.xcertplay.web.RoutedAudioPeerProbe'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  }
   child.stderr.on('data', value => { stderr = (stderr + value.toString()).slice(-4000); });
   createInterface({ input: child.stdout }).on('line', line => {
     const value = JSON.parse(line);
@@ -216,7 +280,7 @@ try {
     await page.evaluate(() => { clearInterval(probeTimer); audio.dispose(); });
     await command('close');
     await report({ status: 'passed', browser: browser.version(), injectedFault: fault,
-      backend: 'product Router + Kotlin/JNI + libdatachannel', negativeControlExpected: true,
+      backend: 'product Router + Kotlin/JNI + libdatachannel', runtimeBackend, negativeControlExpected: true,
       browserFailure: result.failure, native: snapshot.snapshot.native?.transportDiagnostics ?? null,
       failures: snapshot.failures, blackholeRequests: fault === 'udp-blackhole' ? blackholeRequests : null,
       peak: result.peak, encodedFallbackRecordsDelivered, physicalOutputMeasured: false });
@@ -289,13 +353,16 @@ try {
     await page.evaluate(() => { clearInterval(probeTimer); audio.dispose(); globalThis.encodedTap?.terminate(); });
     assert.equal(await page.evaluate(() => playoutAnchors.every(anchor => anchor.paused && anchor.srcObject === null)), true);
     await command('close');
-    await report({ status: 'passed', browser: browser.version(), backend: 'product Router + Kotlin/JNI + libdatachannel', owners: 17,
+    if (runtimeBackend === 'android') await child.close();
+    const androidRuntimeProof = verifiedAndroidProof(true);
+    await report({ status: 'passed', browser: browser.version(), backend: 'product Router + Kotlin/JNI + libdatachannel', runtimeBackend, owners: 17,
       slotsPerPeer: 16, firstPeerPeak, replacementPeerPeak: result.peak, received: result.received, peerGeneration: snapshot.snapshot.generation,
       silentAnchors: result.anchors.length, readyBarrierVerified: true, originalFixturePayloads: true,
       encodedFramesVerified: encodedTapEnabled ? result.encodedFrames.length : null,
       encodedPayloadsByteExact: encodedTapEnabled ? true : null, rtpTimestampsExact: encodedTapEnabled ? true : null,
       encodedTapInitializations: encodedTapEnabled ? result.encodedTapInitializations.length : null,
-      encodedFallbackRecordsDelivered, physicalOutputMeasured: false });
+      encodedFallbackRecordsDelivered, androidRuntimeProof,
+      physicalOutputMeasured: false });
   }
 } catch (cause) {
   const diagnostics = await page?.evaluate(encodedTapEnabled => ({ native: globalThis.audio?.stats().nativeAudio,
@@ -313,9 +380,28 @@ try {
       remoteCandidates: (peer.remoteDescription?.sdp.match(/^a=candidate:/gm) ?? []).length })) }), encodedTapEnabled).catch(() => null);
   const snapshot = child?.exitCode === null ? await command('snapshot').catch(() => null) : null;
   const blocked = diagnostics?.peers?.some(peer => peer.localCandidates === 0) === true;
-  await report({ status: blocked ? 'blocked' : 'failed', injectedFault: fault, diagnostics,
+  await report({ status: blocked ? 'blocked' : 'failed', injectedFault: fault, runtimeBackend, diagnostics,
+    androidRuntimeProof: runtimeBackend === 'android' ? child?.proof ?? null : null,
     native: snapshot?.snapshot, nativeStderrBytes: stderr.length, failureClass: cause.constructor.name });
   console.error(cause.message);
   process.exitCode = 1;
-} finally { child?.kill(); await browser?.close(); if (blackhole) await new Promise(resolve => blackhole.close(resolve));
-  await new Promise(resolve => server.close(resolve)); }
+} finally {
+  const cleanupFailures = await closeHarnessResources([
+    ['child', () => runtimeBackend === 'android' ? child?.close() : child?.kill()],
+    ['browser', () => browser?.close()],
+    ['blackhole', () => blackhole && new Promise((resolve, reject) => {
+      try { blackhole.close(resolve); } catch (error) { reject(error); }
+    })],
+    ['server', () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))],
+    ['android-proof', () => {
+      if (runtimeBackend !== 'android' || !outcomeReport) return;
+      outcomeReport = { ...outcomeReport, androidRuntimeProof: null };
+      outcomeReport.androidRuntimeProof = child?.proof ?? null;
+    }],
+  ]);
+  if (cleanupFailures.length) {
+    process.exitCode = 1;
+    outcomeReport = { ...outcomeReport, status: outcomeReport?.status === 'blocked' ? 'blocked' : 'failed', cleanupFailures };
+  }
+  if (outcomeReport) await persistReport(outcomeReport);
+}

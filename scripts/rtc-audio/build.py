@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """Build the fixed libdatachannel encoded-media transport without codec libraries."""
-import argparse, hashlib, json, os, pathlib, shutil, struct, subprocess, sys, tarfile, urllib.request
+import argparse, hashlib, json, os, pathlib, shutil, struct, subprocess, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import native_symbols
+import source_patches
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 VENDOR = ROOT / 'shared/src/main/jni/rtc-audio'
 ABIS = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64']
 NOTICES = ROOT / 'shared/src/main/assets/licenses/rtc-audio'
+PATCH_MANIFEST = pathlib.Path(__file__).resolve().parent / 'source-patches.json'
+
+def source_identity():
+    return source_patches.source_identity(VENDOR / 'sources.lock.json', PATCH_MANIFEST)
+
+def prepare_sources(work):
+    return source_patches.prepare_sources(work, VENDOR / 'sources.lock.json', PATCH_MANIFEST)
 
 def notice_sources():
-    return [*(VENDOR / 'licenses').iterdir(), VENDOR / 'sources.lock.json', VENDOR / 'artifacts.json']
+    identity = source_identity()
+    return [*(VENDOR / 'licenses').iterdir(), VENDOR / 'sources.lock.json', VENDOR / 'artifacts.json',
+            PATCH_MANIFEST, *(PATCH_MANIFEST.parent / entry['file'] for entry in identity['source_patches']['patches'])]
 
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def verify_library(path):
@@ -39,8 +50,11 @@ def main():
     parser.add_argument('--symbols-dir', type=pathlib.Path, help='Dedicated unstripped ELF/index output (Android only).')
     args = parser.parse_args()
     if args.verify:
+        identity = source_identity()
         manifest = json.loads((VENDOR / 'artifacts.json').read_text())
         for abi in ABIS:
+            if any(manifest[abi].get(key) != value for key, value in identity.items()):
+                raise RuntimeError('Native source patch identity missing or mismatched: ' + abi)
             result = verify_library(VENDOR / 'prebuilt' / abi / 'libdatachannel.so')
             if result['sha256'] != manifest[abi]['sha256']: raise RuntimeError('Artifact checksum mismatch: ' + abi)
             print(abi, result['bytes'], result['sha256'])
@@ -52,30 +66,18 @@ def main():
     if not args.cmake or not args.ninja: parser.error('Supply CMake and Ninja executables.')
     if not args.host and not args.ndk: parser.error('--ndk or ANDROID_NDK_HOME is required.')
     work = args.work_dir.resolve(); (work / 'archives').mkdir(parents=True, exist_ok=True)
-    sources = json.loads((VENDOR / 'sources.lock.json').read_text())
-    for name, entry in sources.items():
-        archive = work / 'archives' / (entry['repository'].rsplit('/', 1)[1] + '-' + entry['commit'] + '.tar.gz')
-        if not archive.exists():
-            with urllib.request.urlopen(entry['url'], timeout=90) as response: archive.write_bytes(response.read())
-        if sha(archive) != entry['sha256']: raise RuntimeError('Source checksum mismatch: ' + name)
-        target = work / 'src' / name
-        if not (target / '.source-commit').exists():
-            target.mkdir(parents=True, exist_ok=True)
-            with tarfile.open(archive) as source:
-                for member in source.getmembers():
-                    parts = pathlib.PurePosixPath(member.name).parts
-                    if len(parts) < 2: continue
-                    member.name = str(pathlib.PurePosixPath(*parts[1:])); source.extract(member, target, filter='data')
-            (target / '.source-commit').write_text(entry['commit'] + '\n')
-        elif (target / '.source-commit').read_text().strip() != entry['commit']:
-            raise RuntimeError('Stale source tree: ' + name)
+    prepared = prepare_sources(work)
+    identity = source_identity()
     def run(command):
         print(' '.join(map(str, command)), flush=True)
-        subprocess.run(list(map(str, command)), check=True)
+        subprocess.run(list(map(str, command)), check=True,
+                       env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
     artifacts = json.loads((VENDOR / 'artifacts.json').read_text()) if (VENDOR / 'artifacts.json').exists() else {}
     symbols = (args.symbols_dir or work / 'native-symbols').resolve()
     producer = native_symbols.producer_context('rtc-audio',
         source_lock_sha256=sha(VENDOR / 'sources.lock.json'), cmake_build_type='Release',
+        patch_sha256=identity['source_patches']['patches'][0]['sha256'],
+        prepared_state_sha256=identity['prepared_state_sha256'],
         debug_flags=['-gline-tables-only'])
     for abi in ['host'] if args.host else args.abi or ABIS:
         build = work / 'build' / abi; prefix = work / 'install' / abi
@@ -101,6 +103,8 @@ def main():
             '-DMbedTLS_LIBRARY=' + str(prefix / 'lib/libmbedtls.a'), '-DMbedCrypto_LIBRARY=' + str(prefix / 'lib/libmbedcrypto.a'),
             '-DMbedX509_LIBRARY=' + str(prefix / 'lib/libmbedx509.a'), '-DMBEDTLS_LIBRARIES=' + str(prefix / 'lib/libmbedcrypto.a')])
         run([args.cmake, '--build', build / 'libdatachannel', '--target', 'datachannel', '--parallel', args.jobs])
+        if source_patches.verify_prepared_sources(work, VENDOR / 'sources.lock.json', PATCH_MANIFEST) != prepared:
+            raise RuntimeError('Prepared source changed during compilation')
         if abi == 'host':
             java_home = pathlib.Path(os.environ.get('JAVA_HOME', '/usr/lib/jvm/default-java'))
             run([os.environ.get('CC', 'cc'), '-shared', '-fPIC', '-pthread', '-O2', '-Wall', '-Wextra', '-Werror',
@@ -108,6 +112,9 @@ def main():
                 '-I' + str(java_home / 'include/linux'), '-I' + str(VENDOR / 'include'), VENDOR / 'rtc_audio_jni.c',
                 '-L' + str(build / 'libdatachannel'), '-ldatachannel', '-Wl,-rpath,$ORIGIN/libdatachannel',
                 '-o', build / 'libtiplay_rtc_audio.so'])
+            (build / 'source-provenance.json').write_text(json.dumps({
+                **identity, 'verified_tree_sha256': prepared['verified_tree_sha256'],
+                'producer': producer, 'host_only': True}, indent=2) + '\n')
         if abi != 'host':
             output = VENDOR / 'prebuilt' / abi / 'libdatachannel.so'; output.parent.mkdir(parents=True, exist_ok=True)
             strip = args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
@@ -115,7 +122,7 @@ def main():
             symbol_entry = native_symbols.record(symbols, abi, 'libdatachannel.so',
                 build / 'libdatachannel/libdatachannel.so', output, producer,
                 args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf')
-            artifacts[abi] = {**verify_library(output), 'build_id': symbol_entry['build_id']}
+            artifacts[abi] = {**verify_library(output), 'build_id': symbol_entry['build_id'], **identity}
             (VENDOR / 'artifacts.json').write_text(json.dumps(artifacts, indent=2) + '\n')
     if not args.host:
         native_symbols.verify(symbols, args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf')
