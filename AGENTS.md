@@ -43,21 +43,37 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current source and release work at [Build](docs/Build.md#beta49-release).
-Post-release source work is recorded at
-[IPv4 link-local ICE](docs/Robustness.md#ipv4-link-local-ice): the reproduced
-native candidate-filter defect has a minimal patch and strict producer identity.
-Four-ABI producer `43578453616` and authenticated adoption pass; Android app-UID
-interoperability is pending. Release verification rejects old identities. Do not publish
-another diagnostic-only beta or claim the vehicle cause is established.
-Beta.49/code91/browser v121 is published from
-`95850493cb6bab562992862087cde87fc94b2e0e`; signed run
-[43570628422](https://github.com/uJZk/TiPlay/actions/runs/43570628422) passes all
-three jobs, twelve artifact checks pass, and anonymous APK/source/checksum bytes
-match. All 51 native libraries are covered by symbols archive `445111467`.
-Pages run `43571756114` succeeds for that source; all 226 public files
-(37,828,528 bytes) and 20 routes match. [Build](docs/Build.md#beta48-release)
-retains beta.48 provenance. The release preserves bounded failure evidence and fixes false
+Resume current source and release work at [Build](docs/Build.md#beta50-release).
+Beta.50/code92/browser v122 metadata is prepared locally; signed packaging,
+publication and deployment remain pending. The reproduced
+[IPv4 link-local ICE](docs/Robustness.md#ipv4-link-local-ice) candidate-filter
+defect has a minimal patch and strict producer identity. Official four-ABI
+producer [43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616)
+passes from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`; adoption commit
+`aafbf7bb302b7d266e8cbc98a64f84a43616c297` matches the actual authenticated
+Actions outputs, including original JSON bytes. Focused Android proof
+[43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717) passes from
+`e6591ef01d96134de2b336dc0903499e69176c97`: actual app UID/domain, packaged-library
+initialization, both generations' link-local candidates, 17-owner/two-peer Worklet
+output and a separate 220-frame exact Opus/timestamp tap. Actual legacy-Wi-Fi
+backend, owned HMP forwarding, same-app-UID echo and full cleanup pass; the
+official artifact bytes match API digest/size. Earlier pre-offer fixture failures
+cannot diagnose product ICE. This explicit emulator/NAT topology does not prove
+link-local SRTP egress, an active main-peer coexistence case or physical vehicle
+output/capture/mirror picture. [Testing](docs/Testing.md#current-release-source)
+retains the source and runtime evidence boundaries.
+The candidate metadata passes 85 scoped web/version/cache cases across five files,
+two site-deployment Python cases and public-tree/native/cache/diff checks; these
+are separate from beta.49's complete browser suite.
+Release verification rejects old native identities. Do not publish another
+diagnostic-only beta or claim the vehicle cause is known.
+
+The current published release is [beta.49/code91/v121](docs/Build.md#beta49-release)
+from `95850493cb6bab562992862087cde87fc94b2e0e`. Signed run `43570628422`,
+Pages `43571756114`, twelve artifact checks, all 51 native identities and
+anonymous release/site bytes pass. The immutable Build/Testing records retain
+its hashes and source checks; these do not establish later Android or vehicle
+acceptance. Beta.49 preserves bounded failure evidence and fixes false
 `released=true` after this app's mode-client cancellation throws. Failed cleanup
 retains ownership and retries at most three times, one second apart, without
 re-clearing an already withdrawn device request or losing transient-focus recovery.
@@ -74,11 +90,10 @@ is improved, but its vehicle cause, actual mirror picture and physical output/ca
 still require new evidence. Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
-Beta.49 preserves browser
-failure generations through immediate bounded reporting, Standard/Debug text
-admission and complete native split records. Source checks pass 164 distinct
-focused Android cases (101 diagnostics/transport plus 63 Bluetooth/Sink) and 721
-browser cases and 31 Python cases, including five actual TXT/ZIP fixture roundtrips. Focused hosted
+Beta.49 preserves browser failure generations through immediate bounded reporting,
+Standard/Debug text admission and complete native split records. Its source
+checks pass 164 distinct focused Android cases, 721 browser cases and 31 Python
+cases, including five actual TXT/ZIP fixture roundtrips. Focused hosted
 proof [43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973) passes
 normal Chromium/native Worklet output across 17 owners, a separate 220-frame
 byte/timestamp-exact receive tap, and both ICE failure controls. Full CI remains waived.

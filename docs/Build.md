@@ -167,6 +167,8 @@ After the intended commit passes the Android workflow, run **Actions → Build s
 - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
 It verifies the pinned upstream APK and packages its two runtime files, runs release lint/build, then creates `TiPlay-<version>.apk`, the matching committed source ZIP and `SHA256SUMS.txt`. Its Actions artifact lasts 14 days. The separate upload job creates or updates a prerelease draft; it does not publish a release. Signing/runtime temporary inputs are deleted after the build. This workflow does not replace the Android unit and browser checks.
+Preflight runs `scripts/rtc-audio/build.py --verify`; all four audio prebuilts
+and packaged notices must match the recorded source-patch identity before signing.
 
 For an in-place device update without a release draft, dispatch with
 `create_draft=false` and use the signed Actions artifact. Keep the declared version
@@ -452,16 +454,21 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v121
+
+Browser/cache **v121**, product **0.2.20-beta.49**, is deployed by
+[Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
+from `95850493cb6bab562992862087cde87fc94b2e0e`.
+Anonymous checks match all 226 files (37,828,528 bytes), MIME types and 20 routes.
+The [beta.49 record](#beta49-release) retains source, artifact and media-proof
+limits. Candidate beta.50/v122 deployment remains pending.
+
 ### Browser v120
 
-Browser/cache **v120**, product **0.2.20-beta.48**, is deployed by
+Browser/cache v120, product beta.48, was deployed by
 [Pages run 43560789648](https://github.com/uJZk/TiPlay/actions/runs/43560789648)
-from APK build commit `eccd1f6f6762574974c698a400426761cfe68faf`.
-Anonymous checks match all 226 files (37,825,244 bytes) and 20 routes.
-It adds audio ICE checks and durable page/Worker runtime-cache ownership.
-Enhanced Chromium lifecycle checks and all 132 production cache resources
-(12,219,931 bytes, offline SHA/size/MIME/UI boot) pass; this is not media-decode proof.
-Retired update routes remain 404.
+from `eccd1f6f6762574974c698a400426761cfe68faf`.
+The [beta.48 reference](#beta48-release) retains its verification.
 
 ### Browser v119
 
@@ -497,44 +504,61 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
+<a id="beta50-release"></a>
+### Candidate beta.50
+
+The IPv4 link-local audio ICE fix is adopted in
+`aafbf7bb302b7d266e8cbc98a64f84a43616c297`. Candidate beta.50/code92/browser
+v122 metadata is prepared, and scoped web/site/native source checks pass.
+Signed APK, publication and Pages deployment remain pending.
+[Native producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
+attempt 1, succeeds from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`:
+both native/symbol jobs, 16 symbol contracts, 14 source-preparation checks and
+40 compiled C address cases pass. The patch retains IPv4 link-local candidates;
+loopback and IPv6 link-local exclusions remain.
+
+Both official Actions ZIPs were downloaded and verified against API byte counts
+and SHA-256 digests. All four adopted libraries, their official JSON and source
+lock match those bytes; architecture, Build IDs, symbols and 16 KiB alignment
+pass. Official `artifacts.json` SHA-256 is
+`8b2ce0d61cc294873befc3d0591b0f692ba08cfef573631dbd21af5b0f31ebff`.
+Raw producer-index SHA-256 is
+`aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879`,
+retained in durable draft `445164968`. The native producer and adoption commit
+are distinct from any future APK signing source.
+
+[Android run 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
+passes from `e6591ef01d96134de2b336dc0903499e69176c97` with the packaged libraries:
+UID 10209, `untrusted_app`, API35/x86_64, initialized main libjingle and actual
+link-local candidates in both native generations. Normal Chromium 151 Worklet
+output covers 17 owners/two peers with zero encoded fallback; a separate tap
+verifies 220 original Opus payloads/RTP timestamps and 32 transforms.
+Each control verifies same-app-UID nonce echo, the actual Wi-Fi user backend and
+unique owned forwards, then removes all three with zero pending/cleanup failures.
+The official 3,835-byte evidence ZIP matches its API digest; its JSON matches
+decoded joblogs.
+
+Emulator 37.2.13 uses explicit legacy Wi-Fi, an owned HMP socket and test NAT.
+Its exact public source pin remains unmatched. Earlier pre-offer fixture failure
+did not diagnose product ICE. [Testing](Testing.md#current-release-source) and
+[reproduced ICE evidence](Robustness.md#ipv4-link-local-ice) retain the evidence
+boundaries: link-local source egress, active main-peer coexistence, vehicle cause,
+physical sound/capture and mirror picture remain unverified. Full CI is waived
+at the user's request; final signed/public artifact checks remain pending.
+
 <a id="beta49-release"></a>
 ### Published beta.49
 
 [Beta.49/code91/browser v121](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.49)
 was published **2026-11-14 15:34:45 (UTC+8)** from
 `95850493cb6bab562992862087cde87fc94b2e0e`.
-It preserves browser failure generations through immediate bounded
-reporting and TXT/ZIP export, and splits native diagnostics before redaction.
-Bluetooth cleanup retains an unfinished mode client after cancellation throws,
-retries finitely and does not falsely announce release or break focus recovery.
-
-Focused source verification passes 164 distinct Android cases and 721 browser
-cases, 31 Python checks and five actual TXT/ZIP fixture roundtrips.
-Full CI remains explicitly waived. [Testing](Testing.md#current-release-source)
-separates these results from interoperability and physical acceptance.
-
-Isolated source `c7e1614a8bc02c6be967a5c2c94616e1f958a6f4` passes
-[hosted proof 43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973):
-normal Chromium/Worklet output across 17 owners, a separate 220-frame exact
-Opus/RTP-timestamp tap, and UDP-blackhole/wrong-password failure controls.
-Both failures have identical browser observations except sample age and identical
-native fields; counters cannot uniquely identify the vehicle cause.
-
 [Signed run 43570628422](https://github.com/uJZk/TiPlay/actions/runs/43570628422)
-passes all three jobs. Twelve independent artifact checks pass, including exact
-source archive, signer/runtime continuity and all 51 native libraries (24 JNI,
-27 prebuilt). Durable symbols archive `445111467` covers 43 Build IDs and eight
-verified no-ID libraries. Anonymous HTTP 200 downloads match all three assets,
-API digests, checksums and the exact tag commit.
-[Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
-uses the same source. All 226 public files (37,828,528 bytes), MIME types and
-20 routes match; verification preserves the initial transient 503 and normal retry.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.49.apk` | 114,596,687 | `13fac87147c32ada75083b6c9e499df383817b9ad2cd592d9d46e76d36c083b0` |
-| `TiPlay-0.2.20-beta.49-source.zip` | 70,291,807 | `0b9ea8d745c19e67ee1bd46fcf5eb6c86a40344b2426378443225f92d76edc96` |
-| `SHA256SUMS.txt` | 191 | `79a3f84654979275127ee94941ba3a5a4a462ea2a62163ffa820d93f0b59dc9d` |
+and [Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
+passed. The [immutable complete record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Build.md#beta49-release)
+retains all asset hashes, 51-library symbol coverage in draft `445111467`, twelve
+artifact gates, source/hosted proof and public byte checks. It fixes diagnostic
+export loss and unfinished Bluetooth cleanup; vehicle causes and physical media
+remained unverified. Full CI was waived.
 
 <a id="beta48-release"></a>
 ### Published beta.48 reference
@@ -591,50 +615,25 @@ still pending. Git history preserves the full artifact hash table.
 ### Published beta.44
 
 [Beta.44](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.44), code 86,
-was built from `34f1d730d433ca8b9a9e8adeda6ca4be233effdc`. It retains browser
-v116 and adds a legacy mirror event socket as a compatibility attempt, along with
-privacy-preserving audio ICE and Bluetooth profile diagnostics. Mirror playback,
-CarPlay recovery, navigation audio and Bluetooth microphone routing require
-vehicle verification. Browser v116 was not deployed again.
-
-[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42465135050) and the
-[signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/42465136735)
-passed. The CI downloads the same pinned WASI SDK through the GitHub assets API
-and verifies its SHA-256 before building. Local Android checks and 694 browser tests
-passed. The signed APK has package `com.ujzk.tiplay`, version code 86, the same
-signer as beta.43 and 16 KiB ZIP alignment. Its source ZIP matches the build
-commit, and published asset digests match the independently checked build artifact.
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.44.apk` | 114,547,535 | `481e4e6c15da4d074382807dee46fd9d64fb65b191170f1f5ced88b76daff9a1` |
-| `TiPlay-0.2.20-beta.44-source.zip` | 70,193,796 | `835de21d54e5618eba4f36fc2f6d8027f9bb3c67eabccd716e605291d7d286e4` |
-| `SHA256SUMS.txt` | 191 | `250a8698969f841d245435c7958c5eee9780a4da980acc7bdec713a5162d1e0e` |
+was built from `34f1d730d433ca8b9a9e8adeda6ca4be233effdc`.
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42465135050) and
+[signing](https://github.com/uJZk/TiPlay/actions/runs/42465136735) passed.
+Its [immutable complete record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Build.md#published-beta44)
+retains artifact hashes and local checks. It adds the legacy mirror event socket
+and diagnostics while retaining v116; vehicle media and Bluetooth routing remained
+unverified.
 
 <a id="published-beta43"></a>
 ### Published beta.43
 
 [Beta.43](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.43), code 85,
-was built from `47cf959ce3741bd15c00f3c9202daac81b65c759`. It retains browser
-v116 and includes CarPlay video recovery after encoder selection timeout, removal
-of the Android mirror key-frame cache, and native audio and car HFP diagnostics.
-Navigation audio, Bluetooth microphone routing and physical mirror/CarPlay recovery
-remain to be verified. A key frame discarded before the replacement track is ready
-may still require a later key frame before mirroring can show a picture.
-
-[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42373342720) and the
-[signed release workflow](https://github.com/uJZk/TiPlay/actions/runs/42375059777)
-passed. Local Android checks passed on retry after one port rebinding test failed;
-694 browser tests passed. The signed workflow artifact was independently verified:
-package `com.ujzk.tiplay`, version code 85, signer matching beta.42, 16 KiB ZIP
-alignment and a source ZIP matching the build commit. Published asset digests match
-the workflow artifact. Browser v116 was not deployed again.
-
-| Artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.43.apk` | 114,531,151 | `944942b2f01d25aa221e95d1b38d32502c7a360d1b7830887c0dfbba8fb94594` |
-| `TiPlay-0.2.20-beta.43-source.zip` | 70,190,035 | `19d1c723bb7a5db57ed30438c46fc5d8c22f9e82fa4758ab6d835aa9116e2e3c` |
-| `SHA256SUMS.txt` | 191 | `1df92e350efdda7687222f4742d6a03091e30d251b73065863a87830e0cb21bf` |
+was built from `47cf959ce3741bd15c00f3c9202daac81b65c759`.
+[Full Android CI](https://github.com/uJZk/TiPlay/actions/runs/42373342720) and
+[signing](https://github.com/uJZk/TiPlay/actions/runs/42375059777) passed.
+Its [immutable complete record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Build.md#published-beta43)
+retains artifact hashes, retry and local checks. It removes the mirror key-frame
+cache and adds video recovery/diagnostics while retaining v116; vehicle picture
+and Bluetooth routing remained unverified.
 
 <a id="published-beta42"></a>
 ### Published beta.42

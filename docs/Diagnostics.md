@@ -288,7 +288,7 @@ of a particular audio gap. Older captures cannot supply these fields retroactive
 
 ## Browser audio evidence
 
-Beta.49/browser v121 includes the failure-retention fixes below; older APK/page
+Beta.49/browser v121 introduced the failure-retention fixes below; older APK/page
 versions cannot provide them retroactively.
 
 Live audio uses negotiated browser RTP or PCM/libav.js-to-NetEq with shared
@@ -322,12 +322,13 @@ description and selected-pair APIs: states/change counts, description results/ty
 selected-pair result and candidate type/protocol/family/presence. `not-selected`/-3
 is not a socket error; close retains the last snapshot. Split records repeat
 stage/peer/part to survive redaction. It supplies no STUN counters.
-SDP `ice-candidates` retains host counts and matching IPv4 /24 counts; matching
-prefixes do not prove reachability, and mDNS cannot be compared. These summaries
-omit addresses, ports, SDP and credentials; they do not identify or fix the ICE cause.
-Actual hosted UDP-blackhole and wrong-password controls produce identical browser
-failure observations except age and identical native fields. Even complete
-request/response counters cannot uniquely distinguish those causes.
+SDP `ice-candidates` reports host and matching IPv4 /24 counts, omitting endpoints,
+SDP and credentials. Prefix matching cannot prove reachability; mDNS is not
+comparable. Hosted UDP-blackhole/wrong-password controls yield identical non-age
+browser/native observations; counters do not uniquely locate faults. The
+[IPv4 link-local defect](Robustness.md#ipv4-link-local-ice) was reproduced
+independently; its repair does not establish the vehicle cause or physical output.
+Request field evidence for specific unresolved hypotheses, never merely to test logging.
 
 When the selected car has no matching SCO route,
 `communication-devices` records device `types`, `namedCandidates` and `validAddresses`

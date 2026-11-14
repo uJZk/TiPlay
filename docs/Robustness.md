@@ -241,19 +241,31 @@ preserving loopback and IPv6 link-local exclusions. Forty cases compile the real
 C address classifier; fourteen real archive/patch controls cover preparation,
 identity, idempotence and dirty-source rejection. A fresh patched host build
 also forwards 160 byte/timestamp-exact original packets. Exact patch and manifest
-notices accompany the source; the old four-ABI prebuilts intentionally fail the
-new source-identity gate until formal producer adoption. Release preflight must
-reject that transition state.
+notices accompany the source. The source-identity gate rejects obsolete
+prebuilts, and release preflight verifies it before APK packaging.
 
-The focused Android proof must use the packaged libraries in an API35 target-app
-UID and `untrusted_app` SELinux domain, initialize the packaged main WebRTC
-library, gather an actual IPv4 link-local candidate and pass the existing normal
-browser/Worklet and separate original-packet checks. Emulator endpoint mapping
-does not prove Android vehicle-network routing or physical output. Four-ABI
-producer [43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616)
-and authenticated adoption pass: packaged hashes, sizes, Build IDs and 16 KiB
-alignment match the producer. Android proof is pending; neither source tests nor new counters
-justify another blind vehicle log request.
+Four-ABI producer
+[43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616) and
+authenticated adoption pass: packaged hashes, sizes, Build IDs and 16 KiB
+alignment match the actual official archives. Focused Android proof
+[43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717), source
+`e6591ef01d96134de2b336dc0903499e69176c97`, then passes in the actual API35
+x86_64 target-app UID and `untrusted_app` domain. It initializes the packaged
+main WebRTC library and verifies the packaged native bytes. Both peer
+generations gather real IPv4 link-local candidates. Normal Chromium 151 playback
+passes all seventeen source owners with nonzero Worklet output and no encoded
+fallback; a separate tap verifies 220 original Opus payloads and RTP timestamps.
+
+The fixture explicitly uses legacy WiFi/SLIRP and owned HMP UDP forwarding to
+the actual guest address. Runtime NIC/backend association, exact forwarding rows,
+same-app-UID nonce echo and all mapping/worker cleanup pass. An earlier classic
+forwarding preflight delivered no packets to the app before any native offer;
+that failed fixture could not diagnose product ICE. The official evidence ZIP
+matches its API digest and both decoded job-log objects. These results establish
+this configured Android/browser path, not LL source egress, a concurrently active
+main peer, vehicle routing, physical output/capture or mirror presentation. SDK
+37.2.13 is observed; its exact source pin is not established. Neither this proof
+nor new counters justify another blind vehicle log request.
 
 ## Matched post-stop native crash
 

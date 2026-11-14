@@ -7,47 +7,70 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.49
+### Candidate beta.50
 
-Beta.49/code91/browser v121 is published from
-`95850493cb6bab562992862087cde87fc94b2e0e`.
-The post-beta.48 source fixes preserve failed browser generations through immediate
-bounded reporting and actual TXT/ZIP export, and split native fields before
-redaction. They also retain this app's unfinished audio-mode client when cleanup
-throws, retry finitely and preserve transient/duck focus recovery. Successful device
-cancellation alone must not publish `released=true`.
+The IPv4 link-local patch preserves loopback and IPv6 link-local exclusions.
+[Producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
+attempt 1 from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`, passes 16 symbol contracts,
+14 preparation and 40 compiled C address cases. Adoption
+`aafbf7bb302b7d266e8cbc98a64f84a43616c297` matches four official libraries and both
+JSON files. Downloaded Actions ZIP API digests/sizes and ELF hashes, sizes, Build IDs,
+16 KiB alignment and matching symbols pass.
 
-Focused verification passes **164 distinct Android cases**: 101 diagnostic/transport
-cases plus 63 Bluetooth playback/voice/Sink cases. Five Robolectric tests run
-synthetic observations through actual app admission, persistence and TXT/ZIP export;
-the saved reports and Debug journal were independently read back for all 14 browser
-ICE and 23 named native fields. They do not exercise actual browser `getStats()` or
-network delivery. All **721 browser cases** pass with normal test-file process
-isolation. All 31 Python release/native-symbol/site/workflow checks pass;
-full CI remains waived.
+The real NativeRtcAudioPeer/Kotlin/JNI namespace control delivers 80 exact Opus
+payloads/timestamps after the patch where the old library times out. A reachable-offer
+peer-reflexive control also delivers 80 with the old library; the filter was not
+universally fatal. A separate patched-host run preserves 160. See
+[Robustness](Robustness.md#ipv4-link-local-ice) for scope and identity controls.
 
-A controlled Kotlin/JNI/native-C-API run delivers 160 original packets, then obtains
-identical native diagnostics from a UDP blackhole and wrong ICE passwords. Further
-native controls preserve 2,560 Opus payloads/timestamps across sixteen-track BUNDLE
-and forced remote `prflx`. Chromium 151 accepts the actual Router/JNI answer, but
-managed local UDP prevents media; the captured vehicle browser is Chromium 148.
-None of these proves vehicle ICE, speaker output or mirror picture.
+[Android proof 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
+passes from `e6591ef01d96134de2b336dc0903499e69176c97` on Emulator 37.2.13 and
+Chromium 151.0.7922.34. The actual target UID 10209/`untrusted_app`, API35/x86_64,
+main-libjingle initialization and adopted packaged-library identities are verified.
+Both generations gather real IPv4 link-local candidates before NAT. The normal
+untapped pipeline passes 17 owners/two peers with nonzero Worklet peaks
+(about 0.35136/0.19214) and zero fallback records. A separate tap verifies 220
+original Opus payloads and RTP timestamps across 32 transform initializations.
+The 3,835-byte official ZIP matches its authenticated API digest; extracted JSON
+matches decoded joblogs.
 
-[Hosted proof 43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973)
-passes for source `c7e1614a8bc02c6be967a5c2c94616e1f958a6f4`: normal Chromium 151
-produces nonzero Worklet output across 17 owners/two peers with no encoded fallback.
-A separate opt-in receive tap verifies 220 original Opus frames and RTP timestamps.
-UDP-blackhole and wrong-password controls both fail with zero output; their actual
-35 non-age browser fields match, and their 23 native fields match.
-Joblog JSON and API source/status were verified; the Actions ZIP download returned
-403, so its digest is unverified. The v121 offline probe verifies 132 resources,
-12,223,215 bytes, MIME and UI boot. These are not physical media acceptance.
-[Robustness](Robustness.md#diagnostic-sufficiency) records attribution limits;
-[Build](Build.md#beta49-release) records publication. Signed run `43570628422`
-passes all three jobs; twelve artifact checks, all 51 native identities and
-anonymous APK/source/checksum downloads pass. Pages run `43571756114` succeeds
-for the release source; all 226 public files (37,828,528 bytes), MIME types and
-20 routes match. These public checks establish deployment identity, not physical media.
+The fixture explicitly uses `-feature -WiFiPacketStream`, legacy Wi-Fi and an
+owned Unix socket for the QEMU human monitor (HMP). Actual NIC/user-backend and
+unique forwarding rows are verified. Each control first passes same-app-UID nonce
+send/receive/echo 1/1/1, then accounts for three added/removed forwards, zero pending
+or failed HMP requests and full cleanup. Earlier
+[pre-offer control 43582970833](https://github.com/uJZk/TiPlay/actions/runs/43582970833)
+fails before NativeOffer and cannot diagnose product ICE. Current source checks
+pass 12 workflow contracts, 25 pure controls (12 adapter/13 HMP), Java compilation
+and 19 shell syntax checks; these are distinct from the runtime proof and beta.49 counts.
+
+This proves the explicit emulator/NAT topology, without establishing link-local
+SRTP egress, active main-peer coexistence, physical vehicle/Bluetooth output,
+microphone capture, mirror picture or the vehicle cause. The observed Emulator
+revision has no matched exact public source pin.
+
+Strict FFmpeg decoding of the retained beta.46 mirror capture passes 687/687
+High-profile access units without stderr; removing all SPS/PPS fails with zero
+frames. This proves source decodability, not pixels, forwarding or presentation.
+No images or keys were exported.
+
+Beta.50/code92/browser v122 metadata passes 85 scoped web/version/cache tests
+across five files and two site-deployment Python cases. Public-tree, native-library,
+cache-manifest and diff checks pass. Signed packaging, publication and Pages
+verification remain pending; full CI remains waived.
+
+<a id="beta49"></a>
+### Beta.49 reference
+
+Beta.49/code91/browser v121 was published from
+`95850493cb6bab562992862087cde87fc94b2e0e`. Its 164 focused Android, 721 browser
+and 31 Python checks, five actual TXT/ZIP fixture roundtrips, signed run
+`43570628422` and Pages `43571756114` are retained in the
+[immutable verification record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Testing.md#current-release-source)
+and [Build](Build.md#beta49-release). Hosted proof `43569629973` passes normal
+17-owner/two-peer Worklet output, a separate 220-frame exact receive tap and both
+failure controls. Their identical non-age observations do not uniquely identify
+the vehicle cause. These counts belong to that source, not fresh beta.50 executions.
 
 ### Beta.48 reference
 
@@ -89,29 +112,14 @@ observations do not identify the underlying ICE or SCO identity cause.
 
 ### Beta.45 reference
 
-**Beta.45/code87 is published** from
-`db558c4e97674b4f7ca57d835c20cf1fafb50ff1`, with browser/cache **v117**.
-[Build](Build.md#beta45-release) records the separate APK and Pages provenance.
-The user explicitly requested skipping full CI for this beta. The fresh complete
-run was stopped, so it is not a final-source pass. Earlier independent recovery
-validation passed the required Android command with 4,579 unit cases and 700
-browser tests before the later `forceKeyFrame` changes. Current focused protocol
-validation passed **138 shared unit tests across 16 classes**, including all eleven
-new mirror-command tests, with no failures, errors or skips:
-
-```sh
-./gradlew :shared:testDebugUnitTest --tests '*ReceiverMirror*' \
-  --tests '*ReceiverAirPlay2*' --tests '*WebVideoMirrorIngressTest' \
-  --tests '*ReceiverServerTest*'
-```
-
-All **700 browser tests** passed. Python checks passed nine release-draft,
-sixteen native-symbol and two site cases; public-tree/cache/diff checks passed.
-The signed release workflow passed; independent package/runtime/native/source
-checks and anonymous public-download byte comparisons passed. Public-site checks
-matched 226 files and 19 routes from the separate, byte-identical Pages tree.
-These results are separate from the CI waiver. Physical mirror, audio/ICE and
-Bluetooth routing acceptance remains open.
+Beta.45/code87/browser v117 was published from
+`db558c4e97674b4f7ca57d835c20cf1fafb50ff1` with full CI explicitly waived;
+the stopped complete run is not a final-source pass. Its 138 focused shared,
+700 browser and 27 Python checks, signed/public bytes and separate Pages tree
+are retained in the
+[immutable verification record](https://github.com/uJZk/TiPlay/blob/7e01eb29e6af24ed30e438af95697369841d7f49/docs/Testing.md#beta45-reference)
+and [Build](Build.md#beta45-release). Earlier complete checks predate
+`forceKeyFrame`; physical mirror, ICE and Bluetooth routing remained open.
 
 ### Beta.41 reference
 
