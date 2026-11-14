@@ -288,8 +288,8 @@ of a particular audio gap. Older captures cannot supply these fields retroactive
 
 ## Browser audio evidence
 
-Post-beta.48 source changes below remain unpublished; the current APK does not yet
-include the failure-retention fixes.
+Beta.49/browser v121 includes the failure-retention fixes below; older APK/page
+versions cannot provide them retroactively.
 
 Live audio uses negotiated browser RTP or PCM/libav.js-to-NetEq with shared
 AudioWorklet mixing/ducking; see [Audio tempo](Audio-tempo.md). Its precompiled

@@ -208,6 +208,16 @@ controls preserve 2,560 original Opus packets across sixteen bundled tracks and
 a forced remote peer-reflexive path. These rule out general lack of BUNDLE/prflx
 support; they do not establish Android socket routing or vehicle interoperability.
 
+[Focused hosted proof 43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973)
+then passes the actual Router/Kotlin/JNI/browser-controller path in default
+Chromium 151: seventeen owners and both peer generations reach nonzero Worklet
+output without encoded fallback. A separate receive-transform measurement
+verifies 220 original Opus frames and RTP timestamps. The two injected failures
+also exercise actual browser `getStats()`: all 35 non-age browser fields and all
+23 native fields match between the UDP blackhole and wrong-password case.
+Therefore full counters still cannot uniquely attribute the vehicle failure.
+This does not establish Android socket routing, physical output or mirror picture.
+
 ## Matched post-stop native crash
 
 The November 2 beta.37/code79 capture contains a real Android tombstone whose

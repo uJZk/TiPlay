@@ -44,11 +44,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
 Resume current source and release work at [Build](docs/Build.md#beta49-release).
-Beta.48/code90 and browser/cache v120 are published from
-`eccd1f6f6762574974c698a400426761cfe68faf`; [Build](docs/Build.md#beta48-release)
-retains their signed-artifact, site and source-verification provenance.
-Source metadata targets beta.49/code91/browser v121; signed publication is pending.
-The isolated source branch adds complete diagnostic retention and fixes false
+Beta.49/code91/browser v121 is published from
+`95850493cb6bab562992862087cde87fc94b2e0e`; signed run
+[43570628422](https://github.com/uJZk/TiPlay/actions/runs/43570628422) passes all
+three jobs, twelve artifact checks pass, and anonymous APK/source/checksum bytes
+match. All 51 native libraries are covered by symbols archive `445111467`.
+Pages run `43571756114` succeeds for that source; all 226 public files
+(37,828,528 bytes) and 20 routes match. [Build](docs/Build.md#beta48-release)
+retains beta.48 provenance. The release preserves bounded failure evidence and fixes false
 `released=true` after this app's mode-client cancellation throws. Failed cleanup
 retains ownership and retries at most three times, one second apart, without
 re-clearing an already withdrawn device request or losing transient-focus recovery.
@@ -65,11 +68,11 @@ is improved, but its vehicle cause, actual mirror picture and physical output/ca
 still require new evidence. Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
-Post-beta.48 diagnostic source fixes remain unpublished: preserve browser
+Beta.49 preserves browser
 failure generations through immediate bounded reporting, Standard/Debug text
 admission and complete native split records. Source checks pass 164 distinct
 focused Android cases (101 diagnostics/transport plus 63 Bluetooth/Sink) and 721
-browser cases, including five actual TXT/ZIP fixture roundtrips. Focused hosted
+browser cases and 31 Python cases, including five actual TXT/ZIP fixture roundtrips. Focused hosted
 proof [43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973) passes
 normal Chromium/native Worklet output across 17 owners, a separate 220-frame
 byte/timestamp-exact receive tap, and both ICE failure controls. Full CI remains waived.

@@ -498,18 +498,18 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta49-release"></a>
-### Beta.49 preparation
+### Published beta.49
 
-Source metadata targets beta.49/code91/browser v121; publication is pending.
-Beta.48 below remains the current public release.
-The source now preserves browser failure generations through immediate bounded
+[Beta.49/code91/browser v121](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.49)
+was published **2026-11-14 15:34:45 (UTC+8)** from
+`95850493cb6bab562992862087cde87fc94b2e0e`.
+It preserves browser failure generations through immediate bounded
 reporting and TXT/ZIP export, and splits native diagnostics before redaction.
 Bluetooth cleanup retains an unfinished mode client after cancellation throws,
 retries finitely and does not falsely announce release or break focus recovery.
 
 Focused source verification passes 164 distinct Android cases and 721 browser
-cases, including five actual TXT/ZIP fixture roundtrips. The new four-case
-workflow contract check is separate from the previous release's 27 Python checks.
+cases, 31 Python checks and five actual TXT/ZIP fixture roundtrips.
 Full CI remains explicitly waived. [Testing](Testing.md#current-release-source)
 separates these results from interoperability and physical acceptance.
 
@@ -518,9 +518,23 @@ Isolated source `c7e1614a8bc02c6be967a5c2c94616e1f958a6f4` passes
 normal Chromium/Worklet output across 17 owners, a separate 220-frame exact
 Opus/RTP-timestamp tap, and UDP-blackhole/wrong-password failure controls.
 Both failures have identical browser observations except sample age and identical
-native fields; counters cannot uniquely identify the vehicle cause. Signed APK,
-symbols, source/archive, public downloads and Pages remain pending. No new package or
-vehicle retest is needed merely to validate local diagnostic retention.
+native fields; counters cannot uniquely identify the vehicle cause.
+
+[Signed run 43570628422](https://github.com/uJZk/TiPlay/actions/runs/43570628422)
+passes all three jobs. Twelve independent artifact checks pass, including exact
+source archive, signer/runtime continuity and all 51 native libraries (24 JNI,
+27 prebuilt). Durable symbols archive `445111467` covers 43 Build IDs and eight
+verified no-ID libraries. Anonymous HTTP 200 downloads match all three assets,
+API digests, checksums and the exact tag commit.
+[Pages run 43571756114](https://github.com/uJZk/TiPlay/actions/runs/43571756114)
+uses the same source. All 226 public files (37,828,528 bytes), MIME types and
+20 routes match; verification preserves the initial transient 503 and normal retry.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.49.apk` | 114,596,687 | `13fac87147c32ada75083b6c9e499df383817b9ad2cd592d9d46e76d36c083b0` |
+| `TiPlay-0.2.20-beta.49-source.zip` | 70,291,807 | `0b9ea8d745c19e67ee1bd46fcf5eb6c86a40344b2426378443225f92d76edc96` |
+| `SHA256SUMS.txt` | 191 | `79a3f84654979275127ee94941ba3a5a4a462ea2a62163ffa820d93f0b59dc9d` |
 
 <a id="beta48-release"></a>
 ### Published beta.48 reference

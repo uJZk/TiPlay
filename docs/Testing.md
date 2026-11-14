@@ -7,9 +7,10 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.49 source verification — publication pending
+### Beta.49
 
-Source metadata targets beta.49/code91/browser v121; publication is pending.
+Beta.49/code91/browser v121 is published from
+`95850493cb6bab562992862087cde87fc94b2e0e`.
 The post-beta.48 source fixes preserve failed browser generations through immediate
 bounded reporting and actual TXT/ZIP export, and split native fields before
 redaction. They also retain this app's unfinished audio-mode client when cleanup
@@ -22,8 +23,8 @@ synthetic observations through actual app admission, persistence and TXT/ZIP exp
 the saved reports and Debug journal were independently read back for all 14 browser
 ICE and 23 named native fields. They do not exercise actual browser `getStats()` or
 network delivery. All **721 browser cases** pass with normal test-file process
-isolation. Four new workflow contract checks are separate from beta.48's 27 Python
-release/native-symbol/site checks; full CI remains waived.
+isolation. All 31 Python release/native-symbol/site/workflow checks pass;
+full CI remains waived.
 
 A controlled Kotlin/JNI/native-C-API run delivers 160 original packets, then obtains
 identical native diagnostics from a UDP blackhole and wrong ICE passwords. Further
@@ -42,11 +43,15 @@ Joblog JSON and API source/status were verified; the Actions ZIP download return
 403, so its digest is unverified. The v121 offline probe verifies 132 resources,
 12,223,215 bytes, MIME and UI boot. These are not physical media acceptance.
 [Robustness](Robustness.md#diagnostic-sufficiency) records attribution limits;
-[Build](Build.md#beta49-release) tracks release preparation.
+[Build](Build.md#beta49-release) records publication. Signed run `43570628422`
+passes all three jobs; twelve artifact checks, all 51 native identities and
+anonymous APK/source/checksum downloads pass. Pages run `43571756114` succeeds
+for the release source; all 226 public files (37,828,528 bytes), MIME types and
+20 routes match. These public checks establish deployment identity, not physical media.
 
 ### Beta.48 reference
 
-**Beta.48/code90/browser v120 remains published** from
+Beta.48/code90/browser v120 was published from
 `eccd1f6f6762574974c698a400426761cfe68faf`. It prefers selected-car Bluetooth,
 then usable Bluetooth/system playback, independently of microphone readiness.
 During call/MIC demand, browser telephone downlink stays suppressed until demand
