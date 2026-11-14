@@ -409,6 +409,94 @@ class AndroidBluetoothPlaybackTest {
         }
     }
 
+    @Test
+    @Config(shadows = [ModeResetFailureAudioManagerShadow::class,
+        BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
+    fun failedDeviceCleanupStillWithdrawsOwnModeAndRetryPreservesAnExternalCall() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val audio = shadowOf(manager) as ModeResetFailureAudioManagerShadow
+        val target = "AA:BB:CC:DD:EE:01"
+        audio.setAvailableCommunicationDevices(listOf(device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, target, 1402)))
+        audio.setInputDevices(emptyList())
+        val states = CopyOnWriteArrayList<BluetoothVoiceState>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }.also(::useJvmMixer)
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            audio.clearClientFailures.set(1)
+            channel.stop()
+            awaitBluetoothPlayback { audio.clearClientCalls.get() == 1 }
+            assertEquals("a device cancellation failure must not skip our independent mode cancellation", 1,
+                audio.modeResetCalls.get())
+            assertEquals(AudioManager.MODE_NORMAL, manager.mode)
+            assertFalse(ReflectionHelpers.getField(channel, "communicationOwned"))
+            assertTrue(ReflectionHelpers.getField(channel, "communicationRequested"))
+            assertFalse(states.last().released)
+            val external = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "AA:BB:CC:DD:EE:02", 1403)
+            audio.externalDevice = external
+            manager.mode = AudioManager.MODE_IN_CALL
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { states.lastOrNull()?.released == true }
+            assertEquals(2, audio.clearClientCalls.get())
+            assertEquals("already withdrawn mode client must not be cancelled again", 1, audio.modeResetCalls.get())
+            assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
+            assertSame("cancel only our pending device client", external, manager.communicationDevice)
+        } finally {
+            audio.clearClientFailures.set(0)
+            channel.close()
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+            audio.externalDevice = null
+            manager.mode = AudioManager.MODE_NORMAL
+        }
+    }
+
+    @Test
+    @Config(shadows = [ModeResetFailureAudioManagerShadow::class,
+        BluetoothPlaybackTrackShadow::class, BluetoothPlaybackRecordShadow::class])
+    fun persistentDeviceCleanupFailureBoundsRetriesWithoutReacquiringAnAlreadyReleasedMode() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO, Manifest.permission.BLUETOOTH_CONNECT)
+        val manager = app.getSystemService(AudioManager::class.java)
+        val audio = shadowOf(manager) as ModeResetFailureAudioManagerShadow
+        val target = "AA:BB:CC:DD:EE:01"
+        audio.setAvailableCommunicationDevices(listOf(device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, target, 1502)))
+        audio.setInputDevices(emptyList())
+        val states = CopyOnWriteArrayList<BluetoothVoiceState>()
+        val channel = AndroidBluetoothVoiceChannel(app, states::add) { target }.also(::useJvmMixer)
+        try {
+            channel.start(config())
+            awaitBluetoothPlayback { states.lastOrNull()?.outputReady == true }
+            audio.clearClientFailures.set(100)
+            channel.stop()
+            awaitBluetoothPlayback { audio.clearClientCalls.get() == 1 }
+            assertEquals("withdraw our mode even when our device cancellation keeps failing", 1, audio.modeResetCalls.get())
+            assertFalse(ReflectionHelpers.getField(channel, "communicationOwned"))
+            val external = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "AA:BB:CC:DD:EE:02", 1503)
+            audio.externalDevice = external
+            manager.mode = AudioManager.MODE_IN_CALL
+            shadowOf(Looper.getMainLooper()).idleFor(35_100, TimeUnit.MILLISECONDS)
+            assertEquals(3, audio.clearClientCalls.get())
+            assertEquals(1, audio.modeResetCalls.get())
+            assertFalse(states.last().released)
+            assertTrue(ReflectionHelpers.getField(channel, "communicationRequested"))
+            audio.clearClientFailures.set(0)
+            channel.close()
+            awaitBluetoothPlayback { states.lastOrNull()?.released == true }
+            assertEquals(4, audio.clearClientCalls.get())
+            assertEquals(1, audio.modeResetCalls.get())
+            assertEquals(AudioManager.MODE_IN_CALL, manager.mode)
+            assertSame(external, manager.communicationDevice)
+        } finally {
+            audio.clearClientFailures.set(0)
+            channel.close()
+            shadowOf(Looper.getMainLooper()).idleFor(1100, TimeUnit.MILLISECONDS)
+            audio.externalDevice = null
+            manager.mode = AudioManager.MODE_NORMAL
+        }
+    }
+
     private fun config() = MicrophoneConfig("telephony", 16000, 1, 97, 20,
         InetAddress.getLoopbackAddress(), 12345, ByteArray(32))
 
@@ -512,6 +600,8 @@ class ModeResetFailureAudioManagerShadow : ShadowAudioManager() {
     val modeResetFailures = AtomicInteger()
     val modeResetCalls = AtomicInteger()
     val clearClientCalls = AtomicInteger()
+    val clearClientFailures = AtomicInteger()
+    @Volatile var externalDevice: AudioDeviceInfo? = null
     @Implementation override fun setMode(mode: Int) {
         if (mode == AudioManager.MODE_NORMAL) {
             modeResetCalls.incrementAndGet()
@@ -522,8 +612,11 @@ class ModeResetFailureAudioManagerShadow : ShadowAudioManager() {
     }
     @Implementation override fun clearCommunicationDevice() {
         clearClientCalls.incrementAndGet()
+        if (clearClientFailures.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0)
+            throw IllegalStateException("Injected device-client cancellation failure")
         super.clearCommunicationDevice()
     }
+    @Implementation override fun getCommunicationDevice(): AudioDeviceInfo? = externalDevice ?: super.getCommunicationDevice()
 }
 
 internal fun awaitBluetoothPlayback(condition: () -> Boolean) {

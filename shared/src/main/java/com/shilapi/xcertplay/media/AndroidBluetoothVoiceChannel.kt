@@ -604,8 +604,7 @@ class AndroidBluetoothVoiceChannel(
     private fun releaseRoute() {
         routeReleaseRequested = true
         routeReleaseAttempts++
-        runCatching {
-            if (!communicationOwned) return@runCatching
+        val deviceCancelled = runCatching {
             if (Build.VERSION.SDK_INT >= 31) {
                 if (communicationRequested) {
                     // The getter waits for an admitted request to reach the broker.
@@ -620,10 +619,18 @@ class AndroidBluetoothVoiceChannel(
             } else if (legacyScoRequested) {
                 manager.isBluetoothScoOn = false; manager.stopBluetoothSco(); legacyScoRequested = false
             }
-            // MODE_NORMAL removes our mode client; the platform retains other callers.
-            manager.mode = AudioManager.MODE_NORMAL
-            communicationOwned = false
-        }.onFailure {
+        }.isSuccess
+        // These are independent app clients. A device cancellation failure must
+        // not retain our otherwise cancellable mode client, and a later device
+        // retry must not cancel an already withdrawn mode client again.
+        val modeCancelled = runCatching {
+            if (communicationOwned) {
+                // MODE_NORMAL removes our mode client; the platform retains other callers.
+                manager.mode = AudioManager.MODE_NORMAL
+                communicationOwned = false
+            }
+        }.isSuccess
+        if (!deviceCancelled || !modeCancelled) {
             routeReleaseError = "bluetooth-release-failed"
             // Retain the flags for each unfinished client. A later attempt must not
             // cancel a communication-device request that was already withdrawn.
