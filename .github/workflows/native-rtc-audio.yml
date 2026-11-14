@@ -101,6 +101,7 @@ jobs:
           NODE_PATH="$RUNNER_TEMP/tiplay-interop-pw/node_modules" node -e \
             'console.log("CHROMIUM=" + require("playwright-core").chromium.executablePath())' >> "$GITHUB_ENV"
       - name: Verify original Opus, Worklet output and seventeen source owners
+        id: baseline
         env:
           RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-audio-interop/baseline.json
         run: node tests/web-e2e/rtc-audio-native.mjs
@@ -109,10 +110,12 @@ jobs:
           RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-audio-interop/encoded-payloads.json
         run: node tests/web-e2e/rtc-audio-native.mjs --encoded-tap
       - name: Verify a local UDP blackhole fails without fallback
+        if: ${{ !cancelled() && steps.baseline.outcome == 'success' }}
         env:
           RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-audio-interop/udp-blackhole.json
         run: node tests/web-e2e/rtc-audio-native.mjs --fault=udp-blackhole
       - name: Verify wrong ICE credentials fail without fallback
+        if: ${{ !cancelled() && steps.baseline.outcome == 'success' }}
         env:
           RTC_AUDIO_INTEROP_OUTPUT: ${{ runner.temp }}/tiplay-audio-interop/wrong-ice-password.json
         run: node tests/web-e2e/rtc-audio-native.mjs --fault=wrong-ice-password

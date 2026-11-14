@@ -32,6 +32,8 @@ class AudioInteropWorkflowTest(unittest.TestCase):
         self.assertLess(positive, blackhole)
         self.assertLess(blackhole, password)
         self.assertNotIn("continue-on-error", source)
+        self.assertIn("id: baseline", source)
+        self.assertEqual(2, source.count("if: ${{ !cancelled() && steps.baseline.outcome == 'success' }}"))
         self.assertNotIn("assembleDebug", source)
         self.assertNotIn("testDebugUnitTest", source)
         self.assertIn(":shared:compileDebugKotlin", source)
@@ -47,6 +49,7 @@ class AudioInteropWorkflowTest(unittest.TestCase):
         self.assertIn("process.exitCode = 1", source)
         self.assertIn("firstPeerPeak > .001", source)
         self.assertIn("result.peak > .001", source)
+        self.assertIn("if (encodedTapEnabled) args[0] = { ...args[0], encodedInsertableStreams: true }", source)
 
     def test_workflow_uses_only_valid_job_environment_contexts(self):
         path = ROOT / "tests/native/test_proof_workflow_contexts.py"

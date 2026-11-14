@@ -130,6 +130,7 @@ try {
   await page.evaluate(async ({ encodedTapEnabled }) => {
     const OriginalNode = AudioWorkletNode, OriginalPeer = RTCPeerConnection;
     globalThis.testPeers = []; globalThis.playoutAnchors = []; globalThis.encodedFrames = []; globalThis.encodedTapErrors = 0;
+    globalThis.encodedTapInitializations = []; globalThis.encodedTapInstallations = [];
     if (encodedTapEnabled) {
       if (typeof RTCRtpScriptTransform !== 'function') throw Error('Encoded receive measurement is unavailable.');
       // Measurement copies bytes, then enqueues the exact original frame unchanged.
@@ -137,6 +138,7 @@ try {
       globalThis.encodedTap = new Worker(URL.createObjectURL(new Blob([`
         self.onrtctransform = event => {
           const { generation, mid } = event.transformer.options;
+          self.postMessage({ initialized: true, generation, mid });
           const tap = new TransformStream({ transform(frame, controller) {
             const copy = new Uint8Array(frame.data).slice();
             self.postMessage({ generation, mid, timestamp: frame.timestamp, bytes: copy }, [copy.buffer]);
@@ -147,15 +149,22 @@ try {
         };
       `], { type: 'text/javascript' })));
       encodedTap.onmessage = ({ data }) => {
+        if (data.initialized) { encodedTapInitializations.push(data.generation + ':' + data.mid); return; }
         if (data.failed) { encodedTapErrors++; return; }
         encodedFrames.push({ key: data.generation + ':' + data.mid, timestamp: data.timestamp, bytes: Array.from(data.bytes) });
       };
+      encodedTap.onerror = () => { encodedTapErrors++; };
     }
     globalThis.RTCPeerConnection = class extends OriginalPeer {
       constructor(...args) {
+        // Chromium otherwise short-circuits encoded streams before ontrack.
+        // This opt-in belongs only to the separate measurement control.
+        if (encodedTapEnabled) args[0] = { ...args[0], encodedInsertableStreams: true };
         super(...args); testPeers.push(this); const generation = testPeers.length;
         if (encodedTapEnabled) this.addEventListener('track', event => {
-          event.receiver.transform = new RTCRtpScriptTransform(encodedTap, { generation, mid: event.transceiver.mid });
+          const transform = new RTCRtpScriptTransform(encodedTap, { generation, mid: event.transceiver.mid });
+          event.receiver.transform = transform;
+          encodedTapInstallations.push({ key: generation + ':' + event.transceiver.mid, installed: event.receiver.transform === transform });
         });
       }
     };
@@ -246,13 +255,16 @@ try {
       const anchors = playoutAnchors.map(anchor => ({ muted: anchor.muted, defaultMuted: anchor.defaultMuted, volume: anchor.volume,
         hidden: anchor.hidden, controls: anchor.controls, paused: anchor.paused, attached: anchor.srcObject !== null }));
       return { peak, native: audio.stats().nativeAudio, error: audio.stats().error, received: received.flat(), anchors,
-        encodedFrames, encodedTapErrors };
+        encodedFrames, encodedTapErrors, encodedTapInitializations, encodedTapInstallations };
     });
     const snapshot = await command('snapshot');
     assert.deepEqual(pageErrors, []); assert.equal(stderr, ''); assert.equal(result.error, null);
     assert.equal(encodedFallbackRecordsDelivered, 0);
     if (encodedTapEnabled) {
       assert.equal(result.encodedTapErrors, 0);
+      assert.equal(result.encodedTapInstallations.length, 32, 'Every receiver on both peers must have its measurement installed.');
+      assert.equal(result.encodedTapInstallations.every(value => value.installed), true);
+      assert.deepEqual([...result.encodedTapInitializations].sort(), result.encodedTapInstallations.map(value => value.key).sort());
       for (const [key, expected] of expectedFrames) {
         const received = result.encodedFrames.filter(frame => frame.key === key);
         assert.equal(received.length, expected.length, 'Original encoded frame count differs for owner slot ' + key);
@@ -282,17 +294,23 @@ try {
       silentAnchors: result.anchors.length, readyBarrierVerified: true, originalFixturePayloads: true,
       encodedFramesVerified: encodedTapEnabled ? result.encodedFrames.length : null,
       encodedPayloadsByteExact: encodedTapEnabled ? true : null, rtpTimestampsExact: encodedTapEnabled ? true : null,
+      encodedTapInitializations: encodedTapEnabled ? result.encodedTapInitializations.length : null,
       encodedFallbackRecordsDelivered, physicalOutputMeasured: false });
   }
 } catch (cause) {
-  const diagnostics = await page?.evaluate(() => ({ native: globalThis.audio?.stats().nativeAudio,
+  const diagnostics = await page?.evaluate(encodedTapEnabled => ({ native: globalThis.audio?.stats().nativeAudio,
     error: globalThis.audio?.stats().error,
+    encodedTap: { enabled: encodedTapEnabled, initialized: globalThis.encodedTapInitializations ?? null,
+      installations: globalThis.encodedTapInstallations ?? null, errors: globalThis.encodedTapErrors ?? null,
+      frameCountsByKey: globalThis.encodedFrames?.reduce((counts, frame) => {
+        counts[frame.key] = (counts[frame.key] ?? 0) + 1; return counts;
+      }, {}) ?? null },
     anchors: (globalThis.playoutAnchors ?? []).map(anchor => ({ paused: anchor.paused, readyState: anchor.readyState,
       networkState: anchor.networkState, currentTime: anchor.currentTime, tracks: anchor.srcObject?.getAudioTracks()
         .map(track => ({ muted: track.muted, readyState: track.readyState })) ?? [] })),
     peers: (globalThis.testPeers ?? []).map(peer => ({ connection: peer.connectionState, ice: peer.iceConnectionState,
       gathering: peer.iceGatheringState, localCandidates: (peer.localDescription?.sdp.match(/^a=candidate:/gm) ?? []).length,
-      remoteCandidates: (peer.remoteDescription?.sdp.match(/^a=candidate:/gm) ?? []).length })) })).catch(() => null);
+      remoteCandidates: (peer.remoteDescription?.sdp.match(/^a=candidate:/gm) ?? []).length })) }), encodedTapEnabled).catch(() => null);
   const snapshot = child?.exitCode === null ? await command('snapshot').catch(() => null) : null;
   const blocked = diagnostics?.peers?.some(peer => peer.localCandidates === 0) === true;
   await report({ status: blocked ? 'blocked' : 'failed', injectedFault: fault, diagnostics,
