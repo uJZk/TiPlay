@@ -10,7 +10,7 @@ const AUDIO_ICE_FIELDS = ['iceStatsState', 'iceStatsSampleAgeMs', 'icePairScope'
   'icePairNominated', 'iceSelectedPairPresent', 'iceRequestsSent', 'iceRequestsReceived', 'iceResponsesSent',
   'iceResponsesReceived', 'iceConsentRequestsSent', 'iceRole', 'dtlsState'];
 const SUMMARY_KEYS = [
-  'page.version', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
+  'page.version', 'control.audioFaultDropped', 'video.errorReason', 'video.streamGeneration', 'video.epoch', 'video.droppedFrames',
   'video.decodeDroppedFrames', 'video.scheduledDroppedFrames', 'video.transferDroppedFrames', 'video.renderDroppedFrames', 'video.pacingDroppedFrames',
   'video.playbackProfile', 'video.decodedQueueFrames', 'video.decodedQueueBytes', 'video.scheduledCapacityFrames',
   'video.currentDelta', 'video.currentFps', 'video.frameIntervalP95Ms',
@@ -63,7 +63,8 @@ const SUMMARY_KEYS = [
 const AUDIO_SOURCE_IDENTITY = ['epoch', 'state', 'backend', 'codec', 'lastRecoveryReason'];
 const AUDIO_NATIVE_FIELDS = ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState', 'tracks', 'boundSlots', 'readySlots', 'streams', 'drainUnknown',
   'failureStage', 'failurePeerState', 'failureIceState', 'localCandidates', 'localPrivateIpv4Candidates', 'localCgnatIpv4Candidates', 'localIpv6Candidates',
-  'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts', ...AUDIO_ICE_FIELDS];
+  'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts', ...AUDIO_ICE_FIELDS,
+  'failureReportAgeMs'];
 const AUDIO_NATIVE_ENUMS = {
   state: ['idle', 'connecting', 'ready', 'failed', 'closed'],
   peerState: ['new', 'connecting', 'connected', 'disconnected', 'failed', 'closed', 'unavailable'],
@@ -87,7 +88,7 @@ function nativeAudioDiagnostics(source) {
       || ['localCandidates', 'localPrivateIpv4Candidates', 'localCgnatIpv4Candidates', 'localIpv6Candidates', 'remoteCandidates', 'remotePrivateIpv4Candidates', 'remoteCgnatIpv4Candidates', 'remoteIpv6Candidates', 'retryAttempts'].includes(field) && Number.isInteger(value) && value >= 0 && value <= 1024
       || field === 'rtcGeneration' && Number.isInteger(value) && value >= 1 && value <= 0x7fffffff
       || field === 'icePairCount' && Number.isInteger(value) && value >= 0 && value <= 1024
-      || field === 'iceStatsSampleAgeMs' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER
+      || ['iceStatsSampleAgeMs', 'failureReportAgeMs'].includes(field) && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER
       || ['iceRequestsSent', 'iceRequestsReceived', 'iceResponsesSent', 'iceResponsesReceived', 'iceConsentRequestsSent'].includes(field)
         && Number.isSafeInteger(value) && value >= 0) values[field] = value;
   }
@@ -168,8 +169,8 @@ export function browserDiagnosticEvents(page, themeDark, debug = false, debugSes
   const controlCap = Math.min(64 * 1024, Math.max(0, Number.isFinite(page.transport?.controlMessageLimitBytes)
     ? page.transport.controlMessageLimitBytes : 64 * 1024));
   const ordinaryBudget = Math.min(2048 - 24, Math.max(128, controlCap - 1024));
-  // A batch may retain a first-fault and a terminal st alongside ordinary telemetry.
-  // Reserve all three summaries before details, the envelope and ordinary input.
+  // A batch may retain first-fault and terminal summaries. Independent audio
+  // failures share input batches but the outbox defers ordinary details for them.
   const detailBudget = Math.min(16 * 1024, Math.floor(Math.max(0, controlCap - ordinaryBudget * 3 - 4096) / 2));
   const details = [], omissions = {};
   if (debug && audioDebug) {
@@ -199,9 +200,14 @@ export function browserDiagnosticEvents(page, themeDark, debug = false, debugSes
   // Put the latter behind other evidence while a complete failure snapshot is available.
   const failureCountsKnown = Number.isSafeInteger(fullSummary['link.failure.localCandidates'])
     && Number.isSafeInteger(fullSummary['link.failure.remoteCandidates']);
-  const priorities = SUMMARY_KEYS.filter(key => !failureCountsKnown
+  const nativeFailureKeys = native.state === 'failed' ? ['state', 'rtcGeneration', 'peerState', 'iceState', 'gatheringState',
+    'failureStage', 'failurePeerState', 'failureIceState', ...AUDIO_ICE_FIELDS]
+    .map(field => `audio.nativeAudio.${field}`) : [];
+  const priorities = [...(nativeFailureKeys.length ? ['page.version', 'control.audioFaultDropped', 'transport.generation'] : []), ...nativeFailureKeys, ...SUMMARY_KEYS].filter(key => !failureCountsKnown
     || !['link.connection.localCandidates', 'link.connection.remoteCandidates'].includes(key));
   const summary = Object.fromEntries([...new Set(['videoDiagnosticOmittedFields', 'audioDiagnosticOmittedFields', ...priorities, ...Object.keys(fullSummary)])]
     .filter(key => key in fullSummary).map(key => [key, fullSummary[key]]));
-  return [{ k: 'st', v: { ...flatStats(summary, ordinaryBudget), themeDark } }, ...details];
+  // The outbox adds a bounded queue-age scalar to its protected audio failure copy.
+  const summaryBudget = ordinaryBudget - (native.state === 'failed' ? 80 : 0);
+  return [{ k: 'st', v: { ...flatStats(summary, summaryBudget), themeDark } }, ...details];
 }

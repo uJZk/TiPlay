@@ -156,6 +156,34 @@ routed independent-audio ICE, mirror picture and repeated reconnects remain
 device acceptance; counters alone do not establish speaker output or a fix for
 the target network's connectivity. See [Testing](Testing.md) for those boundaries.
 
+### Diagnostic sufficiency
+
+The post-beta.48 review found that instrumenting a peer does not establish that
+its failure evidence survives reporting and export. Browser ICE fields were
+missing from the Debug text formatter; Standard telemetry used a separate
+admission path. Five-second reporting could miss a failed generation before its
+one/two/four-second retry. Native failure messages exceeded the shared
+700-character redaction limit, including before Debug journal capture.
+
+The source remediation uses bounded, generation-specific browser failure records,
+safe Standard failure summaries and complete split native transport records.
+Actual TXT/ZIP roundtrips must verify persistence; in-memory assertions alone do
+not establish export completeness. A retained sample is the last accepted
+observation, not a guaranteed terminal sample. Queue age does not include network
+transit time. Bounded admission, disconnects and storage failures can still lose
+evidence; absence must not become zero or success.
+
+A controlled experiment freezes the beta.48 product Kotlin classes and runs the
+actual JNI/libdatachannel transport against an official native C-API receiver.
+The successful control delivers 160 original Opus packets with identical bytes
+and RTP timestamps. A local UDP blackhole receives eight checks without replying;
+a separate case deliberately mismatches ICE passwords. Both fail to open and
+produce identical complete native transport classifications. Thus
+`connecting/checking/not-selected` does not uniquely identify a network or
+credential cause. This experiment neither uses Chromium nor reproduces the
+vehicle failure. No additional vehicle retest should be requested merely to
+prove these local diagnostic contracts.
+
 ## Matched post-stop native crash
 
 The November 2 beta.37/code79 capture contains a real Android tombstone whose

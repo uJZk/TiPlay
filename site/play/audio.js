@@ -26,7 +26,7 @@ const RTC_AUDIO_FAILURE_FIELDS = new Set(['failureStage', 'failurePeerState', 'f
 
 /** Playback only. Android owns demand-driven car Bluetooth capture and speech playback. */
 export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}, onTiming = () => {}, onQueued = () => {}, onMode = () => {},
-  onAudioReference = () => {}, onSourceDeadline = () => {}, onEvidence = () => false }) {
+  onAudioReference = () => {}, onSourceDeadline = () => {}, onNativeAudioFailure = () => {}, onEvidence = () => false }) {
   let context = null, node = null, ready = null, connection = null, request = null;
   let support = false, enabled = true, voiceRevision = null, voiceState = 'idle', voiceError = null;
   let queuedBytes = 0, audioError = null, disposed = false, recordQueue = null;
@@ -133,6 +133,9 @@ export function createBrowserAudio({ fetchPhone, credentials, onState = () => {}
           if (rtcAudio !== owner) return;
           rtcLastFailure = detail ? Object.fromEntries(Object.entries(detail).filter(([field]) => RTC_AUDIO_FAILURE_FIELDS.has(field))) : null;
           rtcLastError = cause.message || String(cause); audioError = rtcLastError; notify();
+          // Freeze this generation's last accepted sample before the retry can replace it.
+          // Sampling never delays close; a pending/in-flight final report remains unknown.
+          try { onNativeAudioFailure({ ...owner.stats(), ...rtcLastFailure, retryAttempts: rtcRetryAttempts }); } catch (_) {}
           retryRtcAudio(rtcPeerGeneration);
         } });
       rtcPeerGeneration = generation ?? rtcPeerGeneration + 1;

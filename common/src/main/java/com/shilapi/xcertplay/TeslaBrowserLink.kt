@@ -582,6 +582,7 @@ internal object TeslaBrowserLink {
     }
 
     private val transportDiagnostics = BrowserTransportDiagnostics(::log)
+    private val nativeAudioFailureDiagnostics = BrowserAudioDiagnostics.FailureReporter(::log)
 
     /** One line for the session log at most every 10 s: numbers and short names only. */
     internal fun statsLine(stats: Map<String, Any?>): String = buildString {
@@ -643,6 +644,7 @@ internal object TeslaBrowserLink {
                     ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
             }
             transportDiagnostics.report(stats, DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
+            nativeAudioFailureDiagnostics.report(stats)
             val now = clock()
             val anomalies: Map<String, Long>
             synchronized(statsLock) {
@@ -741,6 +743,7 @@ internal object TeslaBrowserLink {
 
     /** Audio probes are never saved or carried into another browser session. Called under this monitor. */
     private fun clearViewportAudio() {
+        nativeAudioFailureDiagnostics.reset()
         val previous = viewport ?: return
         if (previous.audioCapabilities == null) return
         val cleared = previous.copy(audioCapabilities = null)

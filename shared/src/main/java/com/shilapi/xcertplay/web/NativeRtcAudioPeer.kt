@@ -58,7 +58,10 @@ internal class NativeRtcAudioPeer(
             return answer
         } catch (cause: Throwable) {
             val details = refreshDiagnostics()
-            runCatching { diagnostic("stage=negotiation-failure peer=$diagnosticId exception=${cause.javaClass.simpleName} ${diagnosticFields(details)}") }
+            runCatching {
+                diagnostic("stage=negotiation-failure peer=$diagnosticId exception=${cause.javaClass.simpleName}")
+                NativeAudioDiagnosticLog.lines("stage=negotiation-transport peer=$diagnosticId failed=true", details).forEach(diagnostic)
+            }
             throw cause
         } finally { refreshDiagnostics(); answering.set(false); deleteClosed() }
     }
@@ -117,7 +120,10 @@ internal class NativeRtcAudioPeer(
                 } }.getOrDefault("connection=unknown ice=unknown")
                 val ageMs = if (admittedAt == 0L) -1L else (nanoTime() - admittedAt).coerceAtLeast(0) / 1_000_000
                 val details = refreshDiagnostics()
-                runCatching { diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState $transportState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs ${diagnosticFields(details)}") }
+                runCatching {
+                    diagnostic("stage=sender-failure peer=$diagnosticId operation=$stage exception=${error.javaClass.simpleName} nativeState=$nativeState $transportState answered=$answered slot=$packetSlot queuedPackets=${packets.size} queuedBytes=${bytes.get().coerceAtLeast(0)} packetAgeMs=$ageMs")
+                    NativeAudioDiagnosticLog.lines("stage=sender-transport peer=$diagnosticId failed=true", details).forEach(diagnostic)
+                }
                 fail(when (error.message) {
                 "audio-native-open-timeout" -> "audio-native-open-timeout"
                 "audio-native-peer-failed" -> "audio-native-peer-failed"
@@ -151,9 +157,6 @@ internal class NativeRtcAudioPeer(
             .getOrNull()?.let { lastDiagnostics = it }
         lastDiagnostics
     }
-
-    private fun diagnosticFields(details: Map<String, Any?>): String =
-        details.entries.joinToString(" ") { (key, value) -> "$key=$value" }
 
     override fun close() {
         synchronized(pointerLock) {

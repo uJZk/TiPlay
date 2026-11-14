@@ -300,7 +300,7 @@ readiness requires connected peer/ICE, Worklet binding and fulfilled playout-anc
 `play()`. Read `peerState`, `iceState` and `gatheringState` separately.
 `rtcGeneration` fences replacements; `tracks`, `boundSlots`, `readySlots` and
 `streams` distinguish reception, graph binding, readiness and active owners.
-Standard retains main states/counts; Debug retains the original ten core fields and ICE evidence below. Missing
+Standard retains native failure summaries; Debug adds healthy snapshots. Missing
 fields are unknown. Failed/retired/closed peers have zero live counts and no pending
 drain. `drainUnknown=true` preserves an ended owner's receiver for its buffered tail,
 not proof of completion or sound. Software AAC music does not establish native
@@ -312,13 +312,16 @@ Browser official `getStats()` supplies `iceStatsState`, `iceStatsSampleAgeMs`,
 pair scope/count/state/nomination, selection, ICE role, DTLS state and STUN
 request/response/consent counts. `icePairScope` distinguishes selected pairs from
 all observed pairs. A missing selected-pair reference is unknown, not false.
-Missing counters remain absent; aggregation requires every
-scoped pair's counter. Failed collection/close retains previous samples and age.
-Replacement generations do not inherit old ICE counters. Compare within the same peer/scope.
+Missing counters remain absent; aggregation requires every scoped pair's counter.
+Failure/close retains the last accepted sample, not a guaranteed terminal sample.
+Protected failure records retain generation and sample age; `failureReportAgeMs`
+adds browser queue time, excluding network transit. Overflow is counted.
+Replacements do not inherit old counters. Compare only within the same peer/scope.
 The native snapshot's `transportDiagnostics` uses official libdatachannel callbacks,
 description and selected-pair APIs: states/change counts, description results/types,
 selected-pair result and candidate type/protocol/family/presence. `not-selected`/-3
-is not a socket error; close retains the last snapshot. It supplies no STUN counters.
+is not a socket error; close retains the last snapshot. Split records repeat
+stage/peer/part to survive redaction. It supplies no STUN counters.
 SDP `ice-candidates` retains host counts and matching IPv4 /24 counts; matching
 prefixes do not prove reachability, and mDNS cannot be compared. These summaries
 omit addresses, ports, SDP and credentials; they do not identify or fix the ICE cause.

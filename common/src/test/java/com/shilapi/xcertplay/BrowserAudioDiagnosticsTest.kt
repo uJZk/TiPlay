@@ -4,6 +4,75 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BrowserAudioDiagnosticsTest {
+    @Test fun officialNativeIceFieldsReachBoundedTextWithoutInventingUnknownCounters() {
+        val values = mapOf("nativeAudio.iceStatsState" to "sampled", "nativeAudio.iceStatsSampleAgeMs" to 125.5,
+            "nativeAudio.icePairScope" to "all", "nativeAudio.icePairCount" to 2, "nativeAudio.icePairState" to "mixed",
+            "nativeAudio.icePairNominated" to 0, "nativeAudio.iceSelectedPairPresent" to 1,
+            "nativeAudio.iceRequestsSent" to 6, "nativeAudio.iceRequestsReceived" to 0,
+            "nativeAudio.iceResponsesSent" to 0, "nativeAudio.iceResponsesReceived" to 0,
+            "nativeAudio.iceConsentRequestsSent" to 9_007_199_254_740_991L,
+            "nativeAudio.iceRole" to "controlling", "nativeAudio.dtlsState" to "new")
+        val lines = BrowserAudioDiagnostics.lines(values)
+        val text = lines.joinToString(" ")
+        values.forEach { (key, value) -> assertTrue(key, text.contains("$key=$value")) }
+        assertTrue(lines.all { it.length <= 600 && DiagnosticRedactor.redact(it) == it })
+        val missing = BrowserAudioDiagnostics.lines(mapOf("nativeAudio.iceStatsState" to "pending")).single()
+        assertFalse(missing.contains("Requests")); assertFalse(missing.contains("SampleAge"))
+        for ((key, value) in listOf("iceStatsState" to "private-address", "icePairScope" to "private-id", "icePairState" to "private-state",
+            "iceRole" to "private-role", "dtlsState" to "private-state", "icePairCount" to 1025,
+            "iceRequestsSent" to -.1, "iceRequestsReceived" to .5, "iceResponsesSent" to true,
+            "iceResponsesReceived" to Double.NaN, "iceConsentRequestsSent" to 9_007_199_254_740_992.0,
+            "icePairNominated" to 2, "iceSelectedPairPresent" to "false", "iceStatsSampleAgeMs" to -1,
+            "failureReportAgeMs" to Double.POSITIVE_INFINITY))
+            assertTrue(key, BrowserAudioDiagnostics.lines(mapOf("nativeAudio.$key" to value)).isEmpty())
+    }
+
+    @Test fun standardNativeFailureReportsAreSafeGenerationBoundariesIndependentOfDebugCadence() {
+        val input = mapOf("audio.nativeAudio.state" to "failed", "audio.nativeAudio.rtcGeneration" to 1,
+            "audio.nativeAudio.iceStatsState" to "pending", "audio.nativeAudio.icePairNominated" to false,
+            "audio.nativeAudio.failureReportAgeMs" to 400, "audio.nativeAudio.address" to "192.0.2.44",
+            "audio.nativeAudio.failureStage" to "private-error", "audio.renderPeak" to 1)
+        val logged = mutableListOf<String>()
+        val reporter = BrowserAudioDiagnostics.FailureReporter(logged::add)
+        reporter.report(input); val first = logged.size
+        assertTrue(first > 0)
+        val text = logged.joinToString(" ")
+        assertTrue(text.contains("stage=NATIVE_FAILURE")); assertTrue(text.contains("iceStatsState=pending"))
+        assertTrue(text.contains("failureReportAgeMs=400")); assertFalse(text.contains("Requests"))
+        assertFalse(text.contains("192.0.2.44")); assertFalse(text.contains("private-error")); assertFalse(text.contains("renderPeak"))
+        reporter.report(input); reporter.report(input + ("audio.nativeAudio.state" to "ready"))
+        assertEquals(first, logged.size)
+        reporter.report(input + ("audio.nativeAudio.rtcGeneration" to 2))
+        assertEquals(first * 2, logged.size)
+        reporter.report(input + ("audio.nativeAudio.rtcGeneration" to .5))
+        assertEquals(first * 2, logged.size)
+        reporter.reset(); reporter.report(input)
+        assertEquals(first * 3, logged.size)
+        reporter.report(input + ("transport.generation" to 123))
+        assertEquals(first * 4, logged.size)
+        assertTrue(logged.last().contains("transportGeneration=123"))
+        assertTrue(logged.all { it.length <= 600 && it.contains("generation=") && it.contains("part=") })
+    }
+
+    @Test fun protectedFailureLossIsVisibleInStandardWithoutRepeatingHealthySnapshotsOrBreakingControl() {
+        val logged = mutableListOf<String>()
+        val reporter = BrowserAudioDiagnostics.FailureReporter(logged::add)
+        val healthy = mapOf("audio.nativeAudio.state" to "ready", "transport.generation" to 123)
+        reporter.report(healthy + ("control.audioFaultDropped" to 0))
+        assertTrue(logged.isEmpty())
+        reporter.report(healthy + ("control.audioFaultDropped" to 1))
+        reporter.report(healthy + ("control.audioFaultDropped" to 1))
+        reporter.report(healthy + ("control.audioFaultDropped" to 2))
+        reporter.report(healthy + ("control.audioFaultDropped" to 0))
+        reporter.report(healthy + ("control.audioFaultDropped" to 2))
+        assertEquals(2, logged.size)
+        assertTrue(logged[0].contains("stage=NATIVE_FAILURE_LOSS dropped=1 reportTransportGeneration=123"))
+        for (invalid in listOf(-1, .5, Double.NaN, "private", true)) reporter.report(healthy + ("control.audioFaultDropped" to invalid))
+        assertEquals(2, logged.size)
+        BrowserAudioDiagnostics.FailureReporter { error("logging failed") }
+            .report(healthy + ("control.audioFaultDropped" to 1))
+    }
+
     @Test fun nativeIceFailureEvidenceIsBoundedAndContainsNoAddresses() {
         val values = mapOf("nativeAudio.failureStage" to "transport", "nativeAudio.failurePeerState" to "failed",
             "nativeAudio.failureIceState" to "checking", "nativeAudio.localCandidates" to 2,

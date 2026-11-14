@@ -14,6 +14,10 @@ internal object BrowserAudioDiagnostics {
         "nativeAudio.failureStage", "nativeAudio.failurePeerState", "nativeAudio.failureIceState", "nativeAudio.retryAttempts",
         "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates", "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates",
         "nativeAudio.remoteCandidates", "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates",
+        "nativeAudio.iceStatsState", "nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs", "nativeAudio.icePairScope", "nativeAudio.icePairCount",
+        "nativeAudio.icePairState", "nativeAudio.icePairNominated", "nativeAudio.iceSelectedPairPresent",
+        "nativeAudio.iceRequestsSent", "nativeAudio.iceRequestsReceived", "nativeAudio.iceResponsesSent",
+        "nativeAudio.iceResponsesReceived", "nativeAudio.iceConsentRequestsSent", "nativeAudio.iceRole", "nativeAudio.dtlsState",
         "contextObservedStateChanges", "contextObservedNonRunningMs",
         "clockOffsetMs", "clockAgeMs", "clockRttMs", "contextBaseLatencyMs", "contextOutputLatencyMs",
         "processorErrors", "recoveries", "recoveryAttempts", "processorFailed", "renderAgeMs", "renderReportAgeMs",
@@ -74,6 +78,9 @@ internal object BrowserAudioDiagnostics {
     private val decoderStreamFields = setOf("packets", "frames", "nonzero", "peak", "backend", "epoch", "rate", "channels", "semanticType", "noDataPackets", "noDataFrames")
     private val streamKey = Regex("(?:decoder\\.)?stream([0-9]{1,3})\\..+")
     private val safeText = Regex("[A-Za-z0-9._-]{1,40}")
+    private val nativeIceCounters = setOf("nativeAudio.iceRequestsSent", "nativeAudio.iceRequestsReceived",
+        "nativeAudio.iceResponsesSent", "nativeAudio.iceResponsesReceived", "nativeAudio.iceConsentRequestsSent")
+    private val nativeIceFlags = setOf("nativeAudio.icePairNominated", "nativeAudio.iceSelectedPairPresent")
     private val enumFields = mapOf(
         "nativeAudio.state" to setOf("idle", "connecting", "ready", "failed", "closed"),
         "nativeAudio.peerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
@@ -82,6 +89,11 @@ internal object BrowserAudioDiagnostics {
         "nativeAudio.failureStage" to setOf("offer", "local-ice", "signaling", "remote-description", "transport"),
         "nativeAudio.failurePeerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
         "nativeAudio.failureIceState" to setOf("new", "checking", "connected", "completed", "disconnected", "failed", "closed", "unavailable"),
+        "nativeAudio.iceStatsState" to setOf("pending", "sampled", "unsupported", "failed"),
+        "nativeAudio.icePairScope" to setOf("selected", "all", "none"),
+        "nativeAudio.icePairState" to setOf("frozen", "waiting", "in-progress", "failed", "succeeded", "mixed", "unavailable"),
+        "nativeAudio.iceRole" to setOf("unknown", "controlling", "controlled", "mixed", "unavailable"),
+        "nativeAudio.dtlsState" to setOf("new", "connecting", "connected", "closed", "failed", "mixed", "unavailable"),
         "renderStatsState" to setOf("available", "unavailable", "invalid", "failed"),
         "deviceClockFitStatus" to setOf("acquiring", "tracking", "holdover"),
         "deviceClockSource" to setOf("native", "render", "holdover"),
@@ -95,7 +107,9 @@ internal object BrowserAudioDiagnostics {
             "priming", "waiting-reserve", "ready", "playing"),
     )
 
-    fun lines(stats: Map<String, Any?>): List<String> = buildList {
+    fun lines(stats: Map<String, Any?>): List<String> = format(stats)
+
+    private fun format(stats: Map<String, Any?>, snapshotPrefix: String = "stage=SNAPSHOT"): List<String> = buildList {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
                 val raw = stats[keyPrefix + field]
@@ -105,6 +119,13 @@ internal object BrowserAudioDiagnostics {
                 if (field == "nativeAudio.rtcGeneration" && (raw !is Number || !raw.toDouble().isFinite() ||
                     raw.toDouble() < 1 || raw.toDouble() > Int.MAX_VALUE || raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
                 if (field == "nativeAudio.drainUnknown" && raw !is Boolean) return@mapNotNull null
+                // flatStats represents observed booleans as 0/1; missing evidence stays absent.
+                if (field in nativeIceFlags && raw !is Boolean &&
+                    (raw !is Number || raw.toDouble() !in listOf(0.0, 1.0))) return@mapNotNull null
+                if ((field in nativeIceCounters || field == "nativeAudio.icePairCount" || field in setOf("nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs")) &&
+                    (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 ||
+                        raw.toDouble() > (if (field == "nativeAudio.icePairCount") 1024.0 else 9_007_199_254_740_991.0) ||
+                        field !in setOf("nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs") && raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
                 if (field in setOf("nativeAudio.retryAttempts", "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates",
                         "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates", "nativeAudio.remoteCandidates",
                         "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates") &&
@@ -153,7 +174,7 @@ internal object BrowserAudioDiagnostics {
             }
             if (current.length > header.length) add(current.toString())
         }
-        line("stage=SNAPSHOT", globalFields)
+        line(snapshotPrefix, globalFields)
         line("stage=DECODE", decoderFields, "decoder.")
         val streams = stats.keys.mapNotNull { streamKey.matchEntire(it)?.groupValues?.get(1)?.toIntOrNull() }
             .filter { it in 0..255 }.toSortedSet()
@@ -162,6 +183,51 @@ internal object BrowserAudioDiagnostics {
             line("stage=DECODE stream=$stream", decoderStreamFields, "decoder.stream$stream.")
         }
     }
+
+    /** Standard logs retain only a failed native peer's fixed scalar evidence, never healthy render details.
+     * Sample age was measured at snapshot capture; report age adds only browser queue time, not network transit. */
+    fun nativeFailureLines(stats: Map<String, Any?>): List<String> {
+        if (stats["audio.nativeAudio.state"] != "failed") return emptyList()
+        val generation = stats["audio.nativeAudio.rtcGeneration"] as? Number ?: return emptyList()
+        if (!generation.toDouble().isFinite() || generation.toDouble() < 1 || generation.toDouble() > Int.MAX_VALUE ||
+            generation.toDouble() % 1.0 != 0.0) return emptyList()
+        val native = globalFields.filter { it.startsWith("nativeAudio.") }.mapNotNull { field ->
+            stats["audio.$field"]?.let { field to it }
+        }.toMap()
+        val scope = transportGeneration(stats)?.let { " transportGeneration=$it" }.orEmpty()
+        val parts = format(native, "stage=NATIVE_FAILURE generation=${generation.toInt()}$scope part=000/000")
+        return parts.mapIndexed { index, line -> line.replace("part=000/000", "part=${index + 1}/${parts.size}") }
+    }
+
+    class FailureReporter(private val log: (String) -> Unit) {
+        private val generations = ArrayDeque<Pair<Long?, Int>>()
+        private var lastDropped = 0L
+        @Synchronized fun report(stats: Map<String, Any?>) {
+            val dropped = (stats["control.audioFaultDropped"] as? Number)?.toDouble()?.takeIf {
+                it.isFinite() && it >= 0 && it <= 9_007_199_254_740_991.0 && it % 1.0 == 0.0
+            }?.toLong()
+            if (dropped != null) {
+                if (dropped > lastDropped) {
+                    val scope = transportGeneration(stats)?.let { " reportTransportGeneration=$it" }.orEmpty()
+                    runCatching { log("Browser audio: stage=NATIVE_FAILURE_LOSS dropped=$dropped$scope") }
+                }
+                lastDropped = maxOf(lastDropped, dropped)
+            }
+            val lines = nativeFailureLines(stats)
+            if (lines.isEmpty()) return
+            val generation = transportGeneration(stats) to (stats["audio.nativeAudio.rtcGeneration"] as Number).toInt()
+            if (generation in generations) return
+            if (generations.size == 16) generations.removeFirst()
+            generations.addLast(generation)
+            lines.forEach { runCatching { log(it) } }
+        }
+        @Synchronized fun reset() { generations.clear(); lastDropped = 0L }
+    }
+
+    private fun transportGeneration(stats: Map<String, Any?>): Long? =
+        (stats["transport.generation"] as? Number)?.toDouble()?.takeIf {
+            it.isFinite() && it >= 1 && it <= 0xffff_ffffL && it % 1.0 == 0.0
+        }?.toLong()
 
     private fun value(value: Any?, precision: Int): String? = when (value) {
         is Number -> value.toDouble().takeIf { it.isFinite() }?.let {

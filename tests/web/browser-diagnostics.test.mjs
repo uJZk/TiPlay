@@ -475,3 +475,27 @@ test('audio ICE check evidence survives capture while candidate identities and u
     iceConsentRequestsSent: Number.MAX_SAFE_INTEGER + 1, iceStatsSampleAgeMs: -1 } } }, false, true);
   assert.equal(JSON.stringify(invalid).includes('nativeAudio.'), false);
 });
+
+test('dense native failure summaries preserve all observed ICE fields and queue-age headroom within Android limits', () => {
+  const nativeAudio = { state: 'failed', rtcGeneration: 2147483647, peerState: 'failed', iceState: 'checking', gatheringState: 'complete',
+    failureStage: 'transport', failurePeerState: 'failed', failureIceState: 'checking',
+    iceStatsState: 'sampled', iceStatsSampleAgeMs: Number.MAX_SAFE_INTEGER, icePairScope: 'all', icePairCount: 1024,
+    icePairState: 'in-progress', icePairNominated: false, iceSelectedPairPresent: false,
+    iceRequestsSent: Number.MAX_SAFE_INTEGER, iceRequestsReceived: Number.MAX_SAFE_INTEGER,
+    iceResponsesSent: Number.MAX_SAFE_INTEGER, iceResponsesReceived: Number.MAX_SAFE_INTEGER,
+    iceConsentRequestsSent: Number.MAX_SAFE_INTEGER, iceRole: 'controlling', dtlsState: 'connecting' };
+  const page = { transport: { generation: 0xffffffff, controlMessageLimitBytes: 16 * 1024 }, control: { audioFaultDropped: 3 },
+    video: { ...Object.fromEntries([...VIDEO_COUNTER_FIELDS, ...VIDEO_VALUE_FIELDS].map(key => [key, 123456789])),
+      streamGeneration: 3, epoch: 7, errorReason: 'codec-profile-not-negotiated' },
+    audio: { nativeAudio, debug: Object.fromEntries(Array.from({ length: 700 }, (_, index) => [`counter${index}`, 123456789])) } };
+  const [summary, detail] = browserDiagnosticEvents(page, false, true, 'capture');
+  for (const [field, expected] of Object.entries(nativeAudio)) {
+    assert.equal(summary.v[`audio.nativeAudio.${field}`], typeof expected === 'boolean' ? Number(expected) : expected, field);
+    assert.equal(detail.v[`nativeAudio.${field}`], typeof expected === 'boolean' ? Number(expected) : expected, field);
+  }
+  const wire = { ...summary.v, 'audio.nativeAudio.failureReportAgeMs': Number.MAX_SAFE_INTEGER };
+  assert.equal(wire['transport.generation'], 0xffffffff); assert.equal(wire['control.audioFaultDropped'], 3);
+  assert.ok(Object.keys(wire).every(key => key.length <= 48)); assert.ok(Object.keys(wire).length <= 256);
+  assert.ok(Buffer.byteLength(JSON.stringify(wire)) <= 2048);
+  assert.ok(Buffer.byteLength(JSON.stringify(detail.v)) <= 16 * 1024);
+});

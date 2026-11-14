@@ -395,7 +395,9 @@ export function createControlOutbox({
   const queue = [], evidence = new Map(), retry = new Map(), versions = new Map();
   const rtt = new Samples(64);
   let seq = 0, inFlightCount = 0, lastStatusSeq = 0, eventVersion = 0, heartbeatDue = false, closed = false, touchLost = false;
-  let posts = 0, failures = 0, overflows = 0;
+  let posts = 0, failures = 0, overflows = 0, audioFaultDropped = 0;
+  const audioFaultPrefix = 'evidence:audio-fault:';
+  const retainedAudioFaults = () => [...versions.keys()].filter(key => key.startsWith(audioFaultPrefix)).length;
 
   function releaseVersions(batch) {
     for (const entry of batch) {
@@ -406,8 +408,25 @@ export function createControlOutbox({
 
   function flush() {
     if (closed || inFlightCount >= maxInFlight || (!queue.length && !evidence.size && !heartbeatDue)) return;
-    const batch = [...evidence.values(), ...queue.splice(0)], events = batch.map(entry => entry.event);
-    evidence.clear();
+    // One audio failure per batch keeps the existing input/detail budget bounded.
+    // Four generations may remain protected across queued, retry and in-flight work.
+    const protectedBatch = [];
+    let hasAudioFault = false;
+    for (const [key, entry] of evidence) {
+      if (entry.kind === 'audio-fault' && hasAudioFault) continue;
+      protectedBatch.push(entry); evidence.delete(key);
+      if (entry.kind === 'audio-fault') hasAudioFault = true;
+    }
+    const queued = queue.splice(0), ordinary = [];
+    for (const entry of queued) {
+      // Keep touch/viewport/heartbeat work in this batch. Ordinary diagnostic
+      // details follow separately, retaining their existing three-summary budget.
+      if (hasAudioFault && ['st', 'audio-diag', 'video-diag'].includes(entry.event.k)) queue.push(entry);
+      else ordinary.push(entry);
+    }
+    const batch = [...protectedBatch, ...ordinary], events = batch.map(entry => entry.kind === 'audio-fault'
+      ? { ...entry.event, v: { ...entry.event.v, 'audio.nativeAudio.failureReportAgeMs':
+        Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, now() - entry.createdAt)) } } : entry.event);
     const q = ++seq, started = now();
     heartbeatDue = false;
     inFlightCount++;
@@ -427,7 +446,7 @@ export function createControlOutbox({
       for (const entry of batch) {
         if (versions.get(entry.key) !== entry.version) continue;
         if (evidence.has(entry.key) || queue.some(queued => queued.key === entry.key)) continue;
-        if (['latest', 'fault', 'terminal'].includes(entry.kind)) retry.set(entry.key, entry);
+        if (['latest', 'fault', 'terminal', 'audio-fault'].includes(entry.kind)) retry.set(entry.key, entry);
         else if (entry.event.k === 't') touchLost = true;
       }
       releaseVersions(batch);
@@ -438,9 +457,17 @@ export function createControlOutbox({
 
   function push(event, kind = 'edge') {
     if (closed) return false;
-    const protectedEvidence = kind === 'fault' || kind === 'terminal';
+    const audioFault = kind === 'audio-fault';
+    const protectedEvidence = kind === 'fault' || kind === 'terminal' || audioFault;
     if (protectedEvidence && event.k !== 'st') return false;
-    const key = protectedEvidence ? `evidence:${kind}` : event.k;
+    const generation = event.v?.['audio.nativeAudio.rtcGeneration'];
+    if (audioFault && (!Number.isSafeInteger(generation) || generation < 1 || generation > 0x7fffffff)) return false;
+    const transportGeneration = event.v?.['transport.generation'];
+    const scope = Number.isSafeInteger(transportGeneration) && transportGeneration > 0 && transportGeneration <= 0xffffffff
+      ? transportGeneration : 'unknown';
+    const key = audioFault ? `${audioFaultPrefix}${scope}:${generation}` : protectedEvidence ? `evidence:${kind}` : event.k;
+    if (audioFault && versions.has(key)) return false;
+    if (audioFault && retainedAudioFaults() >= 4) { audioFaultDropped++; return false; }
     // First-fault and terminal snapshots have independent, one-entry slots.
     // Ordinary latest telemetry cannot replace them or consume touch capacity.
     if (protectedEvidence && (evidence.has(key) || retry.has(key))) return false;
@@ -449,7 +476,7 @@ export function createControlOutbox({
     const version = ++eventVersion; versions.set(key, version);
     if (event.k === 't') touchLost = false;
     if (protectedEvidence) {
-      evidence.set(key, { kind, key, event, version });
+      evidence.set(key, { kind, key, event: audioFault ? { ...event, v: { ...event.v } } : event, version, createdAt: now() });
       flush();
       return true;
     }
@@ -477,7 +504,7 @@ export function createControlOutbox({
     heartbeat() {
       const ordinary = [];
       for (const entry of retry.values()) {
-        if (entry.kind === 'fault' || entry.kind === 'terminal') evidence.set(entry.key, entry);
+        if (entry.kind === 'fault' || entry.kind === 'terminal' || entry.kind === 'audio-fault') evidence.set(entry.key, entry);
         else ordinary.push(entry);
       }
       queue.unshift(...ordinary);
@@ -492,6 +519,7 @@ export function createControlOutbox({
     },
     stats: () => ({
       seq, inFlight: inFlightCount > 0, inFlightCount, pending: queue.length + evidence.size, posts, failures, overflows,
+      audioFaultRetained: retainedAudioFaults(), audioFaultDropped,
       rttMsP50: rtt.percentile(50), rttMsP95: rtt.percentile(95),
     }),
   };

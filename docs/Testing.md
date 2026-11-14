@@ -7,6 +7,20 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+### Diagnostic sufficiency after beta.48
+
+The post-release audit found dropped browser text fields, failed generations
+replaced before periodic reporting, and native lines truncated by redaction.
+The source corrections and TXT/ZIP fixture proofs are separate from the published
+beta.48 package. A controlled actual Kotlin/JNI/native-C-API experiment delivers
+160 original packets, then obtains identical native diagnostics from a UDP
+blackhole and deliberately mismatched ICE passwords. Success-path replay therefore
+does not establish unique failure attribution. This is neither Chromium
+interoperability nor vehicle acceptance; see [Robustness](Robustness.md#diagnostic-sufficiency).
+Focused checks pass 101 Android cases across ten classes, including five actual
+TXT/ZIP roundtrips, and all 721 browser cases. The latter requires normal test-file
+process isolation for AudioWorklet registration fixtures.
+
 ### Beta.48
 
 **Beta.48/code90 is published** from `eccd1f6f6762574974c698a400426761cfe68faf`

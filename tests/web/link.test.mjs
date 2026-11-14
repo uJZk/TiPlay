@@ -524,6 +524,65 @@ test('failed first-fault evidence retries on heartbeat independently of newer re
   assert.ok(f.posts.some(post => post.q > 2 && post.events.some(event => event === first)));
 });
 
+test('four audio failure generations survive busy requests without consuming input or video evidence slots', async () => {
+  const f = outboxFixture({ maxInFlight: 8 });
+  for (let i = 0; i < 8; i++) f.outbox.heartbeat();
+  await f.settle();
+  const audio = generation => ({ k: 'st', v: { 'transport.generation': 10,
+    'audio.nativeAudio.rtcGeneration': generation, 'audio.nativeAudio.state': 'failed',
+    'audio.nativeAudio.iceRequestsSent': generation * 7 } });
+  const first = audio(1);
+  assert.equal(f.outbox.push(first, 'audio-fault'), true);
+  first.v['audio.nativeAudio.iceRequestsSent'] = 999;
+  for (let generation = 2; generation <= 4; generation++) assert.equal(f.outbox.push(audio(generation), 'audio-fault'), true);
+  assert.equal(f.outbox.push(audio(1), 'audio-fault'), false, 'same owned generation retains its first snapshot');
+  assert.equal(f.outbox.push(audio(5), 'audio-fault'), false);
+  assert.equal(f.outbox.stats().audioFaultRetained, 4); assert.equal(f.outbox.stats().audioFaultDropped, 1);
+  const video = { k: 'st', v: { video: 'first' } }, terminal = { k: 'st', v: { video: 'terminal' } };
+  f.outbox.push(video, 'fault'); f.outbox.push(terminal, 'terminal');
+  const edge = touch(.25); f.outbox.push(edge);
+  for (let i = 0; i < 10; i++) f.outbox.push({ k: 'st', v: { current: i } }, 'latest');
+  f.advance(400); await f.answer();
+  const batch = f.posts[8].events;
+  assert.equal(batch.filter(event => event.v?.['audio.nativeAudio.state'] === 'failed').length, 1);
+  assert.equal(batch[0].v['audio.nativeAudio.iceRequestsSent'], 7);
+  assert.equal(batch[0].v['audio.nativeAudio.failureReportAgeMs'], 400);
+  assert.ok(batch.includes(video) && batch.includes(terminal) && batch.includes(edge));
+  assert.equal(batch.some(event => event.v?.current === 9), false, 'ordinary diagnostics use the next batch without crowding input');
+  assert.equal(f.outbox.stats().audioFaultRetained, 4, 'an in-flight failure still owns its slot');
+  // Complete the newest request first; an old ACK cannot release another generation.
+  f.posts[8].done = true; f.posts[8].resolve({ newest: true }); await f.settle();
+  assert.equal(f.outbox.stats().audioFaultRetained, 3);
+  assert.equal(f.outbox.push({ ...audio(1), v: { ...audio(1).v, 'transport.generation': 11 } }, 'audio-fault'), true,
+    'a new main peer can reuse audio generation one');
+  while (f.posts.some(post => !post.done)) await f.answer();
+  const failures = f.posts.flatMap(post => post.events).filter(event => event.v?.['audio.nativeAudio.state'] === 'failed');
+  assert.ok(f.posts.flatMap(post => post.events).some(event => event.v?.current === 9));
+  assert.deepEqual(failures.map(event => [event.v['transport.generation'], event.v['audio.nativeAudio.rtcGeneration']]),
+    [[10, 1], [10, 2], [10, 3], [10, 4], [11, 1]]);
+  assert.equal(f.outbox.stats().audioFaultRetained, 0);
+});
+
+test('failed audio evidence retains its original counters across heartbeat retry and closes without replay', async () => {
+  const f = outboxFixture({ maxInFlight: 2 });
+  const event = generation => ({ k: 'st', v: { 'audio.nativeAudio.rtcGeneration': generation,
+    'audio.nativeAudio.state': 'failed', 'audio.nativeAudio.iceStatsState': 'pending' } });
+  for (let generation = 1; generation <= 4; generation++) f.outbox.push(event(generation), 'audio-fault');
+  await f.settle();
+  f.posts[0].done = true; f.posts[0].reject(new Error('lost reply')); await f.settle();
+  assert.equal(f.outbox.stats().audioFaultRetained, 4, 'retry still counts toward four retained generations');
+  assert.equal(f.outbox.push(event(5), 'audio-fault'), false);
+  f.advance(9000); f.outbox.heartbeat();
+  while (f.posts.some(post => !post.done)) await f.answer();
+  const retried = f.posts.flatMap(post => post.events).filter(value => value.v?.['audio.nativeAudio.rtcGeneration'] === 1);
+  assert.equal(retried.length, 2);
+  assert.equal(retried[1].v['audio.nativeAudio.failureReportAgeMs'], 9000);
+  assert.equal(retried[1].v['audio.nativeAudio.iceStatsState'], 'pending');
+  assert.equal(Object.hasOwn(retried[1].v, 'audio.nativeAudio.iceRequestsSent'), false);
+  f.outbox.close(); assert.equal(f.outbox.stats().audioFaultRetained, 0);
+  assert.equal(f.outbox.push(event(6), 'audio-fault'), false);
+});
+
 test('a closed outbox ignores the answer in flight and sends nothing more', async () => {
   const f = outboxFixture();
   f.outbox.push(touch(0));

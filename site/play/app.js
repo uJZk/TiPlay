@@ -236,6 +236,7 @@ function timingFor(mode) {
   return timing;
 }
 const browserAudio = createBrowserAudio({
+  onNativeAudioFailure: snapshot => reportDiagnostics('audio-fault', snapshot),
   onEvidence: evidence => {
     if (!status?.debug || !status.debugSession || !outbox || outbox.stats().pending > 0) return false;
     const event = { k: 'audio-evidence', d: status.debugSession, v: { ...evidence, pageVersion: PAGE_VERSION } };
@@ -597,14 +598,14 @@ async function connectVideo() {
     sink.open(id, media.video, abort.signal);
     if (media.videoTrack?.()) sink.track(id, media.videoTrack());
     if (!useVideoTrack) sink.failVideo?.('rtc-video-unavailable');
-    browserAudio.attach(abort.signal, media.hello(), () => media.openAudio(), {
-      exchange: value => media.audioOffer(value), subscribe: listener => media.audioEvents(listener),
-      ready: value => media.audioTrackReady(value),
-    });
     if (!outbox) {
       outbox = createControlOutbox({ maxInFlight: 8, send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
       heartbeatTimer = setInterval(() => outbox?.heartbeat(), 400);
     }
+    browserAudio.attach(abort.signal, media.hello(), () => media.openAudio(), {
+      exchange: value => media.audioOffer(value), subscribe: listener => media.audioEvents(listener),
+      ready: value => media.audioTrackReady(value),
+    });
     for (const waiter of controlWaiters) waiter.resolve(); controlWaiters.clear();
     outbox.heartbeat();
     reportAppearance();
@@ -902,8 +903,10 @@ function statusText() {
   return t(key ?? 'waitingSource');
 }
 
-function reportDiagnostics(kind = 'latest') {
-  for (const event of browserDiagnosticEvents(pageStats(), appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) {
+function reportDiagnostics(kind = 'latest', nativeAudioFailure = null) {
+  const page = pageStats();
+  if (nativeAudioFailure) page.audio = { ...page.audio, nativeAudio: nativeAudioFailure };
+  for (const event of browserDiagnosticEvents(page, appearance.matches, status?.debug === true, status?.debugSession, videoDiagnosticTracker)) {
     if (event.k === 'st') observeDiagnosticSummary(event.v);
     outbox?.push(event, event.k === 'st' ? kind : 'latest');
   }

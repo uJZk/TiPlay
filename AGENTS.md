@@ -64,6 +64,14 @@ is improved, but its vehicle cause, actual mirror picture and physical output/ca
 still require new evidence. Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
+Post-beta.48 diagnostic source fixes are local and unpublished: preserve browser
+failure generations through immediate bounded reporting, Standard/Debug text
+admission and complete native split records. Focused checks pass 101 Android
+cases and 721 browser cases, including five actual TXT/ZIP fixture roundtrips.
+Controlled JNI UDP-blackhole and wrong-password failures produce identical
+native diagnostics; do not promise unique vehicle attribution or request another
+field test merely to verify local logging. See the diagnostic-sufficiency section
+in Robustness for the evidence boundary.
 Previously, beta.38/code80 with browser/cache v113 was published from
 `ab629363e6af9d7ea914fd8808baf84ab5f391fb`. Build records signed packaging,
 independent public bytes and 28 matching symbol pairs across the app-JNI and

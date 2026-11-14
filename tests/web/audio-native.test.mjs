@@ -3,6 +3,8 @@ import './wasm-init.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserAudio } from '../../site/play/audio.js';
+import { browserDiagnosticEvents } from '../../site/play/browser-diagnostics.js';
+import { createControlOutbox } from '../../site/play/link.js';
 
 const turn = () => new Promise(resolve => setImmediate(resolve));
 async function until(check) { for (let i = 0; i < 100; i++) { if (check()) return; await turn(); } assert.fail('Native audio did not settle'); }
@@ -14,7 +16,7 @@ function frame(kind, payload, { type = 0, epoch = 1, rate = 48000, flags = 0 } =
 }
 const setup = (config = opus, fields = {}) => frame(6, new TextEncoder().encode(JSON.stringify(config)), { flags: 2, ...fields });
 const pcm = () => frame(2, new Uint8Array(new Int16Array([123, 456]).buffer), { type: 2 });
-async function harness(t, { exchange, play, getStats, connectionState = 'connected' } = {}) {
+async function harness(t, { exchange, play, getStats, connectionState = 'connected', onNativeAudioFailure = () => {} } = {}) {
   const keys = ['AudioContext', 'AudioWorkletNode', 'RTCPeerConnection', 'RTCRtpReceiver', 'MediaStream', 'document'];
   const saved = Object.fromEntries(keys.map(key => [key, globalThis[key]]));
   const peers = [], nodes = [], contexts = [], sources = [], messages = [], offers = [], modes = [], ready = [];
@@ -59,6 +61,7 @@ async function harness(t, { exchange, play, getStats, connectionState = 'connect
   };
   let controller, eventListener, unsubscribed = 0, fetchCalls = 0;
   const audio = createBrowserAudio({ credentials: () => ({ code: '1234', session: 'test' }), onMode: mode => modes.push(mode),
+    onNativeAudioFailure,
     fetchPhone: async () => { fetchCalls++; return { ok: true, body: new ReadableStream({ start(value) { controller = value; } }) }; } });
   t.after(() => { audio.dispose(); Object.assign(globalThis, saved); });
   await audio.activate();
@@ -181,6 +184,56 @@ test('stopping audio cancels the pending independent peer retry', async t => {
   h.audio.stop();
   await new Promise(resolve => setTimeout(resolve, 1100));
   assert.equal(h.offers.length, 1);
+});
+
+test('native failure crosses the real snapshot formatter and protected outbox before a one-second replacement', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const posts = [], snapshots = [];
+  const outbox = createControlOutbox({ send: async (q, events) => { posts.push({ q, events }); return {}; } });
+  t.after(() => outbox.close());
+  let finishReplacement;
+  const replacement = new Promise(resolve => { finishReplacement = resolve; });
+  const h = await harness(t, { connectionState: 'connecting',
+    getStats: (_, index) => index === 0 ? Promise.resolve(new Map([['pair', { type: 'candidate-pair', state: 'in-progress',
+      nominated: false, requestsSent: 17, responsesReceived: 0 }]])) : replacement,
+    onNativeAudioFailure: snapshot => {
+      snapshots.push(snapshot);
+      const [event] = browserDiagnosticEvents({ transport: { generation: 123 }, audio: { nativeAudio: snapshot } }, false);
+      outbox.push(event, 'audio-fault');
+    } });
+  await until(() => h.audio.stats().nativeAudio?.iceRequestsSent === 17);
+  h.peers[0].connectionState = 'failed'; h.peers[0].onconnectionstatechange();
+  assert.equal(snapshots.length, 1); assert.equal(snapshots[0].rtcGeneration, 1);
+  await until(() => posts.length === 1);
+  const captured = posts[0].events[0].v;
+  assert.equal(captured['audio.nativeAudio.iceRequestsSent'], 17);
+  assert.equal(captured['audio.nativeAudio.iceResponsesReceived'], 0);
+  assert.equal(captured['audio.nativeAudio.icePairNominated'], 0);
+  assert.equal(Object.hasOwn(captured, 'audio.nativeAudio.iceRequestsReceived'), false);
+  t.mock.timers.tick(1000); await until(() => h.offers.length === 2);
+  assert.equal(h.audio.stats().nativeAudio.iceStatsState, 'pending');
+  assert.equal(Object.hasOwn(h.audio.stats().nativeAudio, 'iceRequestsSent'), false);
+  finishReplacement(new Map()); await turn();
+  assert.equal(captured['audio.nativeAudio.rtcGeneration'], 1);
+  assert.equal(captured['audio.nativeAudio.iceRequestsSent'], 17, 'a later peer cannot rewrite the delivered failure');
+});
+
+test('failure before the first ICE sample reports pending once and cannot be rewritten by an in-flight result', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let completeOld;
+  const reports = [], old = new Promise(resolve => { completeOld = resolve; });
+  const h = await harness(t, { connectionState: 'connecting', getStats: (_, index) => index === 0 ? old : new Promise(() => {}),
+    onNativeAudioFailure: snapshot => { reports.push(snapshot); throw new Error('diagnostic sink unavailable'); } });
+  await until(() => h.offers.length === 1);
+  h.peers[0].connectionState = 'failed'; h.peers[0].onconnectionstatechange();
+  assert.equal(reports.length, 1); assert.equal(reports[0].iceStatsState, 'pending');
+  assert.equal(Object.hasOwn(reports[0], 'iceRequestsSent'), false);
+  assert.equal(Object.hasOwn(reports[0], 'iceStatsSampleAgeMs'), false);
+  t.mock.timers.tick(1000); await until(() => h.offers.length === 2);
+  completeOld(new Map([['late', { type: 'candidate-pair', requestsSent: 99 }]])); await turn();
+  assert.equal(reports[0].iceStatsState, 'pending'); assert.equal(reports.length, 1);
+  assert.equal(h.audio.stats().nativeAudio.rtcGeneration, 2);
+  assert.equal(Object.hasOwn(h.audio.stats().nativeAudio, 'iceRequestsSent'), false);
 });
 
 test('new source demand can rearm exhausted audio retries without retrying the same failed demand forever', async t => {
