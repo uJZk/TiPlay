@@ -163,6 +163,40 @@ assert.equal(processState.exitCode, undefined); assert.equal(written.length, 1);
         self.assertNotIn('setenforce', android)
         self.assertNotIn('bindProcessToNetwork', android)
 
+    def test_fixture_parser_uses_actual_ipv4_records_in_both_ip_formats(self):
+        path = ROOT / "tests/native/android_fixture_interface.py"
+        spec = importlib.util.spec_from_file_location("fixture_interface", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cases = [
+            ("2: eth0    inet 10.0.2.15/24 brd 10.0.2.255 scope global eth0\n", "eth0"),
+            ("2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500\n"
+             "    inet 10.0.2.15/24 brd 10.0.2.255 scope global eth0\n", "eth0"),
+            ("2: eth0@if7 inet 10.0.2.15/24 scope global eth0\r\n", "eth0"),
+            ("2: eth0: <BROADCAST,UP> mtu 1500\n", ""),
+            ("2: eth0: <BROADCAST> mtu 1500\n    inet 10.0.2.15/24 scope global eth0\n", ""),
+            ("2: eth0 inet 169.254.111.111/32 scope global eth0\n", ""),
+            ("1: lo inet 127.0.0.1/8 scope host lo\n", ""),
+            ("2: eth0 inet 0.0.0.0/0 scope global eth0\n", ""),
+            ("2: eth0 inet 239.1.1.1/32 scope global eth0\n", ""),
+            ("2: eth0 inet 999.0.0.1/24 scope global eth0\n", ""),
+            ("2: private/name inet 10.0.2.15/24 scope global eth0\n", ""),
+            ("    inet 10.0.2.15/24 scope global eth0\n", ""),
+        ]
+        for text, expected in cases:
+            with self.subTest(expected=expected):
+                interface, summary = module.inspect_interfaces(text)
+                self.assertEqual(expected, interface)
+                self.assertEqual(bool(expected), summary["interfaceSelected"])
+                rendered = str(summary)
+                for address in ["10.0.2.15", "169.254.111.111", "127.0.0.1", "private/name"]:
+                    self.assertNotIn(address, rendered)
+        android = WORKFLOW.read_text().split("  android-interop:\n", 1)[1].split("  symbols:\n", 1)[0]
+        self.assertIn("task_network_deadline=$((SECONDS + 60))", android)
+        self.assertIn("timeout 5", android)
+        self.assertIn("python3 tests/native/android_fixture_interface.py", android)
+        self.assertIn("android_fixture_interface.py --summary", android)
+
     def test_no_machine_policy_or_browser_ice_policy_override(self):
         source = WORKFLOW.read_text() + HARNESS.read_text()
         for override in ["WebRtcIPHandling", "force-webrtc-ip-handling-policy", "policies/managed",
