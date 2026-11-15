@@ -19,7 +19,7 @@ public final class EncodedAudioPeerProbe {
         while (mids.find()) slots.add(new BrowserRtcAudioSlot(mids.group(1), 111));
         NativeRtcAudioPeer peer = new NativeRtcAudioPeer(slots,
             reason -> { System.err.println("native-audio-failure:" + reason); return Unit.INSTANCE; },
-            ignored -> Unit.INSTANCE, System::nanoTime);
+            ignored -> Unit.INSTANCE, System::nanoTime, null);
         try {
             String answer = peer.answer(offer);
             System.out.println(Base64.getEncoder().encodeToString(answer.getBytes(StandardCharsets.UTF_8)));
@@ -46,12 +46,12 @@ public final class EncodedAudioPeerProbe {
     }
 
     private static void verifyUnstartedDiagnostics() throws Exception {
-        var create = NativeRtcAudioPeer.class.getDeclaredMethod("nativeCreate", String[].class, int[].class);
+        var create = NativeRtcAudioPeer.class.getDeclaredMethod("nativeCreate", String[].class, int[].class, String.class);
         var inspect = NativeRtcAudioPeer.class.getDeclaredMethod("nativeDiagnostics", long.class);
         var answer = NativeRtcAudioPeer.class.getDeclaredMethod("nativeAnswer", long.class, String.class);
         var delete = NativeRtcAudioPeer.class.getDeclaredMethod("nativeDelete", long.class);
         create.setAccessible(true); inspect.setAccessible(true); answer.setAccessible(true); delete.setAccessible(true);
-        long handle = (Long) create.invoke(null, new String[]{"diagnostic-probe"}, new int[]{111});
+        long handle = (Long) create.invoke(null, new String[]{"diagnostic-probe"}, new int[]{111}, null);
         try {
             int[] raw = (int[]) inspect.invoke(null, handle);
             if (raw.length != 21 || raw[8] != Integer.MIN_VALUE || raw[9] != Integer.MIN_VALUE ||

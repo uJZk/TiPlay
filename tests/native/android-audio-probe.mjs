@@ -109,6 +109,33 @@ export function countIpv4LinkLocalHostCandidates(sdp) {
   return count;
 }
 
+export function isOrdinaryGuestIpv4(address) {
+  if (typeof address !== 'string' || !isIPv4(address)) return false;
+  const first = Number(address.split('.')[0]);
+  return first !== 0 && first !== 127 && first < 224 && !address.startsWith('169.254.');
+}
+
+// Validate the original native answer, before any emulator NAT translation can
+// hide a missing/ignored binding. No address or SDP reaches the proof object.
+export function verifyNativeAnswerBinding(sdp, nativeBindMode, guestAddress) {
+  assert.ok(['guest-ipv4', 'unbound'].includes(nativeBindMode), 'Invalid Android native bind mode.');
+  const linkLocalCount = countIpv4LinkLocalHostCandidates(sdp);
+  if (nativeBindMode === 'unbound') {
+    assert.ok(linkLocalCount > 0, 'Native Android answer lacks an IPv4 link-local host candidate.');
+    return { linkLocalCount, boundHostCount: 0 };
+  }
+  assert.ok(isOrdinaryGuestIpv4(guestAddress), 'The bound Android guest address must be ordinary IPv4.');
+  const candidates = sdp.split(/\r?\n/).filter(line => line.startsWith('a=candidate:'));
+  assert.equal(candidates.length, 1, 'Bound native Android answer must contain exactly one candidate.');
+  const fields = candidates[0].match(/\S+/g) || [];
+  assert.ok(fields[1] === '1' && fields[2]?.toLowerCase() === 'udp' && isIPv4(fields[4]) &&
+    fields[4] === guestAddress && fields[6] === 'typ' && fields[7] === 'host',
+  'Bound native Android candidate differs from the verified guest IPv4 host route.');
+  const port = Number(fields[5]);
+  assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'Invalid native UDP candidate port.');
+  return { linkLocalCount, boundHostCount: 1 };
+}
+
 export function instrumentationResultCollector() {
   const result = {};
   return {
@@ -129,10 +156,12 @@ export function instrumentationResultCollector() {
 export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', serial = process.env.ANDROID_SERIAL || 'emulator-5554',
   appApk = process.env.ANDROID_AUDIO_APP_APK, testApk = process.env.ANDROID_AUDIO_TEST_APK, hostAddress,
   qemuSocketPath = process.env.TIPLAY_QEMU_HMP_SOCKET, qemuNetdevId = process.env.TIPLAY_QEMU_NETDEV_ID,
-  qemuGuestAddress = process.env.TIPLAY_QEMU_GUEST_IPV4 } = {}) {
+  qemuGuestAddress = process.env.TIPLAY_QEMU_GUEST_IPV4,
+  nativeBindMode = process.env.TIPLAY_ANDROID_AUDIO_BIND_MODE || 'guest-ipv4' } = {}) {
   assert.match(serial, /^emulator-[0-9]+$/, 'The Android audio proof accepts a disposable emulator only.');
   assert.ok(appApk && testApk, 'Supply ANDROID_AUDIO_APP_APK and ANDROID_AUDIO_TEST_APK.');
-  assert.ok(qemuSocketPath && qemuNetdevId && isIPv4(qemuGuestAddress), 'Supply the owned QEMU monitor, netdev and guest IPv4 fixture.');
+  assert.ok(qemuSocketPath && qemuNetdevId && isOrdinaryGuestIpv4(qemuGuestAddress), 'Supply the owned QEMU monitor, netdev and ordinary guest IPv4 fixture.');
+  assert.ok(['guest-ipv4', 'unbound'].includes(nativeBindMode), 'Invalid Android native bind mode.');
   const adbArgs = ['-s', serial];
   const runAdb = async args => {
     try { return await execFile(adb, [...adbArgs, ...args], { timeout: 60000, maxBuffer: 1024 * 1024 }); }
@@ -151,12 +180,13 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
 
   const stdout = new PassThrough(), stderr = new PassThrough();
   const portReady = deferred(), proofReady = deferred(), exited = deferred();
-  const mappings = new Map(), generations = new Set(), linkLocalGenerations = new Set();
+  const mappings = new Map(), generations = new Set(), linkLocalGenerations = new Set(), boundGenerations = new Set();
   const nat = { ...udpCounters(), peerGenerationsCreated: 0,
-    linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0 };
+    linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0,
+    boundCandidateGenerations: 0, observedBoundHostCandidates: 0 };
   const instrumentationResult = instrumentationResultCollector();
   let instrumentation, socket, forwardPort, runtimeProof, finishedNormally = false, exitCode = null, closing, closingStarted = false;
-  let forwarding;
+  let forwarding, nativeBindingProof;
   let responseChain = Promise.resolve();
   let udpFixtureRun, udpFixtureProof;
   const startupTimer = setTimeout(() => { portReady.reject(Error('Android instrumentation startup timed out.'));
@@ -166,7 +196,8 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     const sourceCommit = process.env.GITHUB_SHA || process.env.ANDROID_AUDIO_SOURCE_SHA;
     return { ...(runtimeProof || {}), testApkSha256: inspected.test.sha256,
       sourceCommit: /^[0-9a-f]{40}$/.test(sourceCommit || '') ? sourceCommit : null,
-      nat: { ...nat }, qemuForwarding: forwarding?.snapshot() ?? null,
+      nat: { ...nat }, nativeBinding: nativeBindingProof ? { ...nativeBindingProof } : null,
+      qemuForwarding: forwarding?.snapshot() ?? null,
       udpFixture: udpFixtureProof ? { ...udpFixtureProof, counters: { ...udpFixtureProof.counters } } : null,
       finishedNormally, instrumentationResult: { ...instrumentationResult.result } };
   }
@@ -304,13 +335,21 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     assert.equal(closingStarted, false, 'Android probe is closing.');
     const generation = value.generation;
     assert.ok(Number.isSafeInteger(generation) && generation > 0, 'Invalid Android audio generation.');
-    // Observe the native answer before any emulator endpoint translation. This
-    // job must exercise the real IPv4LL gather path; do not manufacture one.
-    const linkLocalCount = countIpv4LinkLocalHostCandidates(value.sdp);
-    assert.ok(linkLocalCount > 0, 'Native Android answer lacks an IPv4 link-local host candidate.');
-    if (!linkLocalGenerations.has(generation)) {
+    const binding = value.nativeBinding;
+    assert.equal(binding?.mode, nativeBindMode, 'Missing product peer binding attestation.');
+    assert.equal(binding.addressClass, nativeBindMode === 'guest-ipv4' ? 'ordinary-ipv4' : 'any');
+    assert.ok(Number.isSafeInteger(binding.peersCreated) && binding.peersCreated > 0);
+    assert.equal(binding.boundPeersCreated, nativeBindMode === 'guest-ipv4' ? binding.peersCreated : 0);
+    const { linkLocalCount, boundHostCount } = verifyNativeAnswerBinding(value.sdp, nativeBindMode, qemuGuestAddress);
+    nativeBindingProof = { mode: binding.mode, addressClass: binding.addressClass,
+      peersCreated: binding.peersCreated, boundPeersCreated: binding.boundPeersCreated };
+    if (linkLocalCount > 0 && !linkLocalGenerations.has(generation)) {
       linkLocalGenerations.add(generation); nat.linkLocalCandidateGenerations++;
       nat.observedLinkLocalHostCandidates += linkLocalCount;
+    }
+    if (boundHostCount > 0 && !boundGenerations.has(generation)) {
+      boundGenerations.add(generation); nat.boundCandidateGenerations++;
+      nat.observedBoundHostCandidates += boundHostCount;
     }
     for (const [key, entry] of [...mappings]) if (!key.startsWith(generation + ':')) await removeMapping(key, entry);
     const parts = value.sdp.split(/(\r?\n)/);
@@ -339,6 +378,9 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     assert.ok(Number.isInteger(runtime.uid) && runtime.uid >= 10000 && runtime.uid === runtime.applicationUid);
     assert.match(runtime.selinuxType, /^untrusted_app(?:_\d+)?$/);
     assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64'); assert.equal(runtime.mainWebRtcInitialized, true);
+    assert.equal(runtime.mainPeerCreatedByProbe, false, 'The fixture must not claim an active main peer.');
+    assert.equal(runtime.nativeBindMode, nativeBindMode);
+    assert.equal(runtime.nativeBindAddressVerified, nativeBindMode === 'guest-ipv4');
     assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean');
     assert.equal(runtime.configuredGuestIpv4Present, true, 'The configured QEMU guest IPv4 is absent from this application runtime.');
     for (const name of libraryNames) assert.deepEqual(value.libraries[name], inspected.app.libraries[name], 'Packaged Android library changed.');
@@ -385,6 +427,7 @@ export async function startAndroidAudioProbe({ adb = process.env.ADB || 'adb', s
     await runAdb(['install', '-r', '-t', testApk]);
     instrumentation = spawn(adb, [...adbArgs, 'shell', 'am', 'instrument', '-w', '-r',
       '-e', 'expectedApkSha256', inspected.app.sha256, '-e', 'expectedGuestAddress', qemuGuestAddress,
+      '-e', 'nativeBindMode', nativeBindMode,
       testComponent], { stdio: ['ignore', 'pipe', 'pipe'] });
     instrumentation.once('error', error => { portReady.reject(commandError(error)); proofReady.reject(commandError(error)); exited.resolve(); });
     instrumentation.stderr.on('data', bytes => stderr.write(bytes));

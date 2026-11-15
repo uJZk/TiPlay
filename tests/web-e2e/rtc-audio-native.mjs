@@ -65,6 +65,9 @@ function verifiedAndroidProof(requireFinished = false) {
   assert.match(runtime.selinuxType, /^untrusted_app(?:_[0-9]+)?$/, 'Android proof must use the ordinary app SELinux domain.');
   assert.equal(runtime.api, 35); assert.equal(runtime.abi, 'x86_64');
   assert.equal(runtime.mainWebRtcInitialized, true, 'The packaged main WebRTC library was not initialized first.');
+  assert.equal(runtime.mainPeerCreatedByProbe, false, 'The fixture does not exercise an active main peer.');
+  assert.ok(['guest-ipv4', 'unbound'].includes(runtime.nativeBindMode), 'Missing explicit test-only native bind mode.');
+  assert.equal(runtime.nativeBindAddressVerified, runtime.nativeBindMode === 'guest-ipv4');
   assert.equal(typeof runtime.qemuDefaultIpv4Present, 'boolean', 'Missing observation of the emulator redirection address.');
   assert.equal(runtime.configuredGuestIpv4Present, true, 'The explicitly selected emulator guest address is not present.');
   const forwarding = proof.qemuForwarding;
@@ -87,7 +90,7 @@ function verifiedAndroidProof(requireFinished = false) {
     const nat = proof.nat;
     for (const name of ['peerGenerationsCreated', 'mappingsCreated', 'activeMappings', 'toGuestDatagrams',
       'fromGuestDatagrams', 'redirectCommandsAttempted', 'redirectCommandsSucceeded', 'redirectCommandsRemoved', 'linkLocalCandidateGenerations',
-      'observedLinkLocalHostCandidates'])
+      'observedLinkLocalHostCandidates', 'boundCandidateGenerations', 'observedBoundHostCandidates'])
       assert.ok(Number.isSafeInteger(nat?.[name]) && nat[name] >= 0, 'Missing emulator NAT evidence.');
     assert.equal(nat.peerGenerationsCreated, 2); assert.ok(nat.mappingsCreated >= 2);
     assert.equal(nat.activeMappings, 0, 'Owned emulator mappings were not removed.');
@@ -95,8 +98,19 @@ function verifiedAndroidProof(requireFinished = false) {
     assert.equal(nat.redirectCommandsAttempted, nat.redirectCommandsSucceeded);
     assert.equal(nat.redirectCommandsRemoved, nat.mappingsCreated);
     assert.ok(nat.toGuestDatagrams > 0 && nat.fromGuestDatagrams > 0, 'No bidirectional emulator UDP forwarding was observed.');
-    assert.equal(nat.linkLocalCandidateGenerations, 2, 'Both native peer generations must retain a real link-local host candidate.');
-    assert.ok(nat.observedLinkLocalHostCandidates >= 2, 'No native link-local candidates were observed before NAT translation.');
+    const binding = proof.nativeBinding;
+    assert.equal(binding?.mode, runtime.nativeBindMode, 'Missing native product peer binding attestation.');
+    assert.equal(binding.peersCreated, 2);
+    if (runtime.nativeBindMode === 'guest-ipv4') {
+      assert.equal(binding.addressClass, 'ordinary-ipv4'); assert.equal(binding.boundPeersCreated, 2);
+      assert.equal(nat.boundCandidateGenerations, 2); assert.equal(nat.observedBoundHostCandidates, 2);
+      assert.equal(nat.linkLocalCandidateGenerations, 0); assert.equal(nat.observedLinkLocalHostCandidates, 0);
+    } else {
+      assert.equal(binding.addressClass, 'any'); assert.equal(binding.boundPeersCreated, 0);
+      assert.equal(nat.boundCandidateGenerations, 0); assert.equal(nat.observedBoundHostCandidates, 0);
+      assert.equal(nat.linkLocalCandidateGenerations, 2, 'Both unbound native generations must retain a real link-local host candidate.');
+      assert.ok(nat.observedLinkLocalHostCandidates >= 2, 'No native link-local candidates were observed before NAT translation.');
+    }
   }
   return proof;
 }

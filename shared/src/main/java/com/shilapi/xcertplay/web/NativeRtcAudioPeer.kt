@@ -25,6 +25,7 @@ internal class NativeRtcAudioPeer(
     private val onFailure: (String) -> Unit,
     private val diagnostic: (String) -> Unit = {},
     private val nanoTime: () -> Long = System::nanoTime,
+    private val bindAddress: String? = null,
 ) : BrowserRtcAudioBackend {
     private val diagnosticId = nextDiagnosticId.incrementAndGet()
     private data class Packet(val slot: Int, val payload: ByteArray, val timestamp: Long, val admittedAt: Long)
@@ -45,7 +46,7 @@ internal class NativeRtcAudioPeer(
         val ptr = synchronized(pointerLock) {
             check(!closed.get() && handle == 0L) { "audio-peer-already-started" }
             answering.set(true)
-            nativeCreate(slots.map { it.mid }.toTypedArray(), slots.map { it.payloadType }.toIntArray()).also {
+            nativeCreate(slots.map { it.mid }.toTypedArray(), slots.map { it.payloadType }.toIntArray(), bindAddress).also {
                 check(it != 0L) { "audio-native-peer-create" }; handle = it
             }
         }
@@ -181,7 +182,7 @@ internal class NativeRtcAudioPeer(
         private const val MAX_PACKET_BYTES = 65479
         private const val START_TIMEOUT_NANOS = 5_000_000_000L
         private val AVAILABLE = runCatching { System.loadLibrary("datachannel"); System.loadLibrary("tiplay_rtc_audio"); true }.getOrDefault(false)
-        @JvmStatic private external fun nativeCreate(mids: Array<String>, payloadTypes: IntArray): Long
+        @JvmStatic private external fun nativeCreate(mids: Array<String>, payloadTypes: IntArray, bindAddress: String?): Long
         @JvmStatic private external fun nativeAnswer(handle: Long, offer: String): String
         @JvmStatic private external fun nativeCancel(handle: Long)
         @JvmStatic private external fun nativeDelete(handle: Long)

@@ -13,7 +13,7 @@ public final class RoutedAudioPeerProbe {
     private static final Object outputLock = new Object();
     private static final BrowserRtcAudioRouter router = new BrowserRtcAudioRouter(
         reason -> { nativeFailure(reason); return Unit.INSTANCE; },
-        (slots, failed) -> new NativeRtcAudioPeer(slots, failed, ignored -> Unit.INSTANCE, System::nanoTime),
+        (slots, failed) -> new NativeRtcAudioPeer(slots, failed, ignored -> Unit.INSTANCE, System::nanoTime, null),
         (record, submit) -> { submit.invoke(); return Unit.INSTANCE; },
         System::nanoTime);
 

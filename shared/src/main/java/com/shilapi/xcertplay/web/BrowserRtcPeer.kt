@@ -135,10 +135,13 @@ private class AndroidBrowserRtcPeer(
     private val nativeAudioSequence = java.util.concurrent.atomic.AtomicInteger()
     private val audioRouteLock = Any()
     @Volatile private var audioFailure: String? = null
+    private val audioRoutePolicy = BrowserRtcAudioRoutePolicy()
     override val audioTransport: String get() = if (audio != null) BrowserRtcAudioRouter.TRANSPORT else "unavailable"
     private val audioRouter = BrowserRtcAudioRouter(onFailure = ::nativeAudioFailure,
-        peerFactory = { slots, failed -> NativeRtcAudioPeer(slots, failed,
-            diagnostic = { detail -> log("Browser RTC: native-audio epoch=$epoch $detail") }) },
+        peerFactory = { slots, failed -> PreferredBrowserRtcAudioPeer(slots, audioRoutePolicy,
+            connected = { accepting() && connected }, onFailure = failed,
+            factory = { bind, failure -> NativeRtcAudioPeer(slots, failure,
+                diagnostic = { detail -> log("Browser RTC: native-audio epoch=$epoch $detail") }, bindAddress = bind) }) },
         captureNative = { bytes, submit -> nativeAudioCapture.route(nativeAudioSequence.getAndIncrement(), bytes, submit) })
     private val audioSignaling = BrowserRtcAudioSignaling(audioRouter,
         authenticated = { authenticated && audio != null && accepting() }, live = ::accepting,
@@ -259,6 +262,8 @@ private class AndroidBrowserRtcPeer(
             candidateCounts.computeIfAbsent(description) { java.util.concurrent.atomic.AtomicInteger() }.incrementAndGet()
         }
         override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+            if (!accepting()) return
+            audioRoutePolicy.selected(event.local.sdp)
             val local = candidateDescription(event.local)
             val remote = candidateDescription(event.remote)
             val disconnected = event.estimatedDisconnectedTimeMs
@@ -273,6 +278,8 @@ private class AndroidBrowserRtcPeer(
             val nextState = value.name.lowercase()
             state = nextState
             connected = value == PeerConnection.IceConnectionState.CONNECTED || value == PeerConnection.IceConnectionState.COMPLETED
+            if (value in setOf(PeerConnection.IceConnectionState.DISCONNECTED, PeerConnection.IceConnectionState.FAILED,
+                    PeerConnection.IceConnectionState.CLOSED)) audioRoutePolicy.disconnected()
             if (connected) { everConnected = true; disconnectedSince = null }
             else if (value == PeerConnection.IceConnectionState.DISCONNECTED && disconnectedSince == null) disconnectedSince = System.nanoTime()
             if (value == PeerConnection.IceConnectionState.FAILED || value == PeerConnection.IceConnectionState.CLOSED) {
@@ -1073,6 +1080,7 @@ private class AndroidBrowserRtcPeer(
 
     override fun retire(reason: String) {
         if (!closed.compareAndSet(false, true)) return
+        audioRoutePolicy.close()
         callbackEvents.close()
         videoDiagnostics.close()
         synchronized(wake) { authenticated = false; wake.notifyAll() }

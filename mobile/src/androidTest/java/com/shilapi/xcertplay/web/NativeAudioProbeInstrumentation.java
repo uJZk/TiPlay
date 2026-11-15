@@ -49,6 +49,10 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
     private Bundle arguments;
     private String stage = "instrumentation-start";
     private UdpEchoProbe udpProbe;
+    private String nativeBindMode;
+    private String nativeBindAddress;
+    private final AtomicInteger nativePeersCreated = new AtomicInteger();
+    private final AtomicInteger nativeBoundPeersCreated = new AtomicInteger();
 
     @Override public void onCreate(Bundle values) {
         arguments = values == null ? new Bundle() : new Bundle(values);
@@ -79,7 +83,13 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
                     stage = "native-router-create";
                     router = new BrowserRtcAudioRouter(
                         reason -> { nativeFailure(reason); return Unit.INSTANCE; },
-                        (slots, failed) -> new NativeRtcAudioPeer(slots, failed, ignored -> Unit.INSTANCE, System::nanoTime),
+                        (slots, failed) -> {
+                            NativeRtcAudioPeer peer = new NativeRtcAudioPeer(slots, failed,
+                                ignored -> Unit.INSTANCE, System::nanoTime, nativeBindAddress);
+                            nativePeersCreated.incrementAndGet();
+                            if (nativeBindAddress != null) nativeBoundPeersCreated.incrementAndGet();
+                            return peer;
+                        },
                         (record, submit) -> { submit.invoke(); return Unit.INSTANCE; }, System::nanoTime);
                     stage = "rpc-commands";
                     String line;
@@ -250,9 +260,20 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
                 if (configuredGuestAddress.equals(address)) configuredGuestIpv4Present = true;
             }
         }
+        if (!configuredGuestIpv4Present) throw new IllegalStateException("probe-configured-guest-not-present");
+        nativeBindMode = arguments.getString("nativeBindMode");
+        if (!"guest-ipv4".equals(nativeBindMode) && !"unbound".equals(nativeBindMode))
+            throw new IllegalStateException("probe-native-bind-mode");
+        int firstOctet = Integer.parseInt(configuredGuestAddress.split("\\.")[0]);
+        if (firstOctet == 0 || firstOctet == 127 || firstOctet >= 224 || configuredGuestAddress.startsWith("169.254."))
+            throw new IllegalStateException("probe-configured-guest-not-ordinary");
+        // Test-only binding of the independently observed ordinary guest address.
+        // This does not create a main peer or exercise production hint selection.
+        nativeBindAddress = "guest-ipv4".equals(nativeBindMode) ? configuredGuestAddress : null;
         return map("runtime", map("uid", Process.myUid(), "applicationUid", application.uid,
                 "selinuxType", type, "api", Build.VERSION.SDK_INT, "abi", Build.SUPPORTED_ABIS[0],
                 "mainWebRtcInitialized", true, "mainPeerCreatedByProbe", false,
+                "nativeBindMode", nativeBindMode, "nativeBindAddressVerified", nativeBindAddress != null,
                 "qemuDefaultIpv4Present", qemuDefaultIpv4Present,
                 "configuredGuestIpv4Present", configuredGuestIpv4Present),
             "packageName", target.getPackageName(), "versionName", info.versionName,
@@ -280,7 +301,8 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
             case "probe-closed-before-completion": case "probe-rpc-write-failed":
             case "probe-signaling-stop-timeout": case "probe-udp-stop-timeout":
             case "probe-udp-already-started": case "probe-udp-not-started":
-            case "probe-configured-guest-not-ipv4": return message;
+            case "probe-configured-guest-not-ipv4": case "probe-configured-guest-not-present":
+            case "probe-configured-guest-not-ordinary": case "probe-native-bind-mode": return message;
             default: return "probe-runtime-failure";
         }
     }
@@ -363,6 +385,9 @@ public final class NativeAudioProbeInstrumentation extends Instrumentation {
         List<String> encoded = new ArrayList<>();
         for (byte[] record : records) encoded.add(Base64.getEncoder().encodeToString(record));
         value.put("records", encoded); value.put("snapshot", router.snapshot()); value.put("failures", new ArrayList<>(failures));
+        value.put("nativeBinding", map("mode", nativeBindMode,
+            "addressClass", nativeBindAddress == null ? "any" : "ordinary-ipv4",
+            "peersCreated", nativePeersCreated.get(), "boundPeersCreated", nativeBoundPeersCreated.get()));
         send(value);
     }
 

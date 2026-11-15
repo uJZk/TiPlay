@@ -5,7 +5,7 @@ import { isIPv4 } from 'node:net';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { acceptUpstreamDatagram, countIpv4LinkLocalHostCandidates, drainAndRemoveMappings, instrumentationResultCollector,
-  removeAndroidMapping, runCleanupActions } from './android-audio-probe.mjs';
+  isOrdinaryGuestIpv4, removeAndroidMapping, runCleanupActions, verifyNativeAnswerBinding } from './android-audio-probe.mjs';
 
 test('cleanup attempts every owned resource and retains failed emulator redirects', async () => {
   const calls = [], mappings = new Map(), nat = { activeMappings: 2, redirectCommandsRemoved: 0 };
@@ -206,27 +206,74 @@ test('link-local proof accepts actual IPv4 host candidates only', () => {
   assert.equal(countIpv4LinkLocalHostCandidates('v=0\n'), 0);
 });
 
-test('actual answer mapper preserves every non-endpoint SDP byte and retires old generations', async () => {
+function answerMapperFixture(nativeBindMode = 'unbound') {
   const source = readFileSync(new URL('./android-audio-probe.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('  async function mapAnswer('), end = source.indexOf('\n  function acceptProof(', start);
   assert.ok(start > 0 && end > start);
-  const mappings = new Map(), generations = new Set(), linkLocalGenerations = new Set(), removed = [];
-  const nat = { peerGenerationsCreated: 0, linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0 };
+  const mappings = new Map(), generations = new Set(), linkLocalGenerations = new Set(), boundGenerations = new Set(), removed = [], added = [];
+  const nat = { peerGenerationsCreated: 0, linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0,
+    boundCandidateGenerations: 0, observedBoundHostCandidates: 0 };
   const mapping = async (generation, port) => {
+    added.push([generation, port]);
     const key = generation + ':' + port;
     if (!mappings.has(key)) mappings.set(key, { port: 40000 + generation * 100 + port % 100 });
     return mappings.get(key);
   };
   const removeMapping = async key => { removed.push(key); mappings.delete(key); };
-  const mapAnswer = new Function('mapping', 'mappings', 'generations', 'linkLocalGenerations', 'nat', 'isIPv4', 'removeMapping', 'assert', 'hostAddress', 'countIpv4LinkLocalHostCandidates', 'closingStarted',
-    'return ' + source.slice(start, end).trim())(mapping, mappings, generations, linkLocalGenerations, nat, isIPv4, removeMapping, assert, '192.0.2.10', countIpv4LinkLocalHostCandidates, false);
+  const mapAnswer = new Function('mapping', 'mappings', 'generations', 'linkLocalGenerations', 'boundGenerations', 'nat', 'isIPv4', 'removeMapping', 'assert', 'hostAddress', 'verifyNativeAnswerBinding', 'closingStarted', 'nativeBindMode', 'qemuGuestAddress',
+    'let nativeBindingProof; return ' + source.slice(start, end).trim())(mapping, mappings, generations, linkLocalGenerations, boundGenerations, nat, isIPv4, removeMapping, assert, '192.0.2.10', verifyNativeAnswerBinding, false, nativeBindMode, '10.0.2.16');
+  const answer = (generation, sdp) => ({ generation, sdp, nativeBinding: { mode: nativeBindMode,
+    addressClass: nativeBindMode === 'guest-ipv4' ? 'ordinary-ipv4' : 'any', peersCreated: generation,
+    boundPeersCreated: nativeBindMode === 'guest-ipv4' ? generation : 0 } });
+  return { mapAnswer, answer, nat, removed, added };
+}
+
+test('actual unbound answer mapper preserves every non-endpoint SDP byte and retires old generations', async () => {
+  const { mapAnswer, answer, nat, removed } = answerMapperFixture();
   const original = 'v=0\r\na=ice-pwd:synthetic-fixture\r\na=mid:not-numeric\r\na=candidate:f\t1 UDP 212\t169.254.111.111\t12345 typ host generation 0\r\na=candidate:v6 1 UDP 100 fd00::1 12345 typ host\r\na=candidate:tcp 1 TCP 20 10.0.2.15 5555 typ host tcptype passive\r\n';
-  const one = await mapAnswer({ generation: 1, sdp: original });
+  const one = await mapAnswer(answer(1, original));
   assert.equal(one.sdp, original.replace('169.254.111.111\t12345', '192.0.2.10\t40145'));
-  const two = await mapAnswer({ generation: 2, sdp: original.replace(/\r\n/g, '\n') });
+  const two = await mapAnswer(answer(2, original.replace(/\r\n/g, '\n')));
   assert.equal(two.sdp, original.replace(/\r\n/g, '\n').replace('169.254.111.111\t12345', '192.0.2.10\t40245'));
   assert.deepEqual(removed, ['1:12345']); assert.equal(nat.peerGenerationsCreated, 2);
   assert.equal(nat.linkLocalCandidateGenerations, 2); assert.equal(nat.observedLinkLocalHostCandidates, 2);
-  await assert.rejects(mapAnswer({ generation: 3, sdp: 'v=0\na=candidate:f 1 UDP 1 10.0.2.15 4444 typ host\n' }), /lacks an IPv4 link-local/);
-  await assert.rejects(mapAnswer({ generation: 4, sdp: original.replace('12345', '0') }), /Invalid native UDP/);
+  await assert.rejects(mapAnswer(answer(3, 'v=0\na=candidate:f 1 UDP 1 10.0.2.15 4444 typ host\n')), /lacks an IPv4 link-local/);
+  await assert.rejects(mapAnswer(answer(4, original.replace('12345', '0'))), /Invalid native UDP/);
+});
+
+test('ordinary guest binding rejects non-unicast and link-local fixture addresses', () => {
+  for (const address of ['10.0.2.16', '192.168.4.2', '172.20.1.1']) assert.equal(isOrdinaryGuestIpv4(address), true);
+  for (const address of [undefined, null, '0.0.0.0', '127.0.0.1', '169.254.111.111', '224.0.0.1', '255.255.255.255', '::1', '999.2.3.4'])
+    assert.equal(isOrdinaryGuestIpv4(address), false);
+});
+
+test('bound answer attests only the actual ordinary guest candidate before NAT and retains cleanup generations', async () => {
+  const { mapAnswer, answer, nat, removed, added } = answerMapperFixture('guest-ipv4');
+  const original = 'v=0\r\na=ice-pwd:synthetic-fixture\r\na=candidate:f\t1 UDP 212\t10.0.2.16\t12345 typ host generation 0\r\n';
+  const one = await mapAnswer(answer(1, original));
+  assert.equal(one.sdp, original.replace('10.0.2.16\t12345', '192.0.2.10\t40145'));
+  await mapAnswer(answer(2, original));
+  assert.deepEqual(added, [[1, 12345], [2, 12345]]); assert.deepEqual(removed, ['1:12345']);
+  assert.equal(nat.boundCandidateGenerations, 2); assert.equal(nat.observedBoundHostCandidates, 2);
+  assert.equal(nat.linkLocalCandidateGenerations, 0); assert.equal(nat.observedLinkLocalHostCandidates, 0);
+  assert.equal(nat.peerGenerationsCreated, 2);
+});
+
+test('bound mapper rejects wrong address, multiple candidates, IPv6, TCP and unbound attestation before any NAT mutation', async () => {
+  const candidate = 'a=candidate:f 1 UDP 212 10.0.2.16 12345 typ host\r\n';
+  for (const sdp of [candidate.replace('10.0.2.16', '10.0.2.15'), candidate + candidate,
+    candidate.replace('10.0.2.16', 'fd00::1'), candidate.replace('UDP', 'TCP'),
+    candidate.replace('host', 'srflx'), candidate.replace('12345', '0'),
+    candidate.replace('10.0.2.16', '169.254.111.111'), 'v=0\r\n']) {
+    const { mapAnswer, answer, nat, added, removed } = answerMapperFixture('guest-ipv4');
+    await assert.rejects(mapAnswer(answer(1, sdp)));
+    assert.deepEqual(added, []); assert.deepEqual(removed, []);
+    assert.equal(nat.peerGenerationsCreated, 0); assert.equal(nat.boundCandidateGenerations, 0);
+  }
+  for (const alter of [value => { delete value.nativeBinding; },
+    value => { value.nativeBinding.mode = 'unbound'; }, value => { value.nativeBinding.boundPeersCreated = 0; }]) {
+    const { mapAnswer, answer, added } = answerMapperFixture('guest-ipv4');
+    const value = answer(1, candidate); alter(value);
+    await assert.rejects(mapAnswer(value)); assert.deepEqual(added, []);
+  }
 });

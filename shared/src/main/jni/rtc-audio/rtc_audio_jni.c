@@ -113,8 +113,22 @@ static void destroy(AudioPeer *p) {
     free(p);
 }
 JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_nativeCreate
-  (JNIEnv *env, jclass type, jobjectArray mids, jintArray payloads) {
+  (JNIEnv *env, jclass type, jobjectArray mids, jintArray payloads, jstring bind_address) {
     (void)type;
+    char bound_address[INET_ADDRSTRLEN] = {0};
+    if (bind_address) {
+        jsize length = (*env)->GetStringUTFLength(env, bind_address);
+        if (length < 1 || length >= INET_ADDRSTRLEN) { throw_state(env, "invalid-audio-bind-address"); return 0; }
+        const char *text = (*env)->GetStringUTFChars(env, bind_address, NULL);
+        if (!text) return 0;
+        struct in_addr address;
+        int valid = inet_pton(AF_INET, text, &address) == 1;
+        uint32_t host = valid ? ntohl(address.s_addr) : 0;
+        valid = valid && (host >> 24) > 0 && (host >> 24) < 224 && (host >> 24) != 127;
+        if (valid) memcpy(bound_address, text, (size_t)length + 1);
+        (*env)->ReleaseStringUTFChars(env, bind_address, text);
+        if (!valid) { throw_state(env, "invalid-audio-bind-address"); return 0; }
+    }
     pthread_once(&init_once, initialize_logging);
     jsize count = (*env)->GetArrayLength(env, mids);
     if (count < 1 || count > SLOT_LIMIT || (*env)->GetArrayLength(env, payloads) != count) {
@@ -137,6 +151,7 @@ JNIEXPORT jlong JNICALL Java_com_shilapi_xcertplay_web_NativeRtcAudioPeer_native
     config.disableAutoNegotiation = true;
     config.forceMediaTransport = true;
     config.mtu = 1280;
+    config.bindAddress = bind_address ? bound_address : NULL; /* C API copies the optional literal. */
     p->pc = rtcCreatePeerConnection(&config); /* No STUN, TURN, proxy or capture. */
     if (p->pc < 0) { destroy(p); throw_state(env, "audio-native-peer-create"); return 0; }
     rtcSetUserPointer(p->pc, p);

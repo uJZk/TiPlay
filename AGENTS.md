@@ -43,7 +43,24 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume current source and release work at [Build](docs/Build.md#beta50-release).
+Resume native-audio source-address work at
+[Robustness](docs/Robustness.md#native-audio-source-address). Beta.51/code93/browser
+v123 is staged, not published; the verified beta.50 publication remains below.
+The beta.50 field report still records audio ICE failures and an unopened Siri
+MIC, while its logger fixes are visibly working. Isolated C-API controls and a
+host probe compiling byte-identical current-production JNI source reproduce and
+repair a socket-source mechanism, not the vehicle cause. The main selected-pair
+local hint is used only for a later audio generation, with same-address-revision
+ANY fallback and old-callback fencing;
+active audio is not restarted. All 55 focused Android cases, including fourteen
+route regressions, and actual instrumentation Java compilation pass. The five
+focused browser files pass 91 cases; adapter Node 15, workflow Python 12 and site
+Python two pass. Actual Android interoperability, signed packaging and publication
+remain pending. Keep these source checks and independently verified release
+artifacts separate from earlier counts.
+Selected-car HFP/SCO identity remains unknown; no speculative MIC bootstrap or
+global voice-recognition workaround is authorized by the output preference.
+
 Beta.50/code92/browser v122 is published from
 `ec68c4e4c6c10793e218aa5908689b08a7f60484` at
 **2026-11-14 19:27:50 (UTC+8)**. Signed run `43588682542` passes all three jobs,

@@ -72,19 +72,14 @@ retained reporter. It is not part of the remediation count.
 
 ## Media and wireless recovery
 
-The beta.44 field capture exposes a repeated source PTS followed by a terminal
-video writer, and non-silent original Opus packets without browser output while
-the independent audio ICE peer remains disconnected. Older retained metadata
-also records a mirror receiving deltas for minutes while awaiting a usable IDR.
-These are separate from expected source idle, ordinary AirPlay teardown and a
-missing car Bluetooth communication device.
-
-The beta.45 follow-up reached only ordinary-AirPlay transport SETUP, event and
-feedback traffic; it contained no mirror media SETUP or picture access units.
-Consequently it did not exercise `forceKeyFrame`. Combined SETUP information and
-preparation observations address protocol/diagnostic gaps, not a proven cause of
-the missing stream. Observation expiry leaves that control session available for
-late media SETUP.
+The beta.50/code92/v122 vehicle report still records independent audio ICE
+failure and an unopened Siri microphone. Seven protected failures belong to
+earlier browser peers in the current process; the retained raw capture covers a
+new peer for only 16.249 seconds and ends before its negotiation deadline.
+CarPlay HEVC reaches browser decoding and Canvas draws. Ordinary AirPlay mirroring
+is absent, so its earlier black-output and keyframe-reply recovery remain
+unverified. Software draws and route readiness do not establish physical pixels
+or sound.
 
 The current source rejects an equal-PTS access unit without rewriting its time
 or feeding it to the native encoder. It invalidates the prediction chain and
@@ -136,11 +131,25 @@ For a continuing Bluetooth voice demand, device arrivals can wake output recover
 without waiting for the remaining backoff. Output prefers the selected car, then
 another usable Bluetooth or system route; permissions, audio focus and ownership
 still apply. Capture independently requires the verified car input, and permanent
-focus loss cannot trigger recovery. Stop and close remove the observer. A paired
-car is not necessarily a connected HFP device, and recovery cannot create a
-missing system route or substitute the handset microphone. The recorded microphone foreground
-service exception is covered by the existing permission/type fallback; current
-successful service starts do not reproduce that historical crash.
+focus loss cannot trigger recovery. Stop and close remove the observer.
+
+A paired car is not necessarily a connected HFP device, and recovery cannot
+create a missing system route or substitute the handset microphone. In the
+beta.50 capture, the requested and actual output match the selected car's A2DP
+device. An unmatched SCO candidate has a placeholder identity; the selected
+car's HEADSET/SCO ownership remains unknown. A2DP selection bypasses input
+enumeration, so `input-devices candidates=0` does not establish an absent system
+microphone. Siri and guidance remain on the browser path; the ready Android
+AudioTrack is not evidence that Siri was heard.
+
+The same-day foreground log records microphone and location eligibility
+rejection. The short raw capture supplies no later positive microphone-service
+promotion; successful promotion logs are Debug-only. Recording stops first at
+the route gate, so foreground eligibility is a separate unresolved prerequisite,
+not the proven cause of this attempt. The retained October microphone-service
+exception is historical. Capture still requires verified selected-car input;
+placeholder or name matching cannot grant it. Global Bluetooth voice-recognition
+start/stop calls are not an app-owned SCO lease and are not used as a workaround.
 
 Device-route and audio-mode clients are cancelled independently. A platform
 exception retains only the unfinished ownership and retries at most three times,
@@ -166,57 +175,45 @@ the target network's connectivity. See [Testing](Testing.md) for those boundarie
 
 ### Diagnostic sufficiency
 
-The post-beta.48 review found that instrumenting a peer does not establish that
-its failure evidence survives reporting and export. Browser ICE fields were
-missing from the Debug text formatter; Standard telemetry used a separate
-admission path. Five-second reporting could miss a failed generation before its
-one/two/four-second retry. Native failure messages exceeded the shared
-700-character redaction limit, including before Debug journal capture.
+The beta.49 remediation preserves generation-specific browser failures through
+bounded immediate reporting, Standard/Debug admission and split native records.
+The beta.50 field report confirms this persistence: seven failures retain both
+parts, including browser ICE/STUN/DTLS fields, last-sample ages of
+1004.2–1038.2 ms and browser queue ages of 0–1 ms. Five failures were retained
+in Standard mode and two in Debug. One native peer retains all 23 transport
+fields at failure and again after closure. The later closed snapshot is not a
+new first fault. The 16.249-second current raw window contains a fresh attempt,
+three audio snapshots and no terminal failure; do not assign the earlier peers'
+outcomes to it.
 
-The source remediation uses bounded, generation-specific browser failure records,
-safe Standard failure summaries and complete split native transport records.
-Actual TXT/ZIP roundtrips must verify persistence; in-memory assertions alone do
-not establish export completeness. A retained sample is the last accepted
-observation, not a guaranteed terminal sample. Queue age does not include network
-transit time. Bounded admission, disconnects and storage failures can still lose
-evidence; absence must not become zero or success.
+Failure snapshots retain the last accepted observation, not a guaranteed terminal
+sample. Queue age excludes network transit. Scope counters by main peer,
+audio generation and pair scope; missing fields remain unknown. Native
+`selectedPairResult=-3` means not selected, not socket errno. Absent selected-pair
+members do not imply zero gathered candidates. Bounded queues, disconnection,
+storage failures and rolling history can still lose evidence. Complete local
+capture does not establish remote receipt, physical output or fsync durability.
 
-A controlled experiment freezes the beta.48 product Kotlin classes and runs the
-actual JNI/libdatachannel transport against an official native C-API receiver.
-The successful control delivers 160 original Opus packets with identical bytes
-and RTP timestamps. A local UDP blackhole receives eight checks without replying;
-a separate case deliberately mismatches ICE passwords. Both fail to open and
-produce identical complete native transport classifications. Thus
-`connecting/checking/not-selected` does not uniquely identify a network or
-credential cause. This experiment neither uses Chromium nor reproduces the
-vehicle failure. No additional vehicle retest should be requested merely to
-prove these local diagnostic contracts.
-
-Two observed audio startups reach their offers near that twelve-second
-gathering limit; all twelve audio samples still report `gathering`. A full scan of
-the journal finds no outgoing audio answer, so neither gathering completion nor
-the answer's actual candidate/credential contents can be reconstructed. Compare
-the implemented deadline behavior with those observations; do not describe them
-as proof of complete gathering or its causal role.
-
-The captured browser is Chromium 148. Independent controls accept an actual Chromium 151 sixteen-track offer through
-the product Router/JNI and install its answer in that browser. Sixteen tracks,
-mid/BUNDLE and DTLS role admission pass, but managed UDP prevents connectivity.
-The muted anchor's `play()` fulfills even before any RTP arrives in that browser,
-so no first-RTP/play-promise deadlock is reproduced. Additional native C-API
-controls preserve 2,560 original Opus packets across sixteen bundled tracks and
-a forced remote peer-reflexive path. These rule out general lack of BUNDLE/prflx
-support; they do not establish Android socket routing or vehicle interoperability.
+Controlled UDP-blackhole and wrong-password failures produce identical complete
+native classifications and all 35 non-age browser fields. Complete counters
+therefore do not uniquely identify a network or credential cause. Actual TXT/ZIP
+roundtrips establish export contracts; further vehicle logs are not needed merely
+to verify those local contracts.
 
 [Focused hosted proof 43569629973](https://github.com/uJZk/TiPlay/actions/runs/43569629973)
-then passes the actual Router/Kotlin/JNI/browser-controller path in default
-Chromium 151: seventeen owners and both peer generations reach nonzero Worklet
-output without encoded fallback. A separate receive-transform measurement
-verifies 220 original Opus frames and RTP timestamps. The two injected failures
-also exercise actual browser `getStats()`: all 35 non-age browser fields and all
-23 native fields match between the UDP blackhole and wrong-password case.
-Therefore full counters still cannot uniquely attribute the vehicle failure.
-This does not establish Android socket routing, physical output or mirror picture.
+passes the product Router/Kotlin/JNI/controller path in default Chromium 151:
+seventeen owners and two peers reach nonzero Worklet output, while a separate
+tap verifies 220 original Opus payloads and RTP timestamps. C-API BUNDLE and
+peer-reflexive controls preserve 2,560 original packets. These establish the
+tested paths, not this vehicle's audio socket route. The captured car browser is
+Chromium 148. Its muted anchor and graph binding cannot substitute for connected
+transport. Positive Worklet frame counts can include zeros; nonzero samples and
+physical sound are separate observations.
+
+The current audio offer spends about twelve seconds gathering within its shared
+twenty-second negotiation budget. That startup cost is a possible optimization,
+not an explanation for the observed zero STUN responses. Do not change gathering
+or deadlines and claim a connectivity fix without an independent mechanism test.
 
 ### IPv4 link-local ICE
 
@@ -266,6 +263,75 @@ this configured Android/browser path, not LL source egress, a concurrently activ
 main peer, vehicle routing, physical output/capture or mirror presentation. SDK
 37.2.13 is observed; its exact source pin is not established. Neither this proof
 nor new counters justify another blind vehicle log request.
+
+The beta.50 vehicle capture uses a CGNAT HTTP entry. It reports three native
+IPv4 hosts and one IPv6 host, but no current complete candidate-class snapshot.
+Whether a usable link-local interface exists, whether the main peer selected it
+and whether this patch applies to the observed failure remain unknown. Do not
+copy the earlier beta.48 capture's IPv4LL-zero inference into this report.
+
+### Native audio source address
+
+An isolated Linux namespace control demonstrates a socket-source failure
+mechanism with two real libdatachannel C-API peers and the official Opus
+packetizer. Three conditions run twice each. With an ordinary route and an
+unbound sender, each receiver obtains 80 original Opus payloads with exact RTP
+timestamps. Changing only the route's preferred source keeps the same egress
+interface and advertised ANY address set, but prevents connection; no original
+frames are submitted. Binding the sender to the known good local IPv4 address
+restores all 80 exact payloads/timestamps in each repetition under that same
+wrong-source route. SDP is generated normally and is never manually rewritten;
+binding naturally narrows its gathered address set.
+
+This establishes the source-address mechanism, not the vehicle cause. The probe
+uses a patched host library, not the product Kotlin/JNI, Android, Chromium or the
+main peer's selected-pair callback. Existing field data still cannot identify
+the actual audio egress source or authenticate the loaded native Build ID.
+
+The source preference applies only when the current connected main peer selects
+an eligible UDP host IPv4 address that is still assigned to an up local
+interface. Only the actual main selected-pair local candidate supplies this hint;
+HTTP Host and remote endpoints cannot choose it. The hint remains local and is
+not added to diagnostics. A later native audio generation can prefer that address
+through libdatachannel's public bind configuration. The offer must contain a
+component-1 UDP host candidate with a strict IPv4 literal; mixed IPv4/IPv6 offers
+remain eligible. IPv6-only, mDNS-only
+or otherwise ineligible offers retain ANY binding, without DNS. The main hint
+is cleared on disconnection, failure or closure. Any bound-peer failure, or
+retirement while unready, suppresses the preference for the same address
+revision so a later attempt returns to ANY. Only normal retirement while still
+ready keeps the preference; earlier readiness does not excuse a later unready
+retirement. Changing or clearing the local-address hint advances the revision;
+another selected pair with the same hint does not reset a blocked preference.
+Path-revision tokens reject old callbacks and cleanup; an already active audio
+peer is not restarted merely to adopt a new preference. Binding a local IP is
+distinct from binding an Android Network or changing system routes.
+
+A second namespace probe compiles a byte-identical copy of the current production
+JNI C source for a host JVM, with an exact-signature Java driver and C-API receiver.
+Four route
+conditions run twice: null binding with a normal route and good binding with a
+wrong-source route each deliver 80 exact original payloads/timestamps per run;
+null or wrong binding under the wrong-source route remain unselected and submit
+no media during the bounded observation. Short DNS text is rejected before peer
+creation. This verifies JNI propagation and source binding, not the Kotlin route
+coordinator, actual main-pair selection, Android UID routing or a vehicle. The
+negative runs do not exercise the full product failure timer.
+
+Beta.51/code93/browser v123 is staged, not published. Five focused browser/version
+files pass 91 cases; the adapter's 15 Node cases, twelve Python workflow contracts,
+two site checks and cache/prebuilt/public-tree checks pass. All 55 focused Android
+cases, including fourteen route regressions, pass with no failures or skips;
+actual instrumentation Java compilation succeeds. These checks remain separate
+from the mechanism/JNI probes and earlier release results. Actual Android
+interoperability, signed packaging, publication and public-byte verification are
+pending. Full CI remains waived.
+
+Preserve independent original-codec audio, generation/owner barriers and the
+verified-car microphone gate. The physical audio route, nonzero sound, microphone
+capture and ordinary mirror presentation remain unverified. The source preference
+addresses a reproduced mechanism without attributing the vehicle's remaining
+failure to that mechanism.
 
 ## Matched post-stop native crash
 

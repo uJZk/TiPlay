@@ -80,13 +80,17 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(process.argv[1], 'utf8');
 const body = source.slice(source.indexOf('function verifiedAndroidProof('), source.indexOf('async function report('));
 const base = { runtime: { uid: 10123, applicationUid: 10123, selinuxType: 'untrusted_app_32', api: 35,
-  abi: 'x86_64', mainWebRtcInitialized: true, qemuDefaultIpv4Present: false, configuredGuestIpv4Present: true },
+  abi: 'x86_64', mainWebRtcInitialized: true, mainPeerCreatedByProbe: false,
+  nativeBindMode: 'guest-ipv4', nativeBindAddressVerified: true,
+  qemuDefaultIpv4Present: false, configuredGuestIpv4Present: true },
+  nativeBinding: {mode: 'guest-ipv4', addressClass: 'ordinary-ipv4', peersCreated: 2, boundPeersCreated: 2},
   qemuForwarding: {mode: 'qemu-hmp-slirp', backendType: 'user', monitorVerified: true, capabilitiesVerified: true,
     backendVerified: true, wifiNicVerified: true, closed: true, connected: false, pendingMappings: 0, unconfirmedMappings: 0, failures: 0},
   apkSha256: 'a'.repeat(64), testApkSha256: 'b'.repeat(64),
   sourceCommit: 'd'.repeat(40), nat: { peerGenerationsCreated: 2, mappingsCreated: 2, activeMappings: 0,
     toGuestDatagrams: 123, fromGuestDatagrams: 456, redirectCommandsAttempted: 2, redirectCommandsSucceeded: 2, redirectCommandsRemoved: 2,
-    linkLocalCandidateGenerations: 2, observedLinkLocalHostCandidates: 2 },
+    linkLocalCandidateGenerations: 0, observedLinkLocalHostCandidates: 0,
+    boundCandidateGenerations: 2, observedBoundHostCandidates: 2 },
   libraries: Object.fromEntries(['libdatachannel.so', 'libtiplay_rtc_audio.so', 'libjingle_peerconnection_so.so']
     .map(name => [name, { sha256: 'c'.repeat(64), bytes: 123 }])), finishedNormally: true };
 const child = { proof: structuredClone(base), exitCode: 0 };
@@ -100,7 +104,11 @@ for (const alter of [
   value => { delete value.libraries['libdatachannel.so']; }, value => { value.finishedNormally = false; },
   value => { value.nat.activeMappings = 1; }, value => { value.nat.fromGuestDatagrams = 0; },
   value => { value.nat.redirectCommandsRemoved = 1; }, value => { delete value.sourceCommit; },
-  value => { value.nat.linkLocalCandidateGenerations = 1; }, value => { value.nat.observedLinkLocalHostCandidates = 0; },
+  value => { value.nat.linkLocalCandidateGenerations = 1; }, value => { value.nat.observedLinkLocalHostCandidates = 1; },
+  value => { value.nat.boundCandidateGenerations = 1; }, value => { value.nat.observedBoundHostCandidates = 1; },
+  value => { value.runtime.mainPeerCreatedByProbe = true; }, value => { delete value.runtime.nativeBindMode; },
+  value => { value.runtime.nativeBindAddressVerified = false; }, value => { value.nativeBinding.boundPeersCreated = 0; },
+  value => { value.nativeBinding.peersCreated = 1; }, value => { value.nativeBinding.mode = 'unbound'; },
   value => { value.runtime.configuredGuestIpv4Present = false; }, value => { value.qemuForwarding.wifiNicVerified = false; },
   value => { value.qemuForwarding.pendingMappings = 1; }, value => { value.qemuForwarding.unconfirmedMappings = 1; },
   value => { value.qemuForwarding.failures = 1; }, value => { value.nat.redirectCommandsAttempted++; }
@@ -108,6 +116,13 @@ for (const alter of [
   child.proof = structuredClone(base); alter(child.proof); assert.throws(() => validate(true));
 }
 child.proof = structuredClone(base); child.exitCode = 1; assert.throws(() => validate(true));
+child.proof = structuredClone(base); child.exitCode = 0;
+Object.assign(child.proof.runtime, {nativeBindMode: 'unbound', nativeBindAddressVerified: false});
+Object.assign(child.proof.nativeBinding, {mode: 'unbound', addressClass: 'any', boundPeersCreated: 0});
+Object.assign(child.proof.nat, {boundCandidateGenerations: 0, observedBoundHostCandidates: 0,
+  linkLocalCandidateGenerations: 2, observedLinkLocalHostCandidates: 2});
+assert.equal(validate(true), child.proof);
+child.proof.nat.observedLinkLocalHostCandidates = 0; assert.throws(() => validate(true));
 child.exitCode = 0; child.proof.finishedNormally = false; assert.equal(validate(false), child.proof);
 const host = new Function('assert', 'child', 'runtimeBackend', body + '; return verifiedAndroidProof;')(assert, {}, 'host');
 assert.equal(host(true), null);
