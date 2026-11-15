@@ -43,58 +43,51 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume native-audio source-address work at
-[Robustness](docs/Robustness.md#native-audio-source-address). Beta.51/code93/browser
-v123 is staged, not published; the verified beta.50 publication remains below.
-The beta.50 field report still records audio ICE failures and an unopened Siri
-MIC, while its logger fixes are visibly working. Isolated C-API controls and a
-host probe compiling byte-identical current-production JNI source reproduce and
-repair a socket-source mechanism, not the vehicle cause. The main selected-pair
-local hint is used only for a later audio generation, with same-address-revision
-ANY fallback and old-callback fencing;
-active audio is not restarted. All 55 focused Android cases, including fourteen
-route regressions, and actual instrumentation Java compilation pass. The five
-focused browser files pass 91 cases; adapter Node 15, workflow Python 12 and site
-Python two pass. Actual Android interoperability, signed packaging and publication
-remain pending. Keep these source checks and independently verified release
-artifacts separate from earlier counts.
-Selected-car HFP/SCO identity remains unknown; no speculative MIC bootstrap or
-global voice-recognition workaround is authorized by the output preference.
+Resume the published [beta.51](docs/Build.md#beta51-release), its
+[source/runtime checks](docs/Testing.md#current-release-source) and the
+[native-audio source preference](docs/Robustness.md#native-audio-source-address).
+Beta.51/code93/browser v123 is published from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101` at **2026-11-15 15:31:14 (UTC+8)**.
+Signed run `43688533019` passes all three jobs, twelve artifact groups, RTC
+provenance and all sixteen packaged license notices. Durable JNI archive
+`445878583` inventories 51 identities (43 Build IDs/eight confirmed no-ID);
+32 matching symbol pairs cover 24 JNI/eight unchanged producer libraries,
+with nineteen historical libraries still missing symbols. Anonymous first
+downloads match all three assets, API digests, checksums and the exact tag.
+Pages `43690324936` matches all 226 files (37,828,528 bytes), eight languages and
+twenty routes (eighteen HTTP 200/two expected retired 404) without retries.
 
-Beta.50/code92/browser v122 is published from
-`ec68c4e4c6c10793e218aa5908689b08a7f60484` at
-**2026-11-14 19:27:50 (UTC+8)**. Signed run `43588682542` passes all three jobs,
-twelve artifact groups and the RTC source/notice/producer gate. Three anonymous
-asset downloads match signed bytes, API digests, checksums and the exact tag.
-Pages `43590151476` succeeds from that source; all 226 files (37,828,528 bytes),
-20 routes and eight languages match on their first request. Canonical archive
-`445239058` inventories 51 native identities; 32 matching symbol pairs cover
-24 JNI and eight producer libraries, with 19 historical libraries still missing
-symbols. The reproduced
-[IPv4 link-local ICE](docs/Robustness.md#ipv4-link-local-ice) candidate-filter
-defect has a minimal patch and strict producer identity. Official four-ABI
-producer [43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616)
-passes from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`; adoption commit
-`aafbf7bb302b7d266e8cbc98a64f84a43616c297` matches the actual authenticated
-Actions outputs, including original JSON bytes. Focused Android proof
-[43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717) passes from
-`e6591ef01d96134de2b336dc0903499e69176c97`: actual app UID/domain, packaged-library
-initialization, both generations' link-local candidates, 17-owner/two-peer Worklet
-output and a separate 220-frame exact Opus/timestamp tap. Actual legacy-Wi-Fi
-backend, owned HMP forwarding, same-app-UID echo and full cleanup pass; the
-official artifact bytes match API digest/size. Earlier pre-offer fixture failures
-cannot diagnose product ICE. This explicit emulator/NAT topology does not prove
-link-local SRTP egress, an active main-peer coexistence case or physical vehicle
-output/capture/mirror picture. [Testing](docs/Testing.md#current-release-source)
-retains the source and runtime evidence boundaries.
-The release metadata passes 85 scoped web/version/cache cases across five files,
-two site-deployment Python cases and public-tree/native/cache/diff checks; these
-are separate from beta.49's complete browser suite.
-Release verification rejects old native identities. Do not publish another
-diagnostic-only beta or claim the vehicle cause is known.
+Fresh source checks pass 55 focused Android cases (fourteen route cases, no
+skips), instrumentation Java compilation, 91 scoped browser cases, fifteen
+adapter Node cases, twelve workflow Python contracts and two site cases.
+Actual Android run `43688557977` passes from the same source: explicit ordinary
+guest-IPv4 binding, two generations per measurement with one pre-NAT host candidate
+each and no link-local candidate, seventeen-owner/two-peer nonzero Worklet output,
+a separate 220-frame
+exact payload/timestamp tap, nonce/NIC/HMP proof and complete cleanup. This is a
+source-built API35/x86_64 debug APK under the actual app UID/domain; the main
+library is initialized but no main peer is created. It does not prove automatic
+main-selected-hint integration, active-main coexistence or vehicle output.
 
-The previous release is [beta.49/code91/v121](docs/Build.md#beta49-release)
-from `95850493cb6bab562992862087cde87fc94b2e0e`. Signed run `43570628422`,
+The source preference uses only the actual main selected-pair local IPv4 hint
+for a later audio generation, with same-address-revision ANY fallback and old
+callback fencing. Active audio is not restarted by hint changes. Linux C-API and
+byte-identical current-production JNI controls establish a socket-source
+mechanism, not this vehicle's cause. The beta.50 field report still records ICE
+failures and an unopened Siri MIC; its logger fixes are visibly working. The
+vehicle cause and selected-car HFP/SCO identity remain unknown. No speculative
+MIC bootstrap or global voice-recognition workaround is authorized by the
+best-effort output preference. Full CI remains waived; do not publish a
+diagnostic-only beta or request blind repeat logs.
+
+The [frozen beta.50 publication record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Build.md#beta50-release)
+retains its full signed/public evidence. Its pinned IPv4LL producer
+`43578453616`, adoption and earlier explicit emulator proof remain scoped in
+[Robustness](docs/Robustness.md#ipv4-link-local-ice); none established the vehicle
+cause or physical audio/MIC/mirror acceptance.
+
+The [beta.49/code91/v121 reference](docs/Build.md#beta49-release) comes from
+`95850493cb6bab562992862087cde87fc94b2e0e`. Signed run `43570628422`,
 Pages `43571756114`, twelve artifact checks, all 51 native identities and
 anonymous release/site bytes pass. The immutable Build/Testing records retain
 its hashes and source checks; these do not establish later Android or vehicle

@@ -309,23 +309,39 @@ distinct from binding an Android Network or changing system routes.
 
 A second namespace probe compiles a byte-identical copy of the current production
 JNI C source for a host JVM, with an exact-signature Java driver and C-API receiver.
-Four route
-conditions run twice: null binding with a normal route and good binding with a
+Four route conditions run twice: null binding with a normal route and good binding with a
 wrong-source route each deliver 80 exact original payloads/timestamps per run;
 null or wrong binding under the wrong-source route remain unselected and submit
 no media during the bounded observation. Short DNS text is rejected before peer
 creation. This verifies JNI propagation and source binding, not the Kotlin route
 coordinator, actual main-pair selection, Android UID routing or a vehicle. The
-negative runs do not exercise the full product failure timer.
+negative runs do not exercise the full product failure timer. A longer run keeps
+the wrong-source ANY case unselected and unready for 26.049 seconds across 130
+samples; the native peer never reports failed. The same route with good binding
+then delivers all 80 exact payloads/timestamps. Although the observation exceeds
+the product's twenty- and twenty-five-second windows, those product timers and
+the Kotlin fallback coordinator do not run in this host probe.
 
-Beta.51/code93/browser v123 is staged, not published. Five focused browser/version
+Beta.51/code93/browser v123 is published from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Five focused browser/version
 files pass 91 cases; the adapter's 15 Node cases, twelve Python workflow contracts,
 two site checks and cache/prebuilt/public-tree checks pass. All 55 focused Android
 cases, including fourteen route regressions, pass with no failures or skips;
-actual instrumentation Java compilation succeeds. These checks remain separate
-from the mechanism/JNI probes and earlier release results. Actual Android
-interoperability, signed packaging, publication and public-byte verification are
-pending. Full CI remains waived.
+actual instrumentation Java compilation succeeds. Full CI remains waived.
+[Build](Build.md#beta51-release) records the independently verified signed release
+and public bytes; these checks remain separate from earlier release results.
+
+[Same-source Android run 43688557977](https://github.com/uJZk/TiPlay/actions/runs/43688557977)
+passes with the real source-built debug APK in API35/x86_64's app UID and
+`untrusted_app` domain. Each measurement explicitly supplies an existing ordinary
+guest IPv4 address: its two generations each have one exact pre-NAT UDP host
+candidate and no link-local candidate. Seventeen owners/two peers reach nonzero Worklet output;
+a separate tap verifies 220 exact original payloads/timestamps. Packaged-library
+identities, same-UID nonce echo, actual NIC/HMP forwarding and all cleanup pass.
+The main WebRTC library is initialized without creating a main peer. Thus this
+proves explicit binding in that configured Android/browser topology, not automatic
+selected-pair hint/fallback integration, active-main coexistence or the signed
+APK's runtime. [Testing](Testing.md#current-release-source) retains the scope.
 
 Preserve independent original-codec audio, generation/owner barriers and the
 verified-car microphone gate. The physical audio route, nonzero sound, microphone

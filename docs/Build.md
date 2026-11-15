@@ -454,14 +454,22 @@ APK/source or webpage build provenance.
 
 ## Current browser deployment
 
+### Browser v123
+
+Browser/cache **v123**, product **0.2.20-beta.51**, is deployed by
+[Pages run 43690324936](https://github.com/uJZk/TiPlay/actions/runs/43690324936)
+from `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Anonymous first requests match
+all 226 files (37,828,528 bytes), MIME checks across 21 suffix classes and eight
+languages.
+All twenty routes match: eighteen HTTP 200 and two expected retired-path 404
+responses. No retries were needed. [Beta.51](#beta51-release) records signed bytes.
+
 ### Browser v122
 
-Browser/cache **v122**, product **0.2.20-beta.50**, is deployed by
-[Pages run 43590151476](https://github.com/uJZk/TiPlay/actions/runs/43590151476)
-from `ec68c4e4c6c10793e218aa5908689b08a7f60484`.
-Independent anonymous checks match all 226 files (37,828,528 bytes), MIME types,
-20 routes and eight languages on the first attempt. [Beta.50](#beta50-release)
-records signed artifacts and media-proof limits.
+Beta.50/v122 used Pages `43590151476` from
+`ec68c4e4c6c10793e218aa5908689b08a7f60484`; the
+[frozen deployment record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Build.md#browser-v122)
+retains its full public-byte checks.
 
 ### Browser v121
 
@@ -511,57 +519,53 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
-<a id="beta50-release"></a>
-### Published beta.50
+<a id="beta51-release"></a>
+### Published beta.51
 
-[Beta.50/code92/browser v122](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.50)
-was published **2026-11-14 19:27:50 (UTC+8)**, release `445239201`, from
-`ec68c4e4c6c10793e218aa5908689b08a7f60484`.
-The IPv4 link-local audio ICE fix was adopted in
-`aafbf7bb302b7d266e8cbc98a64f84a43616c297`.
-[Native producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
-attempt 1 from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`, passes both jobs,
-16 symbol contracts, 14 preparation checks and 40 compiled C address cases.
-The patch preserves loopback and IPv6 link-local exclusions.
+[Beta.51/code93/browser v123](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.51)
+was published **2026-11-15 15:31:14 (UTC+8)**, release `445878797`, from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. It adds the bounded
+[native-audio source preference](Robustness.md#native-audio-source-address);
+vehicle ICE causality and Siri microphone recovery remain unverified.
 
-Both official Actions ZIPs match API byte counts/digests. Four adopted libraries,
-official JSON and source lock match; architecture, Build IDs, symbols and 16 KiB
-alignment pass. Official `artifacts.json` SHA-256 is
-`8b2ce0d61cc294873befc3d0591b0f692ba08cfef573631dbd21af5b0f31ebff`.
-Raw producer-index SHA-256 is
-`aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879`,
-retained in durable draft `445164968`. Producer, adoption and Android-proof
-commits remain distinct from the APK build source.
+[Signed run 43688533019](https://github.com/uJZk/TiPlay/actions/runs/43688533019)
+passes all three jobs, twelve artifact groups and the RTC provenance gate.
+All sixteen packaged license notices match, including eleven unchanged RTC notices.
+The new bind-argument JNI contract, four ABI libraries and 16 KiB alignment pass.
+Canonical symbols draft `445878583` matches 51 native identities: 43 Build IDs and
+eight confirmed no-ID entries. Matching symbols cover 32 libraries (24 JNI/eight
+unchanged producer); nineteen historical libraries lack symbols. Signer continuity
+passes. [Beta.50](#beta50-release) retains the pinned dependency-producer provenance.
 
-[Android run 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
-passes from `e6591ef01d96134de2b336dc0903499e69176c97`: actual app UID/domain,
-packaged-library initialization, both generations' link-local candidates,
-17-owner/two-peer Chromium Worklet output without fallback, and a separate
-220-frame exact Opus/timestamp tap with 32 transforms. Actual Wi-Fi/HMP forwarding,
-same-app-UID nonce echo and complete cleanup pass. The official evidence ZIP's
-API digest and its extracted JSON/joblog agreement are verified.
-
-Emulator 37.2.13 uses explicit legacy Wi-Fi, an owned HMP socket and test NAT.
-Its exact public source pin remains unmatched. [Testing](Testing.md#current-release-source)
-and [ICE evidence](Robustness.md#ipv4-link-local-ice) retain scoped source checks
-and limits: link-local source egress, active main-peer coexistence, vehicle cause,
-physical sound/capture and mirror picture remain unverified. Full CI was waived.
-
-[Signed run 43588682542](https://github.com/uJZk/TiPlay/actions/runs/43588682542)
-passes all three jobs, twelve artifact groups and the RTC provenance subgate;
-independent review finds no blockers. Signer continuity with beta.49 passes.
-Canonical JNI archive `445239058` inventories 51 libraries (24 JNI/27 prebuilt),
-43 Build IDs and eight confirmed no-ID entries. Matching symbol pairs cover
-32 libraries (24 JNI/eight producer); 19 historical prebuilts lack matched symbols.
-Anonymous first-attempt HTTP 200 downloads match all three signed asset bytes,
-API digests, checksums and the exact public tag commit. The
-[v122 deployment](#browser-v122) uses that same build source.
+Three anonymous first-request HTTP 200 downloads match signed bytes, API digests,
+checksums and the exact tag. The 1,535-byte public notes match the verified draft.
+[Testing](Testing.md#current-release-source) separates source checks and the actual
+Android debug-APK proof. Full CI remains waived. The
+[v123 deployment](#browser-v123) uses the same build source.
 
 | Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.50.apk` | 114,598,764 | `d4db0b1235315b8b2b11e7b411a9914e8bda81e9355d70c924f8d7bdcd348db3` |
-| `TiPlay-0.2.20-beta.50-source.zip` | 70,350,141 | `455168053efc6c41e7cf6d0d5f8ca07e46b9b205671207773ab55099418eeacf` |
-| `SHA256SUMS.txt` | 191 | `6988071c012935429ee0037bb8d2d009370d042e8620385b4c7435c790317547` |
+| `TiPlay-0.2.20-beta.51.apk` | 114,598,764 | `882493c4a7e3d6de03d2a014eafb3eb2f5ae0d3e457b215106ef125f5660cc99` |
+| `TiPlay-0.2.20-beta.51-source.zip` | 70,361,321 | `d95300526322ba526464b5d6ef5113e2e13b69b1042ac75ea73a8b262dc6bd81` |
+| `SHA256SUMS.txt` | 191 | `1ed77782de1bcf7f83259d3056b327fb4ccbdc097775040657857213041f4e9c` |
+
+<a id="beta50-release"></a>
+### Published beta.50 reference
+
+Beta.50/code92/browser v122 was published **2026-11-14 19:27:50 (UTC+8)** from
+`ec68c4e4c6c10793e218aa5908689b08a7f60484`. The
+[immutable complete record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Build.md#beta50-release)
+retains all three artifact byte counts/hashes, signed run `43588682542`, Pages
+`43590151476`, public downloads, 51 native identities and 32 matching symbol pairs;
+19 historical libraries lack symbols. Its unchanged libdatachannel producer
+[43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616) comes from
+`e7a71d0ddabe805c984b84642e4e972b08ce6e92`, adopted in
+`aafbf7bb302b7d266e8cbc98a64f84a43616c297`. The source lock, minimal IPv4LL patch,
+official archive digests and matching Build IDs remain release provenance;
+[source-patch metadata](../scripts/rtc-audio/source-patches.json) and
+[ICE evidence](Robustness.md#ipv4-link-local-ice) retain their contracts. Producer,
+adoption, proof and APK commits are distinct. The explicit emulator/NAT proof
+does not establish vehicle routing or physical output. Full CI was waived.
 
 <a id="beta49-release"></a>
 ### Published beta.49

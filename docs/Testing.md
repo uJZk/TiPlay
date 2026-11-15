@@ -7,66 +7,54 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.50
+### Beta.51
+
+Beta.51/code93/browser v123 was published from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Fresh checks pass all 55 focused
+Android cases (fourteen new route cases, zero skips), instrumentation Java
+compilation, 91 scoped browser cases across five files, fifteen adapter Node
+cases, twelve workflow Python contracts and two site cases. Cache, prebuilt,
+public-tree and diff checks pass. Full CI remains waived.
+
+The [source-address controls](Robustness.md#native-audio-source-address) separate
+six C-API mechanism runs, eight production-JNI route runs and a 26.049-second
+negative observation. These do not exercise product timers or establish vehicle
+causality.
+
+[Android run 43688557977](https://github.com/uJZk/TiPlay/actions/runs/43688557977),
+attempt 1 from the same source, passes in a source-built debug APK on
+API35/x86_64, UID10209/`untrusted_app`. Each measurement explicitly binds the
+ordinary guest IPv4; its two generations each advertise one exact pre-NAT UDP
+host candidate and zero link-local candidates. The normal pipeline reaches
+nonzero Worklet output across seventeen
+owners/two peers without fallback; a separate tap verifies 220 original Opus
+payloads/timestamps. Packaged-library identities, nonce echo, NIC/HMP forwarding,
+all mapping/worker cleanup and emulator stop pass. The official 3,984-byte ZIP
+matches its API digest and decoded logs.
+
+The main WebRTC library is initialized; no main peer is created. This verifies
+explicit binding, not automatic main-selected-hint propagation/fallback, active
+main-peer coexistence, the signed APK or physical sound/MIC/mirror pixels.
+[Build](Build.md#beta51-release) records signed run `43688533019`, public assets,
+Pages `43690324936`, matching native identities and remaining symbol gaps.
+
+### Beta.50 reference
 
 Beta.50/code92/browser v122 was published from
-`ec68c4e4c6c10793e218aa5908689b08a7f60484` at **2026-11-14 19:27:50 (UTC+8)**.
-
-The IPv4 link-local patch preserves loopback and IPv6 link-local exclusions.
-[Producer 43578453616](https://github.com/uJZk/TiPlay/actions/runs/43578453616),
-attempt 1 from `e7a71d0ddabe805c984b84642e4e972b08ce6e92`, passes 16 symbol contracts,
-14 preparation and 40 compiled C address cases. Adoption
-`aafbf7bb302b7d266e8cbc98a64f84a43616c297` matches four official libraries and both
-JSON files. Downloaded Actions ZIP API digests/sizes and ELF hashes, sizes, Build IDs,
-16 KiB alignment and matching symbols pass.
-
-The real NativeRtcAudioPeer/Kotlin/JNI namespace control delivers 80 exact Opus
-payloads/timestamps after the patch where the old library times out. A reachable-offer
-peer-reflexive control also delivers 80 with the old library; the filter was not
-universally fatal. A separate patched-host run preserves 160. See
-[Robustness](Robustness.md#ipv4-link-local-ice) for scope and identity controls.
-
-[Android proof 43587104717](https://github.com/uJZk/TiPlay/actions/runs/43587104717)
-passes from `e6591ef01d96134de2b336dc0903499e69176c97` on Emulator 37.2.13 and
-Chromium 151.0.7922.34. UID 10209/`untrusted_app`, API35/x86_64,
-main-libjingle initialization and adopted packaged-library identities are verified.
-Both generations gather real IPv4 link-local candidates before NAT. The normal
-untapped pipeline passes 17 owners/two peers with nonzero Worklet output and zero
-fallback records. A separate tap verifies 220
-original Opus payloads and RTP timestamps across 32 transform initializations.
-The 3,835-byte official ZIP matches its authenticated API digest; extracted JSON
-matches decoded joblogs.
-
-The fixture explicitly uses `-feature -WiFiPacketStream`, legacy Wi-Fi and an
-owned Unix socket for the QEMU human monitor (HMP). Actual NIC/user-backend and
-unique forwarding rows are verified. Each control first passes same-app-UID nonce
-send/receive/echo 1/1/1, then accounts for three added/removed forwards, zero pending
-or failed HMP requests and full cleanup. Earlier
-[pre-offer control 43582970833](https://github.com/uJZk/TiPlay/actions/runs/43582970833)
-fails before NativeOffer and cannot diagnose product ICE. Current source checks
-pass 12 workflow contracts, 25 pure controls (12 adapter/13 HMP), Java compilation
-and 19 shell syntax checks, separate from runtime proof and beta.49 counts.
-
-This proves the explicit emulator/NAT topology, without establishing link-local
-SRTP egress, active main-peer coexistence, physical vehicle/Bluetooth output,
-microphone capture, mirror picture or the vehicle cause. The observed Emulator
-revision has no matched exact public source pin.
-
-Strict FFmpeg decoding of the retained beta.46 mirror capture passes 687/687
-High-profile access units without stderr; removing all SPS/PPS fails with zero
-frames. This proves source decodability, not pixels, forwarding or presentation.
-No images or keys were exported.
-
-The release metadata passes 85 scoped web/version/cache tests
-across five files and two site-deployment Python cases. Public-tree, native-library,
-cache-manifest and diff checks pass; full CI remains waived.
-[Signed run 43588682542](https://github.com/uJZk/TiPlay/actions/runs/43588682542)
-passes all three jobs and twelve artifact groups plus the RTC provenance gate.
-All 51 native identities match; 32 symbol pairs are retained and 19 historical
-libraries still lack symbols. Anonymous APK/source/checksum downloads and exact
-tag identity pass. Pages `43590151476` matches 226 files, 37,828,528 bytes,
-20 routes and eight languages on first requests.
-[Build](Build.md#beta50-release) retains hashes and publication provenance.
+`ec68c4e4c6c10793e218aa5908689b08a7f60484`. The
+[immutable verification record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Testing.md#current-release-source)
+retains its producer, Android/browser, source and artifact evidence; these are not
+fresh executions for a later source. Producer `43578453616` passes sixteen symbol,
+fourteen preparation and forty compiled address cases. Android proof
+`43587104717` verifies the adopted libraries, both generations' IPv4LL candidates,
+17-owner/two-peer Worklet output and a separate 220-frame exact receive tap.
+Its API35/x86_64 target-app UID, legacy-Wi-Fi/HMP forwarding, nonce echo and cleanup
+prove that explicit emulator/NAT topology, not link-local source egress, active
+main-peer coexistence or vehicle sound/capture. The 85 scoped web and two site
+checks, signed run `43588682542`, Pages `43590151476`, public bytes and native
+symbol inventory remain tied to beta.50. [Build](Build.md#beta50-release) retains
+publication and pinned-producer references; physical audio/MIC and ordinary
+mirror acceptance remain open.
 
 <a id="beta49"></a>
 ### Beta.49 reference
@@ -79,7 +67,8 @@ and 31 Python checks, five actual TXT/ZIP fixture roundtrips, signed run
 and [Build](Build.md#beta49-release). Hosted proof `43569629973` passes normal
 17-owner/two-peer Worklet output, a separate 220-frame exact receive tap and both
 failure controls. Their identical non-age observations do not uniquely identify
-the vehicle cause. These counts belong to that source, not fresh beta.50 executions.
+the vehicle cause. These counts belong to that source, not fresh beta.50 or
+beta.51 executions.
 
 ### Beta.48 reference
 
