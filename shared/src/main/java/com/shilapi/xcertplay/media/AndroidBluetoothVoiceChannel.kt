@@ -159,15 +159,24 @@ class AndroidBluetoothVoiceChannel(
     @Volatile private var generation = 0
     internal var microphoneResampler: (Int, Int) -> PcmResampler = ::NativePcmResampler
     private var probeAttempted = false
+    private var unownedScoWaitUntil = 0L
     @Volatile private var microphoneProbe: MicrophoneProbe? = null
+    private var retiringProbe: MicrophoneProbe? = null
     private class MicrophoneProbe(val demand: MicrophoneConfig, val address: String,
-        var sink: AudioDeviceInfo, val deadline: Long) {
-        var headset: BluetoothHeadset? = null
+        @Volatile var sink: AudioDeviceInfo, @Volatile var deadline: Long) {
+        @Volatile var headset: BluetoothHeadset? = null
         @Volatile var cleaning = false
-        var active = false
-        var retargeted = false
+        @Volatile var active = false
+        @Volatile var capture: CaptureInput? = null
         var reason = "bluetooth-input-unavailable"
     }
+    /** A masked address is usable only with this particular live profile/route association. */
+    private class CaptureInput(val device: AudioDeviceInfo, val probe: MicrophoneProbe? = null,
+        val sinkPort: Int = 0, val headset: BluetoothHeadset? = null,
+        val address: String? = audioAddress(device), val car: android.bluetooth.BluetoothDevice? = null) {
+        var warmupUsed = false // Capture-worker confined; never inherited by a different route binding.
+    }
+    private data class RecordingRoute(val port: Int, val address: String?)
     private fun requestFocus(): Int {
         if (focusHeld && focusSco != scoRoute) abandonFocus()
         if (focusGranted) return AudioManager.AUDIOFOCUS_REQUEST_GRANTED
@@ -235,6 +244,7 @@ class AndroidBluetoothVoiceChannel(
             val address = runCatching { selectedCarAddress?.invoke() }.getOrNull()
             val bluetooth = addedDevices.filter { it.isSink && bluetoothPlayback(it) }
             if (bluetooth.isEmpty()) return
+            if (unownedScoWaitUntil != 0L) { tick(); return }
             if (microphoneProbe != null && bluetooth.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }) {
                 tick(); return // The probe owns this transition; do not retire working A2DP.
             }
@@ -274,7 +284,7 @@ class AndroidBluetoothVoiceChannel(
         profileDiagnosticRequested = false
         profileDiagnosticEpoch++
         val replacing = wanted != null && wanted !== config
-        if (wanted !== config) probeAttempted = false
+        if (wanted !== config) { probeAttempted = false; unownedScoWaitUntil = 0 }
         wanted = config; failure = null; unavailableAttempts = 0; retryAt = Long.MAX_VALUE
         playbackFallbackStage = 0; playbackFallbackReason = null
         observeDevices()
@@ -285,8 +295,8 @@ class AndroidBluetoothVoiceChannel(
         if (releasingAt != 0L) schedule()
         else if (!acquired && !focusWaiting) acquire() else { connectingAt = SystemClock.elapsedRealtime(); tick() }
     } }
-    override fun stop() { main.post { wanted = null; failure = null; stopObservingDevices(); release() } }
-    override fun close() { main.post { closed = true; wanted = null; failure = null; stopObservingDevices(); release() } }
+    override fun stop() { main.post { wanted = null; failure = null; unownedScoWaitUntil = 0; stopObservingDevices(); release() } }
+    override fun close() { main.post { closed = true; wanted = null; failure = null; unownedScoWaitUntil = 0; stopObservingDevices(); release() } }
     override fun play(id: AudioStreamId, sampleRate: Int, channels: Int, pcm: ByteArray, discontinuity: Boolean, deadlineNanos: Long) {
         mixer.offer(id, sampleRate, channels, pcm, discontinuity, deadlineNanos)
     }
@@ -329,6 +339,13 @@ class AndroidBluetoothVoiceChannel(
             report("stage=audio-mode mode=${manager.mode}")
             if (manager.mode == AudioManager.MODE_IN_CALL || manager.mode == AudioManager.MODE_IN_COMMUNICATION ||
                 (Build.VERSION.SDK_INT >= 31 && manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
+                if (Build.VERSION.SDK_INT >= 31 && manager.mode == AudioManager.MODE_NORMAL &&
+                    !probeAttempted && unownedScoWaitUntil == 0L &&
+                    bluetoothVoiceAddressIdentity(address) == "valid" && microphonePermitted()) {
+                    // A previous app request can be withdrawn before its global SCO route disappears.
+                    // Wait for the system to finish; never clear an unowned communication client.
+                    unownedScoWaitUntil = SystemClock.elapsedRealtime() + 8000
+                }
                 openDefaultPlayback("communication-route-busy"); return
             }
             if (playbackFallbackStage != 0) {
@@ -560,9 +577,9 @@ class AndroidBluetoothVoiceChannel(
         release()
     }
 
-    private fun closeProbeProxy() {
-        val proxy = microphoneProbe?.headset ?: return
-        microphoneProbe?.headset = null
+    private fun closeProbeProxy(probe: MicrophoneProbe? = microphoneProbe) {
+        val proxy = probe?.headset ?: return
+        probe.headset = null
         runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter
             ?.closeProfileProxy(BluetoothProfile.HEADSET, proxy) }
     }
@@ -572,7 +589,6 @@ class AndroidBluetoothVoiceChannel(
         if (probe.cleaning) return
         probe.cleaning = true; probe.reason = reason
         devices?.revokeCapture()
-        closeProbeProxy()
         routeReleaseAttempts = 0; routeReleaseRetryAt = 0; routeReleaseRequested = false
         report("stage=microphone-bootstrap action=rollback reason=$reason")
     }
@@ -589,21 +605,74 @@ class AndroidBluetoothVoiceChannel(
             headset.getConnectionState(it) == BluetoothProfile.STATE_CONNECTED }
     }
 
+    private fun acceptableScoAddress(address: String?, selected: String): Boolean = when (bluetoothVoiceAddressIdentity(address)) {
+        "missing", "placeholder" -> true
+        "valid" -> sameBluetoothSelection(address, selected)
+        else -> false
+    }
+
+    /** Android pairs the chosen communication sink with its source; do not equate their port IDs. */
+    private fun probeInput(probe: MicrophoneProbe): CaptureInput? = runCatching {
+        val headset = probe.headset ?: return@runCatching null
+        if (microphoneProbe !== probe || probe.cleaning || wanted !== probe.demand || closed ||
+            !communicationOwned || !communicationRequested || !focusGranted || focusWaiting ||
+            !permitted() || !microphonePermitted() || manager.mode != AudioManager.MODE_IN_COMMUNICATION ||
+            !sameBluetoothSelection(probe.address, selectedCarAddress?.invoke()))
+            return@runCatching null
+        val car = soleSelectedHeadset(probe) ?: return@runCatching null
+        val sink = manager.availableCommunicationDevices.filter { it.isSink && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            .singleOrNull() ?: return@runCatching null
+        val actual = manager.communicationDevice ?: return@runCatching null
+        val input = manager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .filter { it.isSource && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }.singleOrNull() ?: return@runCatching null
+        if (sink.id <= 0 || actual.id != sink.id || !actual.isSink || actual.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO || input.id <= 0 ||
+            !acceptableScoAddress(audioAddress(sink), probe.address) || !acceptableScoAddress(audioAddress(actual), probe.address) ||
+            !acceptableScoAddress(audioAddress(input), probe.address)) return@runCatching null
+        if (microphoneProbe !== probe || probe.headset !== headset || probe.cleaning || wanted !== probe.demand ||
+            !sameBluetoothSelection(probe.address, selectedCarAddress?.invoke())) return@runCatching null
+        CaptureInput(input, probe, actual.id, headset, car = car)
+    }.getOrNull()
+
+    private fun sameProbeInput(first: CaptureInput?, second: CaptureInput): Boolean = first != null &&
+        first.probe === second.probe && first.headset === second.headset && first.device.id == second.device.id &&
+        first.sinkPort == second.sinkPort && sameBluetoothSelection(first.address, second.address)
+
+    private fun retireProbeCapture(probe: MicrophoneProbe) {
+        if (microphoneProbe !== probe) return
+        devices?.revokeCapture()
+        probe.capture = null
+        // Only a genuinely running duplex can begin a new bounded recovery window.
+        // Initial warmup and port handoffs never extend the original startup budget.
+        if (probe.active) {
+            probe.active = false
+            probe.deadline = SystemClock.elapsedRealtime() + 8000
+        }
+    }
+
     private fun tickMicrophoneProbe() {
         if (Build.VERSION.SDK_INT < 31) return
         var probe = microphoneProbe
         if (probe == null) {
+            if (unownedScoWaitUntil != 0L && SystemClock.elapsedRealtime() >= unownedScoWaitUntil) {
+                unownedScoWaitUntil = 0; probeAttempted = true
+            }
             if (probeAttempted || scoRoute || !acquired || devices?.outputReady?.get() != true ||
                 !focusGranted || focusWaiting || !permitted() || !microphonePermitted() ||
                 communicationOwned || communicationRequested || workerRetiring) return
             val address = activeCarAddress ?: return
-            if (bluetoothVoiceAddressIdentity(address) != "valid" || selected?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                !sameBluetoothSelection(address, selected?.let(::audioAddress))) return
-            val candidates = manager.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            val output = selected ?: devices?.track?.routedDevice
+            if (bluetoothVoiceAddressIdentity(address) != "valid" || output?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                !sameBluetoothSelection(address, audioAddress(output))) return
+            if (manager.mode != AudioManager.MODE_NORMAL) { probeAttempted = true; return }
+            if (manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                if (unownedScoWaitUntil == 0L) unownedScoWaitUntil = SystemClock.elapsedRealtime() + 8000
+                return
+            }
+            val candidates = manager.availableCommunicationDevices.filter { it.isSink && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
             val sink = candidates.singleOrNull()?.takeIf {
-                bluetoothVoiceAddressIdentity(audioAddress(it)) in setOf("missing", "placeholder") } ?: return
+                it.id > 0 && bluetoothVoiceAddressIdentity(audioAddress(it)) in setOf("missing", "placeholder") } ?: return
             probeAttempted = true
-            if (manager.mode != AudioManager.MODE_NORMAL || manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return
+            unownedScoWaitUntil = 0
             val next = MicrophoneProbe(requireNotNull(wanted), address, sink, SystemClock.elapsedRealtime() + 8000)
             microphoneProbe = next
             report("stage=microphone-bootstrap action=qualify")
@@ -614,6 +683,9 @@ class AndroidBluetoothVoiceChannel(
                         var retained = false
                         try {
                             if (microphoneProbe !== next || next.cleaning || !probeDemandCurrent(next)) return@post
+                            if (next.headset != null && next.headset !== proxy) {
+                                cancelMicrophoneProbe("headset-identity-unavailable"); return@post
+                            }
                             next.headset = proxy as? BluetoothHeadset
                             retained = next.headset != null
                             if (!retained) cancelMicrophoneProbe("headset-identity-unavailable")
@@ -621,7 +693,8 @@ class AndroidBluetoothVoiceChannel(
                         } catch (_: Exception) {
                             if (microphoneProbe === next) cancelMicrophoneProbe("headset-identity-unavailable")
                         } finally {
-                            if (!retained) runCatching { adapter.closeProfileProxy(profile, proxy) }
+                            if (!retained && retiringProbe?.headset !== proxy && microphoneProbe?.headset !== proxy)
+                                runCatching { adapter.closeProfileProxy(profile, proxy) }
                         }
                     } }
                     override fun onServiceDisconnected(profile: Int) { main.post {
@@ -634,7 +707,6 @@ class AndroidBluetoothVoiceChannel(
         }
         if (probe.cleaning) {
             devices?.revokeCapture()
-            // Claim and revoke use one gate; a late worker cannot start after this ACK.
             if (devices?.captureRetiring() == true) return
             if ((communicationOwned || communicationRequested) && !routeReleaseRequested &&
                 SystemClock.elapsedRealtime() >= routeReleaseRetryAt) releaseRoute()
@@ -652,43 +724,27 @@ class AndroidBluetoothVoiceChannel(
             }
             val headset = probe.headset ?: return
             val car = soleSelectedHeadset(probe) ?: run { cancelMicrophoneProbe("headset-identity-unavailable"); return }
-            val candidates = manager.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            val candidates = manager.availableCommunicationDevices.filter { it.isSink && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
             val candidate = candidates.singleOrNull() ?: run { cancelMicrophoneProbe("headset-identity-unavailable"); return }
-            if (bluetoothVoiceAddressIdentity(audioAddress(candidate)) !in setOf("missing", "placeholder", "valid") ||
-                bluetoothVoiceAddressIdentity(audioAddress(candidate)) == "valid" &&
-                !sameBluetoothSelection(probe.address, audioAddress(candidate))) {
+            if (candidate.id <= 0 || !acceptableScoAddress(audioAddress(candidate), probe.address)) {
                 cancelMicrophoneProbe("headset-identity-unavailable"); return
-            }
-            if (candidate.id != probe.sink.id) {
-                // A platform may replace its placeholder port with an exact car port.
-                // Only that positive identity can update this same app client's request.
-                if (probe.retargeted || !sameBluetoothSelection(probe.address, audioAddress(candidate))) {
-                    cancelMicrophoneProbe("headset-identity-unavailable"); return
-                }
-                probe.retargeted = true; probe.sink = candidate
-                if (communicationOwned && communicationRequested) {
-                    if (!probeDemandCurrent(probe) || manager.mode != AudioManager.MODE_IN_COMMUNICATION) {
-                        cancelMicrophoneProbe("communication-route-busy"); return
-                    }
-                    communicationDevice = candidate
-                    if (!manager.setCommunicationDevice(candidate)) { cancelMicrophoneProbe("bluetooth-route-rejected"); return }
-                }
             }
             if (!communicationOwned && !communicationRequested) {
                 if (!probeDemandCurrent(probe) || manager.mode != AudioManager.MODE_NORMAL ||
                     manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || headset.isAudioConnected(car)) {
                     cancelMicrophoneProbe("communication-route-busy"); return
                 }
-                communicationDevice = probe.sink
+                probe.sink = candidate
+                communicationDevice = candidate
                 communicationOwned = true
                 manager.mode = AudioManager.MODE_IN_COMMUNICATION
                 if (!probeDemandCurrent(probe) || soleSelectedHeadset(probe) == null ||
                     manager.availableCommunicationDevices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
-                        .singleOrNull()?.id != probe.sink.id || manager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                        .singleOrNull()?.id != candidate.id || manager.mode != AudioManager.MODE_IN_COMMUNICATION) {
                     cancelMicrophoneProbe("communication-route-busy"); return
                 }
                 communicationRequested = true
-                if (!manager.setCommunicationDevice(probe.sink)) {
+                if (!manager.setCommunicationDevice(candidate)) {
                     communicationRequested = false
                     cancelMicrophoneProbe("bluetooth-route-rejected"); return
                 }
@@ -697,25 +753,18 @@ class AndroidBluetoothVoiceChannel(
             if (manager.mode != AudioManager.MODE_IN_COMMUNICATION) {
                 cancelMicrophoneProbe("communication-route-busy"); return
             }
-            val actual = manager.communicationDevice
-            if (actual?.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO || actual.id != probe.sink.id) {
-                if (probe.active) cancelMicrophoneProbe("bluetooth-input-route-unavailable")
-                return
-            }
-            if (!headset.isAudioConnected(car)) {
-                if (probe.active) cancelMicrophoneProbe("bluetooth-input-route-unavailable")
-                return
-            }
-            val input = selectBluetoothAudioDevice(manager.getDevices(AudioManager.GET_DEVICES_INPUTS)
-                .filter { it.isSource && it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }, probe.address, ::audioAddress)
+            val input = probeInput(probe)
             if (input == null) {
-                if (probe.active) cancelMicrophoneProbe("bluetooth-input-unavailable")
+                if (probe.capture != null) retireProbeCapture(probe)
                 return
             }
-            if (!probe.active) {
-                probe.active = true
+            // AOSP can substitute the real active SCO port for a requested placeholder.
+            // Bind to the current unique sink/source pair, never to a stale request ID.
+            if (!sameProbeInput(probe.capture, input)) {
+                retireProbeCapture(probe)
+                probe.capture = input
                 devices?.grantCapture(input)
-                report("stage=microphone-bootstrap action=input-verified")
+                report("stage=microphone-bootstrap action=input-associated")
             }
         } catch (_: Exception) { cancelMicrophoneProbe("bluetooth-route-failed") }
     }
@@ -771,7 +820,7 @@ class AndroidBluetoothVoiceChannel(
         // stops/releases both devices in finally; main/focus callbacks never wait on it.
     }
     private fun release(keepFocus: Boolean = false) {
-        closeProbeProxy()
+        microphoneProbe?.let { it.cleaning = true; retiringProbe = it }
         microphoneProbe = null
         profilePending = false; profileAttempt++
         main.removeCallbacks(poll)
@@ -827,6 +876,9 @@ class AndroidBluetoothVoiceChannel(
         }
     }
     private fun finishRelease() {
+        // No capture or output worker remains; its profile can now be closed too.
+        closeProbeProxy(retiringProbe)
+        retiringProbe = null
         main.removeCallbacks(poll)
         acquired = false; scoRoute = false; communicationOwned = false
         communicationRequested = false; legacyScoRequested = false
@@ -852,8 +904,11 @@ class AndroidBluetoothVoiceChannel(
         val useSco: Boolean, microphoneError: String?, val token: Int, val packetCounters: MicrophoneCounters) {
         val running = AtomicBoolean(true)
         val outputReady = AtomicBoolean(false)
-        private val captureLease = MicrophoneCaptureLease<AudioDeviceInfo>()
+        private val captureLease = MicrophoneCaptureLease<CaptureInput>()
         fun grantCapture(input: AudioDeviceInfo) {
+            grantCapture(CaptureInput(input))
+        }
+        fun grantCapture(input: CaptureInput) {
             if (running.get() && token == generation && wanted === config) captureLease.offer(input)
         }
         fun revokeCapture() = captureLease.revoke()
@@ -863,6 +918,7 @@ class AndroidBluetoothVoiceChannel(
         private val carAddress = activeCarAddress
         private var microphoneRetryDelay = 2000L
         @Volatile var record: AudioRecord? = null
+        private val pendingRecordReleases = mutableListOf<AudioRecord>()
         @Volatile var track: AudioTrack? = null
         private fun matches(device: AudioDeviceInfo?, expected: AudioDeviceInfo) = device?.type == expected.type &&
             (device.id == expected.id || audioAddress(expected)?.let { sameBluetoothSelection(it, audioAddress(device)) } == true)
@@ -999,74 +1055,181 @@ class AndroidBluetoothVoiceChannel(
             } }
         }
 
-        private fun captureLive(grant: MicrophoneCaptureLease.Grant<AudioDeviceInfo>): Boolean =
+        private fun captureEpochCurrent(grant: MicrophoneCaptureLease.Grant<CaptureInput>): Boolean =
             running.get() && captureLease.current(grant) && token == generation && wanted === config && !closed &&
-                focusGranted && !focusWaiting && permitted() && microphonePermitted() && communicationOwned &&
-                manager.mode == AudioManager.MODE_IN_COMMUNICATION &&
-                (if (Build.VERSION.SDK_INT >= 31) communicationRequested && manager.communicationDevice?.let {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && it.id == (communicationDevice ?: selected)?.id
-                } == true else manager.isBluetoothScoOn) &&
+                focusGranted && !focusWaiting && communicationOwned &&
                 (selectedCarAddress == null || bluetoothVoiceAddressIdentity(carAddress) == "valid" &&
-                    sameBluetoothSelection(carAddress, selectedCarAddress.invoke()))
+                    sameBluetoothSelection(carAddress, selectedCarAddress.invoke())) &&
+                (grant.input.probe?.let { !it.cleaning && microphoneProbe === it && it.capture === grant.input &&
+                    it.headset === grant.input.headset && wanted === it.demand &&
+                    (it.active || SystemClock.elapsedRealtime() < it.deadline) } ?: true)
 
-        private fun inputVerified(grant: MicrophoneCaptureLease.Grant<AudioDeviceInfo>, recorder: AudioRecord): Boolean {
-            if (!captureLive(grant)) return false
-            val actual = recorder.routedDevice
-            val identity = if (selectedCarAddress == null) carAddress ?: audioAddress(grant.input)
-                else selectedCarAddress.invoke()
-            return grant.input.isSource && actual?.isSource == true &&
-                verifiedMicrophoneRoute(grant.input.id, actual.id, actual.type, audioAddress(actual),
-                    identity) && (selectedCarAddress == null || sameBluetoothSelection(carAddress, identity))
+        private fun captureDemandCurrent(grant: MicrophoneCaptureLease.Grant<CaptureInput>): Boolean =
+            captureEpochCurrent(grant) && permitted() && microphonePermitted() &&
+                manager.mode == AudioManager.MODE_IN_COMMUNICATION && captureEpochCurrent(grant)
+
+        private fun probeBindingCurrent(input: CaptureInput): Boolean {
+            val probe = input.probe ?: return false
+            if (probe.capture !== input || probe.cleaning ||
+                !probe.active && SystemClock.elapsedRealtime() >= probe.deadline) return false
+            val current = probeInput(probe) ?: return false
+            return sameProbeInput(input, current) && probe.capture === input && !probe.cleaning &&
+                microphoneProbe === probe && probe.headset === input.headset
         }
 
-        private fun capture(grant: MicrophoneCaptureLease.Grant<AudioDeviceInfo>) {
-            val expectedInput = grant.input
+        private fun captureLive(grant: MicrophoneCaptureLease.Grant<CaptureInput>): Boolean {
+            if (!captureDemandCurrent(grant)) return false
+            val input = grant.input
+            val route = if (input.probe != null) probeBindingCurrent(input) else
+                if (Build.VERSION.SDK_INT >= 31) communicationRequested && manager.communicationDevice?.let {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && it.id == (communicationDevice ?: selected)?.id
+                } == true else manager.isBluetoothScoOn
+            return route && captureDemandCurrent(grant)
+        }
+
+        private fun needsHeadsetAudio(input: CaptureInput, route: RecordingRoute): Boolean = input.probe != null &&
+            (bluetoothVoiceAddressIdentity(input.address) != "valid" || bluetoothVoiceAddressIdentity(route.address) != "valid")
+
+        private fun headsetAudioConnected(input: CaptureInput): Boolean = runCatching {
+            val probe = input.probe ?: return@runCatching false
+            val headset = input.headset ?: return@runCatching false
+            val car = input.car ?: return@runCatching false
+            if (probe.headset !== headset || probe.capture !== input || probe.cleaning || microphoneProbe !== probe)
+                return@runCatching false
+            val connected = headset.isAudioConnected(car)
+            connected && probe.headset === headset && probe.capture === input && !probe.cleaning &&
+                microphoneProbe === probe && wanted === probe.demand
+        }.getOrDefault(false)
+
+        /** Source port and source role must be right immediately after start; never read to discover routing. */
+        private fun recordingRoute(grant: MicrophoneCaptureLease.Grant<CaptureInput>, recorder: AudioRecord,
+                                   requireHeadsetAudio: Boolean): RecordingRoute? = runCatching {
+            if (!captureLive(grant)) return@runCatching null
+            val input = grant.input
+            val expected = input.device
+            val actual = recorder.routedDevice ?: return@runCatching null
+            val identity = if (selectedCarAddress == null) carAddress ?: audioAddress(expected) else selectedCarAddress.invoke()
+            if (!expected.isSource || !actual.isSource || expected.id <= 0 || actual.id != expected.id ||
+                actual.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return@runCatching null
+            val address = audioAddress(actual)
+            if (input.probe == null) {
+                if (!verifiedMicrophoneRoute(expected.id, actual.id, actual.type, address, identity)) return@runCatching null
+            } else if (!acceptableScoAddress(address, input.probe.address)) return@runCatching null
+            val route = RecordingRoute(actual.id, address?.trim()?.uppercase(java.util.Locale.ROOT))
+            if (requireHeadsetAudio && needsHeadsetAudio(input, route) && !headsetAudioConnected(input)) return@runCatching null
+            if (!captureDemandCurrent(grant) || input.probe?.let {
+                    it.capture !== input || it.cleaning || microphoneProbe !== it || it.headset !== input.headset
+                } == true) return@runCatching null
+            route
+        }.getOrNull()
+
+        private fun inputVerified(grant: MicrophoneCaptureLease.Grant<CaptureInput>, recorder: AudioRecord): RecordingRoute {
+            val route = recordingRoute(grant, recorder, requireHeadsetAudio = false)
+                ?: error("Bluetooth duplex route unavailable")
+            if (needsHeadsetAudio(grant.input, route) && !headsetAudioConnected(grant.input))
+                error("Bluetooth microphone audio disconnected")
+            // Physical-audio proof is an IPC. Re-read the inexpensive actual recording
+            // route afterwards so a route change during it cannot authorize this block.
+            val actual = recorder.routedDevice
+            if (actual?.isSource != true || actual.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO || actual.id != route.port ||
+                audioAddress(actual)?.trim()?.uppercase(java.util.Locale.ROOT) != route.address)
+                error("Bluetooth duplex route unavailable")
+            check(captureDemandCurrent(grant)) { "Bluetooth duplex route unavailable" }
+            return route
+        }
+
+        private fun openCaptureRecord(grant: MicrophoneCaptureLease.Grant<CaptureInput>, rate: Int): AudioRecord {
+            check(captureLive(grant)) { "Bluetooth duplex route unavailable" }
+            check(record == null) { "Bluetooth microphone stop unavailable" }
+            val minimum = AudioRecord.getMinBufferSize(rate, AndroidAudioFormat.CHANNEL_IN_MONO, AndroidAudioFormat.ENCODING_PCM_16BIT)
+            check(minimum > 0)
+            val capture = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(rate).setChannelMask(AndroidAudioFormat.CHANNEL_IN_MONO)
+                    .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(maxOf(minimum, rate * 2 / 5)).build()
+            record = capture
+            check(capture.state == AudioRecord.STATE_INITIALIZED && capture.setPreferredDevice(grant.input.device))
+            synchronized(this) {
+                check(captureLive(grant)) { "Bluetooth duplex route unavailable" }
+                capture.startRecording()
+            }
+            // A null/handset/other initial route is unsafe even if it later changes to SCO:
+            // that Record might already contain buffered microphone audio from the old route.
+            check(recordingRoute(grant, capture, requireHeadsetAudio = false) != null) { "Bluetooth duplex route unavailable" }
+            return capture
+        }
+
+        private fun closeCaptureRecord(): Boolean {
+            val capture = synchronized(this) { record } ?: return true
+            val stopped = runCatching { capture.stop() }.isSuccess
+            val released = runCatching { capture.release() }.isSuccess
+            if (stopped || released) {
+                synchronized(this) { if (record === capture) record = null }
+                if (!released) pendingRecordReleases += capture
+            }
+            return stopped || released
+        }
+
+        private fun capture(grant: MicrophoneCaptureLease.Grant<CaptureInput>) {
+            val expectedInput = grant.input.device
             var sender: BrowserMicrophone? = null
             var resampler: PcmResampler? = null
-            var stage = "sender-create"
+            var stage = "record-create"
             var capturedSamples = 0L
             var nonzeroSamples = 0L
             try {
                 if (!captureLive(grant)) return
                 check(permitted() && microphonePermitted()) { "Microphone permission unavailable" }
-                sender = BrowserMicrophone(config, packetCounters) { report(it) }
-                stage = "record-create"
                 val rate = 16_000
-                val minimum = AudioRecord.getMinBufferSize(rate, AndroidAudioFormat.CHANNEL_IN_MONO, AndroidAudioFormat.ENCODING_PCM_16BIT)
-                check(minimum > 0)
-                val capture = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
-                    .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(rate).setChannelMask(AndroidAudioFormat.CHANNEL_IN_MONO)
-                        .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
-                    .setBufferSizeInBytes(maxOf(minimum, rate * 2 / 5)).build().also { record = it }
-                check(capture.state == AudioRecord.STATE_INITIALIZED && capture.setPreferredDevice(expectedInput))
-                if (!captureLive(grant)) return
-                stage = "start-recording"
-                capture.startRecording()
-                val begun = SystemClock.elapsedRealtime()
-                var ready = false
+                // Remember readiness before startRecording: that first Record may itself
+                // make HFP audio live and must still be treated as an unread warmup.
+                val audioReadyBeforeStart = grant.input.probe == null || headsetAudioConnected(grant.input)
+                var capture = openCaptureRecord(grant, rate)
+                val initialRoute = requireNotNull(recordingRoute(grant, capture, requireHeadsetAudio = false)) {
+                    "Bluetooth duplex route unavailable"
+                }
+                if (needsHeadsetAudio(grant.input, initialRoute) && !audioReadyBeforeStart) {
+                    check(!grant.input.warmupUsed) { "Bluetooth microphone audio disconnected" }
+                    grant.input.warmupUsed = true
+                    stage = "sco-warmup"
+                    // A SCO-valid warmup may activate the platform route. It never reads or sends.
+                    // On connection, replace it so none of its buffered audio can enter the sender.
+                    while (captureLive(grant)) {
+                        check(recordingRoute(grant, capture, requireHeadsetAudio = false) == initialRoute) {
+                            "Bluetooth duplex route unavailable"
+                        }
+                        if (Build.VERSION.SDK_INT >= 29 && capture.activeRecordingConfiguration?.isClientSilenced == true)
+                            error("Bluetooth microphone silenced")
+                        if (headsetAudioConnected(grant.input)) break
+                        Thread.sleep(5)
+                    }
+                    if (!captureLive(grant)) return
+                    check(closeCaptureRecord()) { "Bluetooth microphone stop unavailable" }
+                    stage = "record-recreate"
+                    capture = openCaptureRecord(grant, rate)
+                }
+                inputVerified(grant, capture)
+                stage = "sender-create"
+                sender = BrowserMicrophone(config, packetCounters) { report(it) }
                 val captureResampler = microphoneResampler(rate, sender.sampleRate).also { resampler = it }
                 val samples = ShortArray(rate / 50)
                 val recovery = BluetoothMicrophoneRecovery()
                 stage = "read"
+                var ready = false
                 while (captureLive(grant)) {
                     check(permitted() && microphonePermitted()) { "Microphone permission unavailable" }
                     if (Build.VERSION.SDK_INT >= 29 && capture.activeRecordingConfiguration?.isClientSilenced == true)
                         error("Bluetooth microphone silenced")
-                    if (!inputVerified(grant, capture)) {
-                        if (ready || SystemClock.elapsedRealtime() - begun >= 2000) error("Bluetooth duplex route unavailable")
-                        Thread.sleep(5); continue
-                    }
+                    val before = inputVerified(grant, capture)
                     val count = capture.read(samples, 0, samples.size, AudioRecord.READ_NON_BLOCKING)
                     if (!captureLive(grant)) break
                     when (recovery.read(count)) {
                         BluetoothMicrophoneRecovery.Action.WAIT -> { Thread.sleep(5); continue }
                         BluetoothMicrophoneRecovery.Action.RESTART -> {
-                            synchronized(this) {
-                                if (!captureLive(grant)) return
-                                capture.stop()
-                                check(capture.setPreferredDevice(expectedInput))
-                                capture.startRecording()
-                            }
+                            // Restart cannot reuse a buffer which may have crossed an unknown route.
+                            check(closeCaptureRecord()) { "Bluetooth microphone stop unavailable" }
+                            capture = openCaptureRecord(grant, rate)
+                            inputVerified(grant, capture)
                             Log.i("TiPlayBluetoothVoice", "Microphone restarted attempt=${recovery.restarts} reason=${if (count == 0) "no-audio" else "read-error"} code=$count")
                             Thread.sleep(5)
                             continue
@@ -1074,16 +1237,7 @@ class AndroidBluetoothVoiceChannel(
                         BluetoothMicrophoneRecovery.Action.FAIL -> error("Bluetooth microphone recovery exhausted")
                         BluetoothMicrophoneRecovery.Action.CONTINUE -> Unit
                     }
-                    val routed = inputVerified(grant, capture)
-                    if (!routed) {
-                        if (ready || SystemClock.elapsedRealtime() - begun >= 2000) error("Bluetooth duplex route unavailable")
-                        continue
-                    }
-                    if (!ready) {
-                        ready = true; microphoneReady.set(true); microphoneFailure.set(null); microphoneRetryDelay = 2000
-                        report("stage=duplex-ready inputMatched=true outputMatched=${output?.let { matches(track?.routedDevice, it) } == true}")
-                        publishState()
-                    }
+                    check(inputVerified(grant, capture) == before) { "Bluetooth duplex route unavailable" }
                     val converted = captureResampler.convert(if (count == samples.size) samples else samples.copyOf(count))
                     capturedSamples += count
                     for (i in 0 until count) if (samples[i].toInt() != 0) nonzeroSamples++
@@ -1091,34 +1245,53 @@ class AndroidBluetoothVoiceChannel(
                     converted.forEachIndexed { i, sample -> pcm[2 * i] = sample.toByte(); pcm[2 * i + 1] = (sample.toInt() shr 8).toByte() }
                     if (Build.VERSION.SDK_INT >= 29 && capture.activeRecordingConfiguration?.isClientSilenced == true)
                         error("Bluetooth microphone silenced")
-                    if (!inputVerified(grant, capture)) break
+                    if (inputVerified(grant, capture) != before) error("Bluetooth duplex route unavailable")
+                    if (!captureEpochCurrent(grant)) break
                     sender.accept(pcm)
+                    if (!ready && captureEpochCurrent(grant)) {
+                        ready = true; microphoneReady.set(true); microphoneFailure.set(null); microphoneRetryDelay = 2000
+                        grant.input.probe?.let { if (it.capture === grant.input) it.active = true }
+                        report("stage=duplex-ready inputMatched=true outputMatched=${output?.let { matches(track?.routedDevice, it) } == true}")
+                        publishState()
+                    }
                 }
             } catch (error: Throwable) {
                 if (error !is Exception && error !is LinkageError) throw error
                 if (running.get() && captureLease.current(grant)) {
-                val reason = when {
-                    !permitted() -> "bluetooth-permission-denied"
-                    error is SecurityException || !microphonePermitted() -> "microphone-permission-denied"
-                    error.message == "Bluetooth microphone recovery exhausted" -> "bluetooth-microphone-recovery-exhausted"
-                    error.message == "Bluetooth duplex route unavailable" -> "bluetooth-input-route-unavailable"
-                    error.message == "Bluetooth microphone silenced" -> "bluetooth-microphone-silenced"
-                    else -> "bluetooth-microphone-failed"
+                    val recoverRoute = error.message == "Bluetooth duplex route unavailable"
+                    val reason = when {
+                        !permitted() -> "bluetooth-permission-denied"
+                        error is SecurityException || !microphonePermitted() -> "microphone-permission-denied"
+                        error.message == "Bluetooth microphone recovery exhausted" -> "bluetooth-microphone-recovery-exhausted"
+                        recoverRoute || error.message == "Bluetooth microphone audio disconnected" -> "bluetooth-input-route-unavailable"
+                        error.message == "Bluetooth microphone silenced" -> "bluetooth-microphone-silenced"
+                        else -> "bluetooth-microphone-failed"
+                    }
+                    val actual = runCatching { record?.routedDevice }.getOrNull()
+                    val inputMatched = permitted() && actual?.isSource == true && verifiedMicrophoneRoute(expectedInput.id,
+                        actual.id, actual.type, audioAddress(actual), carAddress ?: if (selectedCarAddress == null) audioAddress(expectedInput) else null)
+                    report("stage=worker-failure operation=$stage reason=$reason exception=${error.javaClass.simpleName} inputMatched=$inputMatched")
+                    microphoneFailed(reason, error)
+                    main.post {
+                        val probe = grant.input.probe
+                        if (token == generation && probe != null && microphoneProbe === probe && probe.capture === grant.input) {
+                            if (recoverRoute) { retireProbeCapture(probe); tick() }
+                            else cancelMicrophoneProbe(reason)
+                        }
+                    }
                 }
-                val actual = runCatching { record?.routedDevice }.getOrNull()
-                val inputMatched = permitted() && actual?.isSource == true && verifiedMicrophoneRoute(expectedInput.id,
-                    actual.id, actual.type, audioAddress(actual), carAddress ?: if (selectedCarAddress == null) audioAddress(expectedInput) else null)
-                report("stage=worker-failure operation=$stage reason=$reason exception=${error.javaClass.simpleName} inputMatched=$inputMatched")
-                microphoneFailed(reason, error)
-                main.post { if (token == generation && microphoneProbe != null) cancelMicrophoneProbe(reason) }
-            } }
-            finally {
+            } finally {
                 microphoneReady.set(false)
                 report("stage=capture-end samples=$capturedSamples nonzeroSamples=$nonzeroSamples")
-                runCatching { record?.stop() }; runCatching { record?.release() }; record = null
+                closeCaptureRecord()
+                pendingRecordReleases.forEach { capture ->
+                    runCatching { capture.stop() }; runCatching { capture.release() }
+                }
+                pendingRecordReleases.clear()
                 runCatching { sender?.close() }; runCatching { resampler?.close() }
             }
         }
+
     }
 
     private companion object {

@@ -436,41 +436,32 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
-<a id="beta52-release"></a>
-### Published beta.52
+### Beta.53 source preparation
 
-[Beta.52/code94/browser v124](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.52)
-was published **2026-11-16 11:43:27 (UTC+8)**, release `446579482`, from
-`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. It adds the bounded app-owned SCO
-preparation, independent exact-input capture and visible receiving-Host foreground
-preparation described in [Robustness](Robustness.md#media-and-wireless-recovery).
-
-[Signed run 43798314175](https://github.com/uJZk/TiPlay/actions/runs/43798314175)
-passes all three jobs and twelve artifact groups, twenty-one compiled MIC
-contract definitions, release/debug isolation, signer/runtime continuity and
-four-ABI/16 KiB checks.
-Durable JNI archive `446579343` inventories 51 libraries (43 Build IDs/eight
-confirmed no-ID), with 32 matching symbol pairs (24 JNI/eight unchanged producer)
-and nineteen historical symbol gaps. All sixteen packaged license notices match;
-the four audio JNI ABI libraries remain byte-identical to beta.51.
-Anonymous first requests match all three release assets with HTTP 200, full bytes, API digests,
-checksums, exact source tag and notes.
-Pages `43799862350` succeeds from the same source. All 226 files (37,828,528 bytes) pass first-request
-HTTP 200, full byte comparison and MIME checks across eight languages/21 suffix classes; final route
-results are eighteen HTTP 200/two expected retired 404. The retired `/update.html`
-first returned 503 and then the expected 404 on a second request ten seconds later.
-The strict first-request report remains `passed=false`, preserving all twenty-one
-route events. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false`
-record the qualified outcome; whole-site zero-retry acceptance is not claimed.
-[Testing](Testing.md#beta52-source-preparation) separates source checks and the
-actual API36 helper protocol; physical TiPlay/Siri sound and capture remain pending.
+Beta.53/code95/browser v125 is staged with generated metadata and frozen source.
+It implements typed selected-HEADSET/SCO source association, HFP verification before
+reads through generic association, and fresh-recorder startup after no-read warmup. The requested early
+foreground-wait preparation is removed; existing active-session FGS/onResume remain.
+Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
+zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
+has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
+release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
+No signing, publication, deployment or physical microphone result is recorded yet.
 Full CI remains waived.
 
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.52.apk` | 114,647,916 | `5715c726ee39d23310fd24b95a46455928b78b5a337283154ffa77805de3c4ae` |
-| `TiPlay-0.2.20-beta.52-source.zip` | 70,403,578 | `5816351f49aa357bb0839ee52964e40400f990a5e663e28ed72610e6a82463cc` |
-| `SHA256SUMS.txt` | 191 | `5389a81c85dae2427e0b01269f0cd696c8c5979cbdfedfe4ac807eb35dba97f3` |
+<a id="beta52-release"></a>
+### Published beta.52 reference
+
+Beta.52/code94/browser v124 was published from
+`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. Its
+[frozen complete record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Build.md#beta52-release)
+retains signed run `43798314175`, all asset hashes, Pages `43799862350`, license/native
+verification and actual helper proof. The recorded outcome is qualified product
+delivery: `/update.html` first503 then expected404, strict first-request failure
+preserved across 21 route events. Native inventory includes 32 matching symbol pairs
+and nineteen historical gaps. The API36 helper does not prove production Host
+integration, AudioRecord, Bluetooth or physical MIC/Siri success. These remain
+beta.52 results; rollback and new admission require their own source checks.
 
 <a id="beta51-release"></a>
 ### Published beta.51 reference

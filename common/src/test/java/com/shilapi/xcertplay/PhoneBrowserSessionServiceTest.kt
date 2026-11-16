@@ -17,7 +17,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
-import org.mockito.Mockito.`when`
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -45,19 +44,8 @@ class PhoneBrowserSessionServiceTest {
         context.getSharedPreferences("tiplay_browser_link", 0).edit().clear().commit()
     }
 
-    private fun started(): ServiceController<DiPlaySessionService> {
-        // The service owns a real session here; pending-wait admission is tested separately.
-        if (AirPlayPersistence.isPhoneBrowserMode(context) && !CarPlayBackgroundSession.hasSession()) {
-            val phone = mock(CarPlayController::class.java)
-            `when`(phone.phoneBrowserMode()).thenReturn(true)
-            CarPlayBackgroundSession.store(phone, mock(AndroidMediaSink::class.java), 800, 480,
-                Any(), CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) {
-                CarPlayBackgroundSession.clear()
-                it()
-            }
-        }
-        return Robolectric.buildService(DiPlaySessionService::class.java, Intent()).create().startCommand(0, 1)
-    }
+    private fun started(): ServiceController<DiPlaySessionService> =
+        Robolectric.buildService(DiPlaySessionService::class.java, Intent()).create().startCommand(0, 1)
 
     @Test fun phoneModeHoldsAPartialWakeLockAndALowLatencyWifiLockUntilTheServiceEnds() {
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)

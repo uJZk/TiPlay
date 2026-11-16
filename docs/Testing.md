@@ -7,70 +7,56 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+### Beta.53 source preparation
+
+Staged beta.53/code95/browser v125 combines typed selected-HEADSET/SCO-input
+association with HFP checks before reads/sends through generic association and
+actual-record-port checks. Warmup reads
+nothing and is followed by a fresh recorder. The early foreground wait lease is
+removed: three main/two test files match `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`; active-session FGS/onResume
+and the intended-radio fixture remain.
+Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
+zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
+has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
+release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
+Signed/public artifact, Android runtime and physical MIC results remain unverified.
+Android source tests cover ambiguous/other devices, generic addresses versus
+contradictions, handset/null/changed ports, stale demand and warmup-buffer isolation.
+The beta.52 ingress-only capture does not measure outgoing MIC packets or prove
+which microphone supplied partial Siri recognition. Full CI remains waived.
+
 <a id="beta52-source-preparation"></a>
-### Beta.52
+### Beta.52 reference
 
-Published beta.52/code94/browser v124 comes from
-`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. Its bounded SCO preparation,
-exact-input capture and visible Host foreground preparation retain existing
-session ownership, best-effort output and browser telephone suppression.
-Fresh source checks pass 134 shared cases in ten suites and 110 common cases in
-eight: 244 distinct cases with no failures/errors/skips. Twelve preparation-lease
-and eight public Host cases cover receiving, settings/recreation, permissions/USB,
-withdrawal and successor fences. All 46 existing browser-link cases retain their
-original assertions with the intended radio enabled. Counts reflect executed
-JVM/Robolectric XML; legacy native-head-unit permission fixtures retain the existing
-product exclusion. Five scoped Node files pass 91 cases (31/28/10/10/12).
-
-[API36 helper run 43798317968](https://github.com/uJZk/TiPlay/actions/runs/43798317968)
-passes all three scenarios and seven independently replayed phases from the same
-final source.
-The source-built beta.52 debug APK runs as UID10216/`untrusted_app`, targetSdk37,
-without instrumentation. A real visible arm retains MIC foreground type after
-45.032 seconds in background, then downgrades to connected-device type. A fresh
-background MIC arm is denied despite permission being granted, while the original
-guard service and base foreground service survive; the missing-permission control
-also retains only base type. All scenarios clean up normally without forced cleanup.
-The 9,305-byte official result artifact matches its API digest.
-The helper APK uses a plain Activity and the real foreground-start helper;
-it does not execute the production Host's AndroidX lifecycle, preparation owner
-or actual session-adoption path. It performs no AudioRecord or Bluetooth capture.
-Vehicle SCO/MIC, TiPlay/Siri sound and physical video remain outside that proof.
-[Build](Build.md#beta52-release) records signed/public bytes and Pages separately.
-The three release assets and all 226 static files pass their first requests. The
-retired `/update.html` route returns 503 first, then expected 404 on the second
-request after ten seconds. Its strict first-request report remains failed; final
-20-route results pass with a preserved 21-event history. Product delivery is accepted
-while `AllRequestsFirstAttemptPassed=false` remains recorded. This qualified delivery
-does not erase the first failure or imply whole-site zero retries.
-Full CI remains waived.
+Published beta.52/code94/v124 comes from `f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Testing.md#beta52-source-preparation)
+retains 244 focused Android/91 browser cases, signed/public checks and same-source
+API36 helper run 43798317968: three scenarios/seven phases with normal cleanup.
+That plain-Activity test does not execute production Host/recording/Bluetooth.
+Qualified delivery retains the retired 503→404 retry and strict first-request false;
+[Build](Build.md#beta52-release) preserves asset/native identities and nineteen
+historical symbol gaps. None is a fresh beta.53 execution or physical MIC proof.
 
 <a id="beta51-source"></a>
 ### Beta.51 reference
 
-Published beta.51/code93/browser v123 comes from
-`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Its
-[immutable verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#current-release-source)
-retains its source checks and Android run `43688557977`: API35/x86_64 debug APK,
-explicit ordinary-IPv4 binding, seventeen-owner/two-peer Worklet output, a separate
-220-frame exact tap and cleanup. No main peer is created; automatic hint/fallback,
-active-main coexistence, signed runtime and physical media are outside that proof.
-[Build](Build.md#beta51-release) retains publication references and
-[Robustness](Robustness.md#native-audio-source-address) the mechanism boundaries.
-These are beta.51 results, not fresh beta.52 runs.
+Beta.51/code93/v123 source `9a03b85c61385e616c5cbbf714a60ea3bfe3e101` and its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#current-release-source)
+retain explicit ordinary-IPv4 Android binding, seventeen-owner/two-peer Worklet
+output, 220 exact frames and cleanup. No main peer was created: automatic hint/fallback,
+active-main coexistence and physical media remain outside that proof.
+[Build](Build.md#beta51-release) and [Robustness](Robustness.md#native-audio-source-address)
+retain publication and mechanism scope, not fresh later-source checks.
 
 ### Beta.50 reference
 
-Beta.50/code92/browser v122 was published from
-`ec68c4e4c6c10793e218aa5908689b08a7f60484`. Its
+Beta.50/code92/v122 source `ec68c4e4c6c10793e218aa5908689b08a7f60484` and its
 [frozen verification record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Testing.md#current-release-source)
-retains producer `43578453616`, source checks, signed/public bytes and Android run
-`43587104717`. That API35/x86_64 target-app proof verifies explicit IPv4LL
-candidates, seventeen-owner/two-peer Worklet output, a separate 220-frame exact tap,
-nonce/NIC/HMP forwarding and cleanup. It proves that emulator/NAT topology, not
-link-local source egress, active-main coexistence or vehicle sound/MIC/mirror.
-[Build](Build.md#beta50-release) retains pinned-producer and historical symbol gaps.
-These are beta.50 results, not fresh later-source checks.
+retain producer 43578453616 and Android 43587104717. Explicit IPv4LL candidates,
+seventeen-owner output, 220 exact frames, nonce/NIC/HMP forwarding and cleanup verify
+that emulator/NAT topology, not link-local source egress, active-main coexistence or
+vehicle sound/capture. [Build](Build.md#beta50-release) preserves producer/symbol
+scope; these historical results do not transfer to new code.
 
 <a id="beta49"></a>
 ### Beta.49 reference
