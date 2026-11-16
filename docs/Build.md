@@ -362,15 +362,24 @@ still showed suppressed video; beta.26 records that separate follow-up.
 
 ## Current browser deployment
 
+### Browser v124
+
+Browser/cache **v124**, product **0.2.20-beta.52**, is deployed by
+[Pages run 43799862350](https://github.com/uJZk/TiPlay/actions/runs/43799862350)
+from `f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. All 226 files (37,828,528 bytes)
+match on first HTTP 200 with MIME checks across 21 suffix classes and eight
+languages. Final routes match eighteen HTTP 200/two expected retired 404; the
+retired `/update.html` needed one recorded retry after an initial 503.
+[Beta.52](#beta52-release) retains this qualified delivery and strict first-request
+failure alongside the published APK identities.
+
 ### Browser v123
 
-Browser/cache **v123**, product **0.2.20-beta.51**, is deployed by
-[Pages run 43690324936](https://github.com/uJZk/TiPlay/actions/runs/43690324936)
-from `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Anonymous first requests match
-all 226 files (37,828,528 bytes), MIME checks across 21 suffix classes and eight
-languages.
-All twenty routes match: eighteen HTTP 200 and two expected retired-path 404
-responses. No retries were needed. [Beta.51](#beta51-release) records signed bytes.
+Browser/cache v123, product beta.51, was deployed by Pages `43690324936` from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Its
+[frozen deployment record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#browser-v123)
+retains the original complete zero-retry file/route verification; those observations
+belong to beta.51 and do not describe beta.52 delivery.
 
 ### Browser v122
 
@@ -427,14 +436,41 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
-### Beta.52 source preparation
+<a id="beta52-release"></a>
+### Published beta.52
 
-Beta.52/code94/browser v124 is staged for functional SCO/MIC and foreground-wait
-preparation. [Focused source checks](Testing.md#beta52-source-preparation) pass
-134 shared plus 110 common cases, with no failures/errors/skips. Independent API36
-helper admission, production Host integration, signing and public delivery remain
-pending. No beta.52 release or deployment result is recorded yet. The published
-APK/page remain beta.51/v123; full CI remains waived.
+[Beta.52/code94/browser v124](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.52)
+was published **2026-11-16 11:43:27 (UTC+8)**, release `446579482`, from
+`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. It adds the bounded app-owned SCO
+preparation, independent exact-input capture and visible receiving-Host foreground
+preparation described in [Robustness](Robustness.md#media-and-wireless-recovery).
+
+[Signed run 43798314175](https://github.com/uJZk/TiPlay/actions/runs/43798314175)
+passes all three jobs and twelve artifact groups, twenty-one compiled MIC
+contract definitions, release/debug isolation, signer/runtime continuity and
+four-ABI/16 KiB checks.
+Durable JNI archive `446579343` inventories 51 libraries (43 Build IDs/eight
+confirmed no-ID), with 32 matching symbol pairs (24 JNI/eight unchanged producer)
+and nineteen historical symbol gaps. All sixteen packaged license notices match;
+the four audio JNI ABI libraries remain byte-identical to beta.51.
+Anonymous first requests match all three release assets with HTTP 200, full bytes, API digests,
+checksums, exact source tag and notes.
+Pages `43799862350` succeeds from the same source. All 226 files (37,828,528 bytes) pass first-request
+HTTP 200, full byte comparison and MIME checks across eight languages/21 suffix classes; final route
+results are eighteen HTTP 200/two expected retired 404. The retired `/update.html`
+first returned 503 and then the expected 404 on a second request ten seconds later.
+The strict first-request report remains `passed=false`, preserving all twenty-one
+route events. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false`
+record the qualified outcome; whole-site zero-retry acceptance is not claimed.
+[Testing](Testing.md#beta52-source-preparation) separates source checks and the
+actual API36 helper protocol; physical TiPlay/Siri sound and capture remain pending.
+Full CI remains waived.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.52.apk` | 114,647,916 | `5715c726ee39d23310fd24b95a46455928b78b5a337283154ffa77805de3c4ae` |
+| `TiPlay-0.2.20-beta.52-source.zip` | 70,403,578 | `5816351f49aa357bb0839ee52964e40400f990a5e663e28ed72610e6a82463cc` |
+| `SHA256SUMS.txt` | 191 | `5389a81c85dae2427e0b01269f0cd696c8c5979cbdfedfe4ac807eb35dba97f3` |
 
 <a id="beta51-release"></a>
 ### Published beta.51 reference

@@ -7,25 +7,43 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.52 source preparation
+<a id="beta52-source-preparation"></a>
+### Beta.52
 
-Beta.52/code94/browser v124 is staged, not signed or published. It adds bounded
-app-owned SCO preparation, independently exact-input capture and visible receiving
-Host foreground preparation before the viewport. Session ownership, best-effort
-output and browser telephone suppression retain their
-[contracts](Robustness.md#media-and-wireless-recovery).
+Published beta.52/code94/browser v124 comes from
+`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. Its bounded SCO preparation,
+exact-input capture and visible Host foreground preparation retain existing
+session ownership, best-effort output and browser telephone suppression.
+Fresh source checks pass 134 shared cases in ten suites and 110 common cases in
+eight: 244 distinct cases with no failures/errors/skips. Twelve preparation-lease
+and eight public Host cases cover receiving, settings/recreation, permissions/USB,
+withdrawal and successor fences. All 46 existing browser-link cases retain their
+original assertions with the intended radio enabled. Counts reflect executed
+JVM/Robolectric XML; legacy native-head-unit permission fixtures retain the existing
+product exclusion. Five scoped Node files pass 91 cases (31/28/10/10/12).
 
-Fresh focused checks pass 134 shared cases in ten suites and 110 common cases in
-eight suites: **244 distinct cases, zero failures/errors/skips**. The common cohort
-includes twelve preparation-lease and eight public Host cases covering receiving,
-settings/recreation, permissions/USB, withdrawal and successor fences. All 46 existing
-browser-link cases pass with their intended Bluetooth radio explicitly enabled and
-original assertions retained. Counts come from executed JVM/Robolectric XML;
-legacy native-head-unit permission fixtures retain the existing product exclusion.
-
-API36 helper admission remains under investigation; a plain Activity/helper proof
-does not establish on-device production Host integration. Signing, public delivery
-and physical TiPlay/Siri sound/capture remain pending. Full CI remains waived.
+[API36 helper run 43798317968](https://github.com/uJZk/TiPlay/actions/runs/43798317968)
+passes all three scenarios and seven independently replayed phases from the same
+final source.
+The source-built beta.52 debug APK runs as UID10216/`untrusted_app`, targetSdk37,
+without instrumentation. A real visible arm retains MIC foreground type after
+45.032 seconds in background, then downgrades to connected-device type. A fresh
+background MIC arm is denied despite permission being granted, while the original
+guard service and base foreground service survive; the missing-permission control
+also retains only base type. All scenarios clean up normally without forced cleanup.
+The 9,305-byte official result artifact matches its API digest.
+The helper APK uses a plain Activity and the real foreground-start helper;
+it does not execute the production Host's AndroidX lifecycle, preparation owner
+or actual session-adoption path. It performs no AudioRecord or Bluetooth capture.
+Vehicle SCO/MIC, TiPlay/Siri sound and physical video remain outside that proof.
+[Build](Build.md#beta52-release) records signed/public bytes and Pages separately.
+The three release assets and all 226 static files pass their first requests. The
+retired `/update.html` route returns 503 first, then expected 404 on the second
+request after ten seconds. Its strict first-request report remains failed; final
+20-route results pass with a preserved 21-event history. Product delivery is accepted
+while `AllRequestsFirstAttemptPassed=false` remains recorded. This qualified delivery
+does not erase the first failure or imply whole-site zero retries.
+Full CI remains waived.
 
 <a id="beta51-source"></a>
 ### Beta.51 reference

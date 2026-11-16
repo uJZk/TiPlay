@@ -43,65 +43,52 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume the [beta.52 source preparation](docs/Testing.md#beta52-source-preparation),
-the published [beta.51](docs/Build.md#beta51-release) and its
-[source/runtime reference](docs/Testing.md#beta51-source), plus the
-[native-audio source preference](docs/Robustness.md#native-audio-source-address).
-Beta.51/code93/browser v123 is published from
-`9a03b85c61385e616c5cbbf714a60ea3bfe3e101` at **2026-11-15 15:31:14 (UTC+8)**.
-The [frozen publication record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta51-release)
-retains its verified source and delivery identities.
-Signed run `43688533019` passes all three jobs, twelve artifact groups, RTC
-provenance and all sixteen packaged license notices. Durable JNI archive
-`445878583` inventories 51 identities (43 Build IDs/eight confirmed no-ID);
-32 matching symbol pairs cover 24 JNI/eight unchanged producer libraries,
-with nineteen historical libraries still missing symbols. Anonymous first
-downloads match all three assets, API digests, checksums and the exact tag.
-Pages `43690324936` matches all 226 files (37,828,528 bytes), eight languages and
-twenty routes (eighteen HTTP 200/two expected retired 404) without retries.
+Resume the published [beta.52](docs/Build.md#beta52-release), its
+[source and runtime checks](docs/Testing.md#beta52-source-preparation) and
+[remaining physical acceptance](docs/Todo.md#browser-and-carplay-audio).
+Beta.52/code94/browser v124 comes from
+`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357` and was published at
+**2026-11-16 11:43:27 (UTC+8)**. Signed run `43798314175` passes all three jobs.
+All three release assets pass first-request HTTP 200 and exact byte/digest/tag/notes
+checks. Pages `43799862350` succeeds from the same source; all 226 files
+(37,828,528 bytes) pass their first HTTP 200/byte/MIME checks across eight languages
+and 21 suffix classes. Final route results are eighteen HTTP 200/two expected
+retired 404. The retired `/update.html` first returned 503,
+then 404 on a second request ten seconds later: strict first-request verification
+remains failed and its twenty-one-event route history is retained. Delivery is
+qualified by that retired-route retry; do not claim whole-site zero retries.
+Durable JNI archive `446579343` inventories 51 libraries (43 Build IDs/eight
+confirmed no-ID), with 32 matching symbol pairs (24 JNI/eight unchanged producer)
+and nineteen historical symbol gaps. All sixteen packaged license notices match;
+the four audio JNI ABI libraries remain byte-identical to beta.51.
 
-Beta.51 source checks pass 55 focused Android cases (fourteen route cases, no
-skips), instrumentation Java compilation, 91 scoped browser cases, fifteen
-adapter Node cases, twelve workflow Python contracts and two site cases.
-Actual Android run `43688557977` passes from the same source: explicit ordinary
-guest-IPv4 binding, two generations per measurement with one pre-NAT host candidate
-each and no link-local candidate, seventeen-owner/two-peer nonzero Worklet output,
-a separate 220-frame
-exact payload/timestamp tap, nonce/NIC/HMP proof and complete cleanup. This is a
-source-built API35/x86_64 debug APK under the actual app UID/domain; the main
-library is initialized but no main peer is created. It does not prove automatic
-main-selected-hint integration, active-main coexistence or vehicle output.
+Source verification passes 244 distinct focused Android cases and 91 scoped
+browser cases. [API36 helper run 43798317968](https://github.com/uJZk/TiPlay/actions/runs/43798317968)
+passes all three scenarios and seven independently replayed phases from the same
+final source.
+The plain-Activity/helper probe does not establish on-device production Host
+integration, Bluetooth SCO identity or physical microphone capture. The latest
+vehicle capture remains beta.51: native ICE/DTLS/owner readiness and nonzero
+Worklet output succeed, while TiPlay/Siri physical sound and MIC remain unverified.
 
-The source preference uses only the actual main selected-pair local IPv4 hint
-for a later audio generation, with same-address-revision ANY fallback and old
-callback fencing. Active audio is not restarted by hint changes. Linux C-API and
-byte-identical current-production JNI controls establish a socket-source
-mechanism. The latest beta.51 vehicle capture starts on an already connected
-peer and lasts 12.851 seconds: ICE/DTLS, a selected nominated pair, exact owner
-readiness and nonzero Worklet output are observed. Its nine retained failure
-groups belong to the previous beta.50 process. Three single-IPv4 native answers
-are consistent with binding, without directly recording bind mode or address;
-same-address ANY fallback is unobserved. Do not re-diagnose codec failure from
-the old records or claim unique vehicle causality.
-Siri MIC remains unopened; current capture ends during its active demand,
-without evidence of a cleanup leak. The user confirms a call-audio setting exists,
-Android media is audible over car Bluetooth, and the remote caller hears the car
-microphone during an ordinary Bluetooth call on this phone/car pair. This confirms
-the underlying capability, not the setting's exact switch state, TiPlay/Siri
-audibility or TiPlay's current SCO port. Foreground eligibility and app-specific
-input identity remain unresolved; legal onResume retry already exists.
-A source-picture gap recovers and may reflect a static screen; ordinary mirror
-is not retested. Current functional work adds a bounded app-owned SCO preparation
-probe and an independent exact-input capture lease, plus visible receiving-Host
-preparation of the existing foreground service before a browser viewport. It does
-not change `hasSession`/`isOwner`, best-effort output preference or browser call
-suppression. Focused checks pass 134 shared and 110 common cases: 244 distinct
-fresh cases with no failures, errors or skips, including twelve preparation-lease
-and eight public Host cases. API36 helper admission and production Host integration
-are separate checks and are not yet accepted on-device. Signed/public beta.52
-delivery is pending. No global voice-recognition workaround
-is used. Full CI remains waived; do not publish a diagnostic-only beta or request
-blind repeat logs.
+The [frozen beta.51 publication record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta51-release)
+retains its earlier source/delivery identities. The native-audio preference still
+uses the actual main selected-pair local IPv4 hint for a later generation, with
+same-address-revision ANY fallback and old callback fencing. Hint changes do not
+restart active audio. Three single-IPv4 field answers are consistent with binding,
+without direct mode/address evidence; fallback remains unobserved. Nine retained
+failure groups belong to the old beta.50 process, not beta.51 or beta.52.
+
+The user confirms the call-audio setting exists, Android media reaches car Bluetooth
+speakers, and an ordinary Bluetooth call's remote party hears the car MIC on this
+phone/car pair. This establishes baseline capability, not the exact switch state,
+TiPlay's SCO port or TiPlay/Siri audibility. The beta.51 capture ends during active
+MIC demand, without evidence of a cleanup leak. A source-picture gap recovers and
+may reflect a static screen; ordinary mirroring remains untested in that capture.
+The bounded sole-HEADSET probe, independently exact capture lease and visible Host
+preparation do not change `hasSession`/`isOwner`, best-effort output preference or
+browser call suppression. No global voice-recognition workaround is used. Full CI
+remains waived; do not publish a diagnostic-only beta or request blind repeat logs.
 
 The [frozen beta.50 publication record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Build.md#beta50-release)
 retains its full signed/public evidence. Its pinned IPv4LL producer

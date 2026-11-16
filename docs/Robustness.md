@@ -162,7 +162,7 @@ remains unknown. Recording stops first at the route gate; foreground eligibility
 is a separate prerequisite, not the proven cause of this attempt. The retained
 October microphone-service exception is historical.
 
-Current source adds an Android 12+ SCO preparation probe while the selected car's
+Beta.52 adds an Android 12+ SCO preparation probe while the selected car's
 exact A2DP output is working. It requires one connected HEADSET device matching
 the selected car, one masked SCO candidate, current permissions/focus and an idle
 communication route. An eight-second preparation budget bounds the attempt;
@@ -184,11 +184,21 @@ background promotion. Settings-only entry cannot arm it. Settings/permission
 withdrawal can remove access, while adding privacy types requires an actually
 resumed Activity. Pause does not revoke a legally armed wait. Explicit Stop,
 superseded Hosts, recreation, stale receiver callbacks and retired service
-lifetimes are fenced by owner/token identity. Focused source checks pass 134 shared
-and 110 common cases: 244 distinct fresh cases, no failures/errors/skips. The common
-cohort includes twelve preparation-lease and eight public Host cases. Independent
-API36 helper admission remains unaccepted. Neither helper admission nor source lifecycle tests
-establish on-device production Host integration or physical TiPlay microphone capture.
+lifetimes are fenced by owner/token identity.
+
+Focused source checks pass 134 shared and 110 common cases: 244 distinct fresh
+cases with no failures/errors/skips, including twelve preparation-lease and eight
+public Host cases. Ninety-one scoped browser cases also pass.
+[API36 helper run 43798317968](https://github.com/uJZk/TiPlay/actions/runs/43798317968)
+passes all three scenarios and seven independently replayed phases from the same
+final source.
+It verifies foreground MIC retention after 45 seconds in background, fresh-background
+MIC rejection, missing-permission fallback and normal cleanup. The actual helper
+protocol and source lifecycle tests have separate scopes;
+neither establishes on-device production Host integration or physical TiPlay
+microphone capture. The latest beta.51 field report remains the vehicle baseline:
+software downlink succeeds, but the exact app SCO input and actual Siri capture
+remain unverified.
 
 Device-route and audio-mode clients are cancelled independently. A platform
 exception retains only the unfinished ownership and retries at most three times,
