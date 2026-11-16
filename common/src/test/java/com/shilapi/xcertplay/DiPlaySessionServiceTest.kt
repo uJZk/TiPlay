@@ -12,6 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -73,6 +74,14 @@ class DiPlaySessionServiceTest {
     }
 
     private fun startedWithMicrophone(): Boolean {
+        val app = RuntimeEnvironment.getApplication()
+        val ownSession = AirPlayPersistence.isPhoneBrowserMode(app) && !CarPlayBackgroundSession.hasSession()
+        if (ownSession) {
+            val phone = mock(CarPlayController::class.java)
+            `when`(phone.phoneBrowserMode()).thenReturn(true)
+            CarPlayBackgroundSession.store(phone, mock(AndroidMediaSink::class.java), 800, 480,
+                Any(), CarPlaySessionDisplay(800, 480, Surface.ROTATION_0, false, false, 800, 480)) { it() }
+        }
         val controller = Robolectric.buildService(DiPlaySessionService::class.java, Intent()).create().startCommand(0, 1)
         try {
             val types = controller.get().foregroundServiceType
@@ -80,6 +89,7 @@ class DiPlaySessionServiceTest {
             return types and ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0
         } finally {
             controller.destroy()
+            if (ownSession) CarPlayBackgroundSession.clear()
         }
     }
 }

@@ -43,11 +43,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume the published [beta.51](docs/Build.md#beta51-release), its
-[source/runtime checks](docs/Testing.md#current-release-source) and the
+Resume the [beta.52 source preparation](docs/Testing.md#beta52-source-preparation),
+the published [beta.51](docs/Build.md#beta51-release) and its
+[source/runtime reference](docs/Testing.md#beta51-source), plus the
 [native-audio source preference](docs/Robustness.md#native-audio-source-address).
 Beta.51/code93/browser v123 is published from
 `9a03b85c61385e616c5cbbf714a60ea3bfe3e101` at **2026-11-15 15:31:14 (UTC+8)**.
+The [frozen publication record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta51-release)
+retains its verified source and delivery identities.
 Signed run `43688533019` passes all three jobs, twelve artifact groups, RTC
 provenance and all sixteen packaged license notices. Durable JNI archive
 `445878583` inventories 51 identities (43 Build IDs/eight confirmed no-ID);
@@ -57,7 +60,7 @@ downloads match all three assets, API digests, checksums and the exact tag.
 Pages `43690324936` matches all 226 files (37,828,528 bytes), eight languages and
 twenty routes (eighteen HTTP 200/two expected retired 404) without retries.
 
-Fresh source checks pass 55 focused Android cases (fourteen route cases, no
+Beta.51 source checks pass 55 focused Android cases (fourteen route cases, no
 skips), instrumentation Java compilation, 91 scoped browser cases, fifteen
 adapter Node cases, twelve workflow Python contracts and two site cases.
 Actual Android run `43688557977` passes from the same source: explicit ordinary
@@ -73,12 +76,32 @@ The source preference uses only the actual main selected-pair local IPv4 hint
 for a later audio generation, with same-address-revision ANY fallback and old
 callback fencing. Active audio is not restarted by hint changes. Linux C-API and
 byte-identical current-production JNI controls establish a socket-source
-mechanism, not this vehicle's cause. The beta.50 field report still records ICE
-failures and an unopened Siri MIC; its logger fixes are visibly working. The
-vehicle cause and selected-car HFP/SCO identity remain unknown. No speculative
-MIC bootstrap or global voice-recognition workaround is authorized by the
-best-effort output preference. Full CI remains waived; do not publish a
-diagnostic-only beta or request blind repeat logs.
+mechanism. The latest beta.51 vehicle capture starts on an already connected
+peer and lasts 12.851 seconds: ICE/DTLS, a selected nominated pair, exact owner
+readiness and nonzero Worklet output are observed. Its nine retained failure
+groups belong to the previous beta.50 process. Three single-IPv4 native answers
+are consistent with binding, without directly recording bind mode or address;
+same-address ANY fallback is unobserved. Do not re-diagnose codec failure from
+the old records or claim unique vehicle causality.
+Siri MIC remains unopened; current capture ends during its active demand,
+without evidence of a cleanup leak. The user confirms a call-audio setting exists,
+Android media is audible over car Bluetooth, and the remote caller hears the car
+microphone during an ordinary Bluetooth call on this phone/car pair. This confirms
+the underlying capability, not the setting's exact switch state, TiPlay/Siri
+audibility or TiPlay's current SCO port. Foreground eligibility and app-specific
+input identity remain unresolved; legal onResume retry already exists.
+A source-picture gap recovers and may reflect a static screen; ordinary mirror
+is not retested. Current functional work adds a bounded app-owned SCO preparation
+probe and an independent exact-input capture lease, plus visible receiving-Host
+preparation of the existing foreground service before a browser viewport. It does
+not change `hasSession`/`isOwner`, best-effort output preference or browser call
+suppression. Focused checks pass 134 shared and 110 common cases: 244 distinct
+fresh cases with no failures, errors or skips, including twelve preparation-lease
+and eight public Host cases. API36 helper admission and production Host integration
+are separate checks and are not yet accepted on-device. Signed/public beta.52
+delivery is pending. No global voice-recognition workaround
+is used. Full CI remains waived; do not publish a diagnostic-only beta or request
+blind repeat logs.
 
 The [frozen beta.50 publication record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Build.md#beta50-release)
 retains its full signed/public evidence. Its pinned IPv4LL producer

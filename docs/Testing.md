@@ -7,54 +7,52 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.51
+### Beta.52 source preparation
 
-Beta.51/code93/browser v123 was published from
-`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Fresh checks pass all 55 focused
-Android cases (fourteen new route cases, zero skips), instrumentation Java
-compilation, 91 scoped browser cases across five files, fifteen adapter Node
-cases, twelve workflow Python contracts and two site cases. Cache, prebuilt,
-public-tree and diff checks pass. Full CI remains waived.
+Beta.52/code94/browser v124 is staged, not signed or published. It adds bounded
+app-owned SCO preparation, independently exact-input capture and visible receiving
+Host foreground preparation before the viewport. Session ownership, best-effort
+output and browser telephone suppression retain their
+[contracts](Robustness.md#media-and-wireless-recovery).
 
-The [source-address controls](Robustness.md#native-audio-source-address) separate
-six C-API mechanism runs, eight production-JNI route runs and a 26.049-second
-negative observation. These do not exercise product timers or establish vehicle
-causality.
+Fresh focused checks pass 134 shared cases in ten suites and 110 common cases in
+eight suites: **244 distinct cases, zero failures/errors/skips**. The common cohort
+includes twelve preparation-lease and eight public Host cases covering receiving,
+settings/recreation, permissions/USB, withdrawal and successor fences. All 46 existing
+browser-link cases pass with their intended Bluetooth radio explicitly enabled and
+original assertions retained. Counts come from executed JVM/Robolectric XML;
+legacy native-head-unit permission fixtures retain the existing product exclusion.
 
-[Android run 43688557977](https://github.com/uJZk/TiPlay/actions/runs/43688557977),
-attempt 1 from the same source, passes in a source-built debug APK on
-API35/x86_64, UID10209/`untrusted_app`. Each measurement explicitly binds the
-ordinary guest IPv4; its two generations each advertise one exact pre-NAT UDP
-host candidate and zero link-local candidates. The normal pipeline reaches
-nonzero Worklet output across seventeen
-owners/two peers without fallback; a separate tap verifies 220 original Opus
-payloads/timestamps. Packaged-library identities, nonce echo, NIC/HMP forwarding,
-all mapping/worker cleanup and emulator stop pass. The official 3,984-byte ZIP
-matches its API digest and decoded logs.
+API36 helper admission remains under investigation; a plain Activity/helper proof
+does not establish on-device production Host integration. Signing, public delivery
+and physical TiPlay/Siri sound/capture remain pending. Full CI remains waived.
 
-The main WebRTC library is initialized; no main peer is created. This verifies
-explicit binding, not automatic main-selected-hint propagation/fallback, active
-main-peer coexistence, the signed APK or physical sound/MIC/mirror pixels.
-[Build](Build.md#beta51-release) records signed run `43688533019`, public assets,
-Pages `43690324936`, matching native identities and remaining symbol gaps.
+<a id="beta51-source"></a>
+### Beta.51 reference
+
+Published beta.51/code93/browser v123 comes from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. Its
+[immutable verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#current-release-source)
+retains its source checks and Android run `43688557977`: API35/x86_64 debug APK,
+explicit ordinary-IPv4 binding, seventeen-owner/two-peer Worklet output, a separate
+220-frame exact tap and cleanup. No main peer is created; automatic hint/fallback,
+active-main coexistence, signed runtime and physical media are outside that proof.
+[Build](Build.md#beta51-release) retains publication references and
+[Robustness](Robustness.md#native-audio-source-address) the mechanism boundaries.
+These are beta.51 results, not fresh beta.52 runs.
 
 ### Beta.50 reference
 
 Beta.50/code92/browser v122 was published from
-`ec68c4e4c6c10793e218aa5908689b08a7f60484`. The
-[immutable verification record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Testing.md#current-release-source)
-retains its producer, Android/browser, source and artifact evidence; these are not
-fresh executions for a later source. Producer `43578453616` passes sixteen symbol,
-fourteen preparation and forty compiled address cases. Android proof
-`43587104717` verifies the adopted libraries, both generations' IPv4LL candidates,
-17-owner/two-peer Worklet output and a separate 220-frame exact receive tap.
-Its API35/x86_64 target-app UID, legacy-Wi-Fi/HMP forwarding, nonce echo and cleanup
-prove that explicit emulator/NAT topology, not link-local source egress, active
-main-peer coexistence or vehicle sound/capture. The 85 scoped web and two site
-checks, signed run `43588682542`, Pages `43590151476`, public bytes and native
-symbol inventory remain tied to beta.50. [Build](Build.md#beta50-release) retains
-publication and pinned-producer references; physical audio/MIC and ordinary
-mirror acceptance remain open.
+`ec68c4e4c6c10793e218aa5908689b08a7f60484`. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/7b5cfb9364412317fa4bb97ee3faf5e5615e6366/docs/Testing.md#current-release-source)
+retains producer `43578453616`, source checks, signed/public bytes and Android run
+`43587104717`. That API35/x86_64 target-app proof verifies explicit IPv4LL
+candidates, seventeen-owner/two-peer Worklet output, a separate 220-frame exact tap,
+nonce/NIC/HMP forwarding and cleanup. It proves that emulator/NAT topology, not
+link-local source egress, active-main coexistence or vehicle sound/MIC/mirror.
+[Build](Build.md#beta50-release) retains pinned-producer and historical symbol gaps.
+These are beta.50 results, not fresh later-source checks.
 
 <a id="beta49"></a>
 ### Beta.49 reference
@@ -121,82 +119,38 @@ and [Build](Build.md#beta45-release). Earlier complete checks predate
 
 ### Beta.41 reference
 
-**Beta.41/code83 is published** from `424ed6c8fa8a44349183364c69f975a3fb2dadd6`.
-Browser/cache v116 is deployed from `9963fbb3816c49d5caa74693c309397354705748`;
-[Build](Build.md#browser-v116) records its checks and browser update behavior.
-The [full Android checks](https://github.com/uJZk/TiPlay/actions/runs/42008614328)
-passed, including a WASM retry after a TLS download interruption. The
-[signed release](https://github.com/uJZk/TiPlay/actions/runs/42012960238) passed.
-The browser suite passed 693 tests. The signed APK, source ZIP, checksums,
-release tag and public downloads were independently checked; [Build](Build.md#current-browser-deployment)
-records provenance. Browser direct-first loading and fallback, CarPlay recovery
-and failure diagnostics have automated coverage. Physical YouTube playback,
-AirPlay mirroring and recovery on the vehicle remain open acceptance items.
+Beta.41/code83 was published from `424ed6c8fa8a44349183364c69f975a3fb2dadd6`;
+browser v116 comes from `9963fbb3816c49d5caa74693c309397354705748`. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#beta41-reference)
+retains full Android run `42008614328`, signed run `42012960238`, 693 browser cases,
+public bytes and the successful WASM retry. Automated direct/fallback loading,
+recovery and failure diagnostics do not establish physical YouTube, ordinary
+mirroring or vehicle recovery; [Build](Build.md#browser-v116) preserves deployment
+scope and update behavior.
 
 ### Beta.38 reference
 
-**Beta.38/code80, browser/cache v113, was published** from
-`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. It rejects late source-rate updates
-on the encoder queue before changing gate state or accessing the cleared adapter.
-The November 2 beta.37 tombstone matches PID/time and its ARM64 WebRTC Build ID;
-[Robustness](Robustness.md#matched-post-stop-native-crash) records the high-confidence
-instruction/source attribution and the limits of earlier unmatched reports.
-Original-codec RTP video, native Opus, fallback audio, Bluetooth microphones and
-SCO silence keepalive remain. Audio trimming is paused.
+Beta.38/code80/browser v113 was published from
+`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. The
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#beta38-reference)
+retains source, artifact/public-page hashes and signed run `41390877469`.
+Its matched beta.37 PID/time/ARM64 Build ID supports the late source-rate-after-stop
+fix; [Robustness](Robustness.md#matched-post-stop-native-crash) retains attribution
+and unmatched-crash limits. Native producer
+`aef6c97a2402f4f5ef4a821a876a11941116d180` and run `41382204134` are distinct from
+the APK source. The four-ABI AAR, eleven focused native tests and fixed-AAR JNI
+permanent-stop/replacement probe passed. Counting-decoder/RTP and control progress
+do not prove decoded pictures or deterministic reproduction of the old crash.
 
-Producer source `aef6c97a2402f4f5ef4a821a876a11941116d180` is distinct from the
-application build commit.
-[Native run 41382204134](https://github.com/uJZk/TiPlay/actions/runs/41382204134)
-completed the full four-ABI AAR build and 11 focused native tests. Actual RUN/OK
-logs include `VideoStreamEncoderTest.SourceRateSendingAfterStopIgnoresLateGateUpdates`,
-which configures a stream before stop and exercises late updates and queue drain.
-The adopted AAR SHA-256 is
-`d9b59a3160bffc1fcd3676cf5bd4d63046212d6847cc56e7122332d4dcf8fe98`.
-Independent checks bind its provenance, four ELF libraries, Java inventory and
-licenses; no Java class/API change was introduced. The four matching WebRTC
-symbol files and Build ID index were independently byte-verified against their
-durable private archive. The signed application's separate archive supplies 24
-matching JNI line/symbol pairs: 28 combined, with 23 historical libraries still
-missing symbols and eight lacking Build IDs. New symbols cannot resolve the old
-crashing binary's addresses.
-
-The fixed-AAR permanent-stop JNI probe exits successfully: 60 pre-stop access
-units match their encoder-output hash, old video MID 1 is stopped and rejected
-in both SDP descriptions without `bundle-only`, the queue epoch changes
-1→0→2, and replacement MID 2 resumes frames/RTP. All 72 control heartbeats and
-the post-stop round trip complete. This local counting-decoder/transport probe
-does not establish receiver picture content, codec decoding, physical performance
-or all rate-control paths. It does not claim deterministic reproduction of the
-old binary's crash or physical HEVC/vehicle acceptance.
-
-The required Android command passed against the adopted AAR in 14m 48s. JUnit
-reports contain 4,535 cases (2,613 shared, 1,916 common, six home), zero failures
-or errors; all three lint and Debug-build targets pass. Shared/home tests and
-home/maphost builds reused unchanged Gradle results, so not every case was newly
-executed. The actual mobile Debug APK passes the new AAR/patch/provenance gate.
-The v113 checks passed 690 web and 52 Python cases: 16 native-symbol, 17 WebRTC
-build-driver, eight APK-verifier, nine release-draft and two site-deployment.
-The separate 27-case native probe-driver suite passes. Full remote CI was skipped
-at the user's request; required local checks, native producer, signed packaging
-and Pages ran.
-
-[Signed run 41390877469](https://github.com/uJZk/TiPlay/actions/runs/41390877469)
-passed release, symbols and draft jobs. Independent checks confirm non-debug
-packaging, signer/runtime continuity, exactly four replaced WebRTC libraries,
-47 other libraries unchanged from beta.37, 25 ELF64 and all 51 JNI ZIP entries
-aligned to 16 KiB, pinned AAR identity and exact source. Three unauthenticated
-public attachment downloads match the candidate; the tag resolves to the app
-commit. Pages succeeded from that source: all 226 public files (37,807,638 bytes),
-156 MIME checks, eight download languages, v113/beta.38 metadata, waiting-worker
-policy and legacy `/webrtc/` 404 checks pass. [Build](Build.md#current-browser-deployment)
-records hashes and the two producer archives. Later documentation-only commits
-do not change those release inputs.
-
-The earlier real Chromium 151 two-page worker-update and Processor/Canvas local
-track probes establish those paths only. Repeated physical H.264/HEVC replacement,
-sustained phone/car-browser playback, reconnects, SCO/focus recovery, slow storage
-and graphics/device failures remain acceptance work. Use the matching APK and
-page; software checks do not establish vehicle hardware decoding or continuity.
+The required Android command reported 4,535 cases plus all lint/build targets;
+unchanged tasks reused results. Its 690 web, 52 Python and separate 27 probe-driver
+checks, signing and Pages verification are historical results, not fresh later-source
+runs. The two producer archives then covered 28 matching symbol pairs with 23
+historical libraries missing symbols and eight lacking Build IDs; they cannot
+symbolize unmatched old binaries. Later inventories retain nineteen historical gaps.
+Physical H.264/HEVC replacement, vehicle continuity, SCO/focus recovery and graphics/
+storage failures remain acceptance work. Use the matching APK/page; software checks
+do not establish vehicle hardware decoding, panel timing or microphone capture.
 
 ## Previous release source
 
@@ -229,20 +183,13 @@ build reproduced the committed assets in WSLC using hash-verified cached WASM
 inputs. Real-car playback, repeated trust, navigation audio and HEVC continuity
 remain physical acceptance work.
 
-Beta.30/code72, browser v105, reserves the application BUNDLE transport before
-adding video and stops every retired video receiver. Actual M150 tests reproduce
-the old post-replacement bitrate collapse and verify the corrected 40-second
-transport; real Chromium verifies the SDP lifecycle. HLS open failures now retain
-bounded request/body/parse evidence through the real IO worker. URL metadata
-opening on the reported device remains unresolved. Seven new shared JVM cases
-cover sanitized native sender/feedback diagnostics and sample ownership; three
-new browser cases cover local-only priming and cancellation. The 16 Mbps startup
-prior and all congestion guards remain unchanged. Current source/publication
-checks are in [Build](Build.md#beta30-release).
-All **2,500 shared JVM tests** and **617 browser tests** pass. The final complete
-shared run uses `-Pkotlin.incremental=false`. Socket fixtures preserve their
-original timeout and ownership assertions while avoiding unrelated oversized
-preparation work and accidental probes of a newly reused listener port.
+Beta.30/code72/browser v105 source, 2,500 shared/617 browser checks and published
+bytes remain in the [frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#previous-release-source)
+and [Build](Build.md#beta30-release). Its actual AAR replacement control verifies
+complete original-AU transport; Chromium verifies SDP lifecycle. The IO-worker HLS
+diagnostics do not resolve the reported device metadata-open failure. Native counting
+decoders and socket fixtures preserve transport/ownership boundaries, without
+establishing vehicle pictures or physical latency.
 
 Beta.29/code71, browser v104, retries keyframe recovery during source silence.
 Four new JVM regressions use the real Hub's 500 ms suppression and verify recovery

@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay
 
 import android.os.Handler
+import android.bluetooth.BluetoothManager
 import android.os.Looper
 import android.view.Surface
 import android.view.KeyEvent
@@ -54,6 +55,9 @@ class CarPlayHostBrowserLinkTest {
     @Before fun setUp() {
         TeslaBrowserLink.resetForTest()
         activity = Robolectric.buildActivity(CarPlayHostActivity::class.java).get()
+        // These recovery cases model an available wireless radio; radio-off waiting has separate cases.
+        shadowOf(activity.getSystemService(BluetoothManager::class.java).adapter).setEnabled(true)
+        assertFalse(DiPlayBluetooth.radioOff(activity))
         AirPlayPersistence.saveRunMode(activity, CarPlayRunMode.PHONE_BROWSER)
         AirPlayPersistence.saveMfiTarget(activity, MfiTarget.USB_CH341)
         set("airPlayIdentity", AirPlayIdentity.generate())

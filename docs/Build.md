@@ -189,83 +189,23 @@ Use the version already declared by the build; changing it requires an intention
 
 ## Beta.30 release
 
-Published [TiPlay 0.2.20-beta.30](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.30),
-code **72**, browser **v105**, at **2026-10-27 16:16:52 UTC+08:00**.
-Build commit: `964d176baba161e369c0696f0abe3c1078b22d26`.
-The user's 16 Mbps startup prior, 64 Mbps ceiling and unset minimum remain.
+Beta.30/code72/browser v105 was published from
+`964d176baba161e369c0696f0abe3c1078b22d26`. Its
+[frozen release record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta30-release)
+retains rate settings, artifact hashes, source checks and signed run `40471221589`,
+with independently matched public assets. The 2,500 shared/617 browser checks and
+signed packaging belong to that source; full Android CI was waived.
 
-The beta.29 report showed successful High-profile startup followed by native
-allocation decaying to 30 kbps. One generation received 1,360 source AUs but
-output only 214: 88 native input losses invalidated 1,058 subsequent dependent
-frames. The browser received/decoded/drew all 214 without RTP loss, so these
-counts do not support a browser-decoder bottleneck. M150's stale packet-feedback
-RTT guard uses the observed 0.8-per-second reduction; ICE RTT alone does not
-establish usable media feedback.
-
-An actual Android AAR control with three video replacements reproduced that
-decay when the initial video m-line remained an inactive BUNDLE anchor. A
-40-second, 2,400-AU High-profile run produced/received only 1,544 AUs, zero packet
-loss and 650.643 seconds of cumulative packet-send delay. A plain control without
-replacement delivered every AU. The corrected sequence applies an unpublished
-data-only local offer, adds video and updates the pending offer before external
-signaling/authentication. The application then owns the permanent BUNDLE transport;
-every old video track/transceiver stops. In the same 40-second replacement test,
-all 2,400 original AUs (2,412,340 bytes, equal source/output SHA-256) reached RTP
-in the measured final-bridge phase after three source admissions,
-with no new native/source/dependency drops or packet loss. Bandwidth remained
-adaptive; send delay was 0.132 seconds cumulative. These counting-decoder results
-do not establish picture decoding, high-rate vehicle throughput or panel timing.
-The persisted probe repeats this result with all six DataChannel endpoints open
-and 13 control roundtrips across setup, replacements and the measured phase.
-Its counting decoder ran 1,753 times; the software emulator's remaining decode
-deadline skips are separate from complete RTP reception.
-
-Real Chromium SDP admission verifies the initial offer and three replacements,
-one active video, stable application/ICE/fingerprint/SCTP/DTLS identity and
-preserved TWCC. The transport run to that managed browser remains blocked by its
-UDP policy; no policy override or browser RTP pass is claimed. No SDP reordering,
-feedback disabling, bitrate floor or repeated startup reset is used.
-
-Video in Car is a separate URL path. Its main-thread resource probe succeeded,
-then metadata opening failed before a second request reached Android. The
-specific device failure remains unresolved. Terminal HLS errors now retain only
-fixed phase/status/cause through the IO worker. Real Chromium checks distinguish
-request reset, HTTP 502 and malformed HTTP 200; a retry that succeeds clears old
-failure evidence. Normal MP4/HLS/SDR/live picture and Web Audio checks pass under
-production CSP without SharedArrayBuffer. No buffering-policy change or claim of
-device URL recovery follows from these diagnostics.
-
-All **2,500 shared JVM tests** and **617 browser tests** pass. The final complete
-shared command used `-Pkotlin.incremental=false`. Two socket fixtures were
-corrected without changing production code or existing deadlines: a 256 KiB
-payload still blocks the unread tiny-buffer peer while avoiding unrelated
-4 MiB formatting cost, and retired-port probes exclude the current listener's
-numeric address if the OS reuses a port. Both isolated lifecycle checks and the
-final full run pass. The failed port run did not record addresses, so reuse in
-that specific occurrence is not claimed as observed. Native sender statistics are
-sampled only during Debug capture, with fixed fields and current-owner/generation
-guards; ordinary playback adds no periodic sender stats work. Full Android CI
-remains skipped under the user's instruction.
-
-[Signed workflow 40471221589](https://github.com/uJZk/TiPlay/actions/runs/40471221589)
-passed Release lint/build, signing and pinned runtime checks. Artifact
-`12718677145` has ZIP SHA-256
-`841c08eb8787ac944dfdacc0a802b87619720b311cf540396e24ed433841526c`.
-Independent verification confirms signer/runtime continuity with beta.29,
-package/code72, the 51-library set, all 25 ELF64 libraries and ZIP aligned to
-16 KiB, and compiled rate/barrier/diagnostic markers. The source ZIP exactly
-matches the build commit's archive, including application-first setup and all
-45 verified libmedia artifacts. Web changes are verified in source/public bytes,
-not claimed as new DEX literals. All three public attachments were downloaded
-again and match the verified workflow files byte-for-byte. The tag points directly
-to the build commit; prerelease status and stable-latest policy are retained.
-Reports/downloads remain outside Git under `/tmp/tiplay-beta30/`.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.30.apk` | 114,201,512 | `4d19c0c8c3f52857076d5ec42270845bff299a7e48914b4ecee700edc49db576` |
-| `TiPlay-0.2.20-beta.30-source.zip` | 40,934,163 | `41b6c37aae2b4c9091e77ee3e2dd6bc9be9366281fd3dac3cd7d5aea219885f7` |
-| `SHA256SUMS.txt` | 191 | `9967d8a29977b8b2a1eb823c145ba754aac2afa91020d11610b11505c9c33082` |
+The actual Android AAR control reproduced bitrate collapse after replacement when
+video owned the inactive BUNDLE anchor. Application-first local priming and retired
+transceiver cleanup restored all 2,400 original AUs in a 40-second replacement run,
+with six DataChannels and thirteen control roundtrips. Counting-decoder/RTP results
+do not establish pictures, vehicle throughput or timing. Real Chromium verified
+SDP lifecycle; its managed UDP policy still blocked browser transport. Production
+contracts remain in [desktop RTP integration](Testing.md#desktop-rtp-integration).
+The separate URL path gained bounded IO-worker HLS failure evidence; Chromium
+MP4/HLS/Canvas/audio checks passed, while the reported device's metadata-open failure
+remained unresolved. These controls do not prove vehicle URL recovery.
 
 <a id="beta29-release"></a>
 
@@ -404,53 +344,21 @@ and source bitrate behavior remain acceptance work.
 
 ## Beta.25 release
 
-Published [TiPlay 0.2.20-beta.25](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.25),
-code **67**, browser **v100**, at **2026-10-27 10:46:57 UTC+08:00**.
-Build commit: `41c03970e95763f9fc62df395658c1df8f5871ce`.
+Beta.25/code67/browser v100 was published from
+`41c03970e95763f9fc62df395658c1df8f5871ce`. Its
+[frozen release record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta25-release)
+retains all artifact hashes, signed run `40439215287`, signer/runtime continuity,
+51-library/16 KiB checks and exact public assets. Its first complete local Android
+command passed 4,346 cases plus required lint/build targets; 613 browser cases
+passed. The repeated Android run was stopped and full CI waived by the user.
 
-The native raw-frame bitrate dropper is disabled for original compressed CarPlay
-video. Codec/profile/level admission, access-unit dependencies, bounded capture
-and video-only failure handling remain enforced. Source, encoder-input/output,
-RTP and Canvas counters now distinguish their different progress boundaries.
-Android still forwards original compressed video without decoding or reencoding.
-
-Native Opus guidance uses one peer-owned detached audio playout object, permanently
-muted with zero volume. Chromium's WebAudio-only path could receive RTP without
-producing decoded samples. Starting peer playout restores samples through the
-existing Worklet mixer. Successful `play()` and exact Worklet binding precede the
-ready barrier; retirement releases the object and graph owners. Music and guidance
-retain the common mixing/ducking policy with one audible output.
-
-During this work, **613 browser tests** and the first complete local Android
-command passed: **4,346 tests** plus all required Debug lint/build targets.
-Actual Chromium checks cover non-first-slot activation, original Opus through the
-product router/Kotlin/JNI, sixteen slots, seventeen owners, generation replacement,
-independently nonzero Worklet output and cleanup. [Testing](Testing.md#current-media-regression-checks)
-records these boundaries. The final repeated Android validation was stopped at
-the user's explicit request. **Android full CI was skipped for this release.**
-The subsequent vehicle report still showed video suppression; beta.26 above records
-the follow-up. Physical sound and resource increments remain unverified.
-
-The published APK comes from [signed workflow 40439215287](https://github.com/uJZk/TiPlay/actions/runs/40439215287),
-which passed Release lint/build, signing, pinned runtime checks and draft upload.
-Its artifact was independently downloaded and verified before publication. All
-three published attachments were downloaded again and match those verified bytes;
-the release tag resolves to the build commit above.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.25.apk` | 114,168,744 | `9f7b5213b8f1ec2cb6ad6753e3c2609c192d4197fb877e92db18fba041c848c9` |
-| `TiPlay-0.2.20-beta.25-source.zip` | 40,882,883 | `138ed6a7534175197b9951043e428dd7989811f72b2b439d155a98a3a7501bb4` |
-| `SHA256SUMS.txt` | 191 | `8ee2b29f205302f60933f9fbae44ff0f3858057283eb7f4fbbcaae28c60eab8b` |
-
-Independent checks confirm non-debug `com.ujzk.tiplay`, code67, signer continuity
-(`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`),
-the two unchanged runtime identity containers, exact build-commit source and
-repair DEX markers. All 51 native libraries match the expected ABI/name set;
-all 25 ELF64 libraries and the APK ZIP pass 16 KiB alignment. Signing inputs were
-removed after local packaging; reports and verified downloads remain outside Git
-under `/tmp/tiplay-beta25/`. Later documentation-only changes do not change the
-APK/source or webpage build provenance.
+It disables raw-frame bitrate dropping for original compressed video and activates
+native Opus through one peer-owned permanently muted playout anchor, while preserving
+strict codec admission and the common audible Worklet mix. Actual Chromium/native
+checks covered seventeen owners, sixteen slots, replacement and cleanup; see
+[media regressions](Testing.md#current-media-regression-checks). Resource counters
+and desktop output do not establish physical sound. The subsequent field report
+still showed suppressed video; beta.26 records that separate follow-up.
 
 ## Current browser deployment
 
@@ -519,35 +427,30 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
+### Beta.52 source preparation
+
+Beta.52/code94/browser v124 is staged for functional SCO/MIC and foreground-wait
+preparation. [Focused source checks](Testing.md#beta52-source-preparation) pass
+134 shared plus 110 common cases, with no failures/errors/skips. Independent API36
+helper admission, production Host integration, signing and public delivery remain
+pending. No beta.52 release or deployment result is recorded yet. The published
+APK/page remain beta.51/v123; full CI remains waived.
+
 <a id="beta51-release"></a>
-### Published beta.51
+### Published beta.51 reference
 
 [Beta.51/code93/browser v123](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.51)
-was published **2026-11-15 15:31:14 (UTC+8)**, release `445878797`, from
-`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. It adds the bounded
-[native-audio source preference](Robustness.md#native-audio-source-address);
-vehicle ICE causality and Siri microphone recovery remain unverified.
-
-[Signed run 43688533019](https://github.com/uJZk/TiPlay/actions/runs/43688533019)
-passes all three jobs, twelve artifact groups and the RTC provenance gate.
-All sixteen packaged license notices match, including eleven unchanged RTC notices.
-The new bind-argument JNI contract, four ABI libraries and 16 KiB alignment pass.
-Canonical symbols draft `445878583` matches 51 native identities: 43 Build IDs and
-eight confirmed no-ID entries. Matching symbols cover 32 libraries (24 JNI/eight
-unchanged producer); nineteen historical libraries lack symbols. Signer continuity
-passes. [Beta.50](#beta50-release) retains the pinned dependency-producer provenance.
-
-Three anonymous first-request HTTP 200 downloads match signed bytes, API digests,
-checksums and the exact tag. The 1,535-byte public notes match the verified draft.
-[Testing](Testing.md#current-release-source) separates source checks and the actual
-Android debug-APK proof. Full CI remains waived. The
-[v123 deployment](#browser-v123) uses the same build source.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.51.apk` | 114,598,764 | `882493c4a7e3d6de03d2a014eafb3eb2f5ae0d3e457b215106ef125f5660cc99` |
-| `TiPlay-0.2.20-beta.51-source.zip` | 70,361,321 | `d95300526322ba526464b5d6ef5113e2e13b69b1042ac75ea73a8b262dc6bd81` |
-| `SHA256SUMS.txt` | 191 | `1ed77782de1bcf7f83259d3056b327fb4ccbdc097775040657857213041f4e9c` |
+was published **2026-11-15 15:31:14 (UTC+8)** from
+`9a03b85c61385e616c5cbbf714a60ea3bfe3e101`. The
+[immutable complete record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta51-release)
+retains all asset byte counts/hashes, signed run `43688533019`, release `445878797`,
+Pages `43690324936`, anonymous public verification and sixteen license notices.
+Durable JNI archive `445878583` inventories 51 native identities (43 Build IDs/eight
+confirmed no-ID), with 32 matching symbol pairs and nineteen historical symbol gaps.
+[Beta.50](#beta50-release) preserves pinned-producer provenance. The separate
+[beta.51 source/runtime reference](Testing.md#beta51-source) and
+[v123 deployment](#browser-v123) retain their evidence boundaries; physical
+TiPlay/Siri sound and capture remain unverified.
 
 <a id="beta50-release"></a>
 ### Published beta.50 reference

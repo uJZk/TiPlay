@@ -363,7 +363,7 @@ internal object TeslaBrowserLink {
 
     /** Starts the link when it is [wanted], otherwise stops it. Cheap and idempotent; safe from any lifecycle callback. */
     fun sync(context: Context) {
-        if (wanted(context)) start(context) else stop()
+        if (wanted(context)) start(context) else stop(cancelPreparation = false)
     }
 
     /** Idempotent. Creates the pairing code on first use; the socket work happens on the link's thread. */
@@ -377,8 +377,11 @@ internal object TeslaBrowserLink {
     }
 
     /** Idempotent. Ends the browser's video and touches and frees the port, on the link's thread. */
-    fun stop() {
-        if (requested.compareAndSet(true, false)) worker.execute(::reconcile)
+    fun stop(cancelPreparation: Boolean = true) {
+        if (requested.compareAndSet(true, false)) {
+            DiPlaySessionService.receiverStopped(cancelPreparation)
+            worker.execute(::reconcile)
+        }
     }
 
     fun attachHost(host: Host) {

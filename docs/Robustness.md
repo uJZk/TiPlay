@@ -72,14 +72,22 @@ retained reporter. It is not part of the remediation count.
 
 ## Media and wireless recovery
 
-The beta.50/code92/v122 vehicle report still records independent audio ICE
-failure and an unopened Siri microphone. Seven protected failures belong to
-earlier browser peers in the current process; the retained raw capture covers a
-new peer for only 16.249 seconds and ends before its negotiation deadline.
-CarPlay HEVC reaches browser decoding and Canvas draws. Ordinary AirPlay mirroring
-is absent, so its earlier black-output and keyframe-reply recovery remain
-unverified. Software draws and route readiness do not establish physical pixels
-or sound.
+The latest beta.51/code93/v123 vehicle capture begins on an already connected
+peer and lasts 12.851 seconds. Native ICE/DTLS, a selected nominated pair and
+exact owner readiness succeed; common Worklet nonzero samples rise to 222,544
+with peak 0.14. The previous persistent ICE/no-software-output symptom is absent
+in this observed session. Nine retained failure groups belong to the earlier
+beta.50 process, not a new beta.51 regression. Siri microphone capture remains
+unopened. The nonzero sample precedes this MIC request by 258 ms, so it does not
+certify that Siri utterance or physical speaker sound.
+
+CarPlay HEVC continues decoding and drawing after a source-picture gap of about
+9.75 seconds that begins before the capture. A contained six-second window has
+no pictures but receives empty-body nonpicture messages. Static sources may
+intentionally conserve frames; this does not establish a user-visible fault or
+downstream loss. Ordinary AirPlay mirroring is absent, so its earlier black-output
+and keyframe-reply recovery remain unverified. Software draws do not establish
+physical pixels.
 
 The current source rejects an equal-PTS access unit without rewriting its time
 or feeding it to the native encoder. It invalidates the prediction chain and
@@ -135,21 +143,52 @@ focus loss cannot trigger recovery. Stop and close remove the observer.
 
 A paired car is not necessarily a connected HFP device, and recovery cannot
 create a missing system route or substitute the handset microphone. In the
-beta.50 capture, the requested and actual output match the selected car's A2DP
+beta.51 capture, the requested and actual output match the selected car's A2DP
 device. An unmatched SCO candidate has a placeholder identity; the selected
 car's HEADSET/SCO ownership remains unknown. A2DP selection bypasses input
 enumeration, so `input-devices candidates=0` does not establish an absent system
 microphone. Siri and guidance remain on the browser path; the ready Android
-AudioTrack is not evidence that Siri was heard.
+AudioTrack is not evidence that Siri was heard. The user reports the call-audio
+setting exists, Android media can play through the car's Bluetooth speakers, and
+a remote caller hears the car microphone during an ordinary Bluetooth call on
+the same phone/car pair. This confirms the underlying media/call capability, not
+the setting's exact switch state, this TiPlay/Siri stream or TiPlay's current
+SCO input port and recording eligibility. The current capture ends
+during active MIC demand; missing release is not a cleanup leak.
 
-The same-day foreground log records microphone and location eligibility
-rejection. The short raw capture supplies no later positive microphone-service
-promotion; successful promotion logs are Debug-only. Recording stops first at
-the route gate, so foreground eligibility is a separate unresolved prerequisite,
-not the proven cause of this attempt. The retained October microphone-service
-exception is historical. Capture still requires verified selected-car input;
-placeholder or name matching cannot grant it. Global Bluetooth voice-recognition
-start/stop calls are not an app-owned SCO lease and are not used as a workaround.
+The current process records microphone and location eligibility rejection before
+raw capture. Successful promotion logs are Debug-only, so current eligibility
+remains unknown. Recording stops first at the route gate; foreground eligibility
+is a separate prerequisite, not the proven cause of this attempt. The retained
+October microphone-service exception is historical.
+
+Current source adds an Android 12+ SCO preparation probe while the selected car's
+exact A2DP output is working. It requires one connected HEADSET device matching
+the selected car, one masked SCO candidate, current permissions/focus and an idle
+communication route. An eight-second preparation budget bounds the attempt;
+another app's active communication route is not taken over. The app owns its
+mode/device request and checks current demand throughout. A placeholder permits
+only preparation: capture still needs an independently exact car SCO input and
+verified actual recording route. Capture has its own revocable lease; cleanup
+waits for its worker acknowledgement before withdrawing the owned route. A failed
+probe does not retire working media playback merely to attempt capture. Output
+preference and browser call suppression remain unchanged; global Bluetooth
+voice-recognition start/stop calls are not used.
+
+The visible, explicitly receiving Host can also prepare the existing session
+service before a browser viewport or iPhone controller exists. Its retained
+preparation owner is independent of `CarPlayBackgroundSession`; `hasSession` and
+`isOwner` keep their existing semantics. A real stored session adopts the same
+unstopped service and its actual accepted foreground types without another
+background promotion. Settings-only entry cannot arm it. Settings/permission
+withdrawal can remove access, while adding privacy types requires an actually
+resumed Activity. Pause does not revoke a legally armed wait. Explicit Stop,
+superseded Hosts, recreation, stale receiver callbacks and retired service
+lifetimes are fenced by owner/token identity. Focused source checks pass 134 shared
+and 110 common cases: 244 distinct fresh cases, no failures/errors/skips. The common
+cohort includes twelve preparation-lease and eight public Host cases. Independent
+API36 helper admission remains unaccepted. Neither helper admission nor source lifecycle tests
+establish on-device production Host integration or physical TiPlay microphone capture.
 
 Device-route and audio-mode clients are cancelled independently. A platform
 exception retains only the unfinished ownership and retries at most three times,
@@ -165,26 +204,27 @@ Actual Kotlin/JNI/libdatachannel forwarding preserves both tracks' 80 original
 Opus payloads and RTP timestamps. Real Chromium software AAC-LC, AAC-ELD and ALAC
 reach nonzero Worklet output and release their owners after EOS.
 
-The Chromium original-audio interoperability attempt remains blocked before
-signaling: audio, video and DataChannel controls all gather zero local ICE
-candidates in this executor. It does not invalidate the native byte/timestamp
-check or establish vehicle connectivity. Physical navigation audio, car HFP/SCO,
-routed independent-audio ICE, mirror picture and repeated reconnects remain
-device acceptance; counters alone do not establish speaker output or a fix for
-the target network's connectivity. See [Testing](Testing.md) for those boundaries.
+An earlier local Chromium attempt was blocked before signaling by this executor's
+UDP policy; its zero candidates are not a vehicle finding. Later configured
+Android/browser proof and the beta.51 field capture have separate scopes. The
+field capture now shows connected native audio alongside the main video/control
+peer. TiPlay-specific physical sound, selected-car microphone capture, ordinary
+mirror pixels, sustained recovery and exact source-preference/fallback execution
+remain acceptance boundaries. See [Testing](Testing.md).
 
 ### Diagnostic sufficiency
 
 The beta.49 remediation preserves generation-specific browser failures through
 bounded immediate reporting, Standard/Debug admission and split native records.
-The beta.50 field report confirms this persistence: seven failures retain both
-parts, including browser ICE/STUN/DTLS fields, last-sample ages of
-1004.2–1038.2 ms and browser queue ages of 0–1 ms. Five failures were retained
-in Standard mode and two in Debug. One native peer retains all 23 transport
-fields at failure and again after closure. The later closed snapshot is not a
-new first fault. The 16.249-second current raw window contains a fresh attempt,
-three audio snapshots and no terminal failure; do not assign the earlier peers'
-outcomes to it.
+The latest beta.51 report preserves all 25 observed native-audio fields in each
+of two healthy Debug snapshots, including explicit selected-pair presence and
+connected ICE/DTLS. Their sample ages are 541.6–542.3 ms; there is no current
+first-fault queue age to infer. Its nine complete two-part failure groups and
+two 23-field native snapshots belong to the previous beta.50 process. Those
+older faults retain 1004.2–1038.2 ms last-sample ages and 0–1 ms browser queue
+ages. The later closed native snapshot is not another first fault. Do not assign
+old failures or the preceding 16.249-second unfinished-attempt boundary to the
+new, already connected peer.
 
 Failure snapshots retain the last accepted observation, not a guaranteed terminal
 sample. Queue age excludes network transit. Scope counters by main peer,
@@ -210,9 +250,9 @@ Chromium 148. Its muted anchor and graph binding cannot substitute for connected
 transport. Positive Worklet frame counts can include zeros; nonzero samples and
 physical sound are separate observations.
 
-The current audio offer spends about twelve seconds gathering within its shared
+The audio offer still spends about twelve seconds gathering within its shared
 twenty-second negotiation budget. That startup cost is a possible optimization,
-not an explanation for the observed zero STUN responses. Do not change gathering
+not an explanation for the earlier beta.50 zero STUN responses. Do not change gathering
 or deadlines and claim a connectivity fix without an independent mechanism test.
 
 ### IPv4 link-local ICE
@@ -269,6 +309,8 @@ IPv4 hosts and one IPv6 host, but no current complete candidate-class snapshot.
 Whether a usable link-local interface exists, whether the main peer selected it
 and whether this patch applies to the observed failure remain unknown. Do not
 copy the earlier beta.48 capture's IPv4LL-zero inference into this report.
+The latest beta.51 raw has no HTTP requests or plaintext offers, so its control
+entry and precise IPv4 subclasses remain unknown.
 
 ### Native audio source address
 
@@ -344,10 +386,12 @@ selected-pair hint/fallback integration, active-main coexistence or the signed
 APK's runtime. [Testing](Testing.md#current-release-source) retains the scope.
 
 Preserve independent original-codec audio, generation/owner barriers and the
-verified-car microphone gate. The physical audio route, nonzero sound, microphone
-capture and ordinary mirror presentation remain unverified. The source preference
-addresses a reproduced mechanism without attributing the vehicle's remaining
-failure to that mechanism.
+verified-car microphone gate. The latest field report's three single-IPv4 native
+answers are consistent with the preference, without direct bind-mode/address or
+assignment-check evidence. No current failure exercises same-address-revision ANY
+fallback. Successful ICE/DTLS and nonzero Worklet output establish the observed
+improvement, not the earlier route fault's unique cause. TiPlay/Siri physical
+audibility, TiPlay microphone capture and ordinary mirror presentation remain unverified.
 
 ## Matched post-stop native crash
 

@@ -72,6 +72,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.ViewModelProvider
+import java.lang.ref.WeakReference
 import com.shilapi.xcertplay.adb.LocalAdb
 import com.shilapi.xcertplay.airplay.CarPlayMediaButton
 import com.shilapi.xcertplay.airplay.AirPlayConfig
@@ -133,6 +135,10 @@ import kotlin.math.roundToInt
  * Apple devices are discovered by vendor ID; CH341 uses the configured VID/PID below.
  */
 class CarPlayHostActivity : ComponentActivity() {
+    private val foregroundPreparationOwner by lazy {
+        ViewModelProvider(this)[SessionForegroundPreparationOwner::class.java]
+    }
+    private var foregroundPreparationToken: Long? = null
     private data class SettingsBaseline(
         val safeAreaRects: MutableMap<DisplaySize, SafeAreaRect?>,
         val customIconBytes: ByteArray?,
@@ -325,7 +331,7 @@ class CarPlayHostActivity : ComponentActivity() {
             if (microphoneChanged && browserConnectionRequested && controller != null) restartCarPlay("Microphone permission changed")
             else if (!headUnitIntegrations() && controller != null) {
                 // A location grant from Advanced must enable foreground access without another reconnect.
-                ContextCompat.startForegroundService(this, Intent(this, DiPlaySessionService::class.java))
+                DiPlaySessionService.refreshForegroundAccess(this)
             }
             wirelessPermissionsReady = hasRequiredWirelessPermissions()
             appendLog(
@@ -340,6 +346,7 @@ class CarPlayHostActivity : ComponentActivity() {
             showMissingWirelessPermission()
             updateHotspotStatusBlock()
             maybeStartCarPlay()
+            postForegroundPreparation()
         }
     private val wiredPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
@@ -353,6 +360,7 @@ class CarPlayHostActivity : ComponentActivity() {
                 },
             )
             requestStartupPrerequisites()
+            postForegroundPreparation()
         }
     private val microphonePermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -360,6 +368,7 @@ class CarPlayHostActivity : ComponentActivity() {
             microphonePermissionResolved = true
             appendLog(if (granted) "Microphone permission granted" else "Microphone permission denied")
             requestStartupPrerequisites()
+            postForegroundPreparation()
         }
     private val locationPermission =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
@@ -889,6 +898,11 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_TiPlayNative)
         super.onCreate(savedInstanceState)
+        if (!headUnitIntegrations()) {
+            val weak = WeakReference(this)
+            foregroundPreparationOwner.attach(this) { token -> weak.get()?.cancelForegroundPreparation(token) }
+            if (foregroundPreparationOwner.cancelled) { finish(); return }
+        }
         BrowserSettingsPolicy.activate(this)
         NavigationWidgetUpdater.attach(applicationContext)
         CarPlayCallKeys.install(applicationContext) // its keys check the run mode when they arrive
@@ -927,8 +941,9 @@ class CarPlayHostActivity : ComponentActivity() {
         airPlayIdentity = AirPlayPersistence.loadIdentity(this)
         loadPersistedSettings()
         browserMainState = savedInstanceState
+        settingsOnlyLaunch = savedInstanceState?.getBoolean("settings_only_launch") ?: false
         browserSettingsChanges = BrowserSettingsChanges.listen(this, ::applyBrowserSettings)
-        browserConnectionRequested = if (!headUnitIntegrations()) !BrowserCarPlaySettings.disabled(this)
+        browserConnectionRequested = if (!headUnitIntegrations()) !BrowserCarPlaySettings.disabled(this) && !foregroundPreparationOwner.cancelled
             else savedInstanceState?.getBoolean("browser_connection_requested") ?: DiPlayPreferences.autoConnect(this)
         if (!headUnitIntegrations()) browserCarPlayWatch = BrowserCarPlayWatch(this, ::onBrowserBluetoothConnected, ::checkBrowserCarPlay)
         locationPermissionAvailable = hasFineLocationPermission()
@@ -1225,20 +1240,25 @@ class CarPlayHostActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (shuttingDown.get() || (!headUnitIntegrations() && foregroundPreparationOwner.cancelled)) return
+        val receivingIntent = intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
+            DiPlayActivity.isLauncherIntent(intent)
+        if (!headUnitIntegrations() && receivingIntent) settingsOnlyLaunch = false
         if (intent.getBooleanExtra(CarPlaySettingsNavigation.MENU, false)) {
             intent.removeExtra(CarPlaySettingsNavigation.MENU)
             openSettingsMenu()
         }
-        if (browserMainPage != null && (intent.getBooleanExtra(CarPlaySettingsNavigation.MAIN, false) ||
-                DiPlayActivity.isLauncherIntent(intent)) &&
+        if (browserMainPage != null && receivingIntent &&
             controller == null && !BrowserCarPlaySettings.disabled(this)) {
             if (runCatching { DiPlayBootstrap.ensure(this, AirPlayPersistence.loadMfiTarget(this)) }.isSuccess) {
                 browserConnectionRequested = true
                 requestStartupPrerequisites()
+                postForegroundPreparation()
             } else showBrowserPreparationError()
         }
         if (isIphoneUsbAttachment(intent) && !BrowserCarPlaySettings.disabled(this) &&
             BrowserCarPlaySettings.mode(this) != BrowserCarPlaySettings.Mode.WIRELESS) {
+            settingsOnlyLaunch = false
             browserConnectionRequested = true
             browserMainPage?.transportSelected(false)
             if (wirelessEnabled) {
@@ -1254,6 +1274,7 @@ class CarPlayHostActivity : ComponentActivity() {
             } else if (controller == null) {
                 requestStartupPrerequisites()
             }
+            postForegroundPreparation()
         }
     }
 
@@ -1274,6 +1295,41 @@ class CarPlayHostActivity : ComponentActivity() {
         homeScreenVisible = null
         // Read here so a change made in Settings applies when the projection comes back.
         if (AirPlayPersistence.loadFpsCounter(this)) fpsCounter?.start() else fpsCounter?.stop()
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        // ComponentActivity reports ON_RESUME after the Activity callback on some APIs.
+        mainHandler.post {
+            if (!isDestroyed && !isFinishing && hostAppearanceResumed && !shuttingDown.get()) {
+                refreshForegroundPreparation()
+            }
+        }
+    }
+
+    private fun postForegroundPreparation() {
+        mainHandler.post { if (!isDestroyed && !isFinishing && !shuttingDown.get()) refreshForegroundPreparation() }
+    }
+
+    private fun refreshForegroundPreparation() {
+        if (headUnitIntegrations() || settingsOnlyLaunch || foregroundPreparationOwner.cancelled || !browserConnectionRequested ||
+            BrowserCarPlaySettings.disabled(this)) return
+        val weak = WeakReference(this)
+        foregroundPreparationToken = DiPlaySessionService.prepareForegroundAccess(this,
+            foregroundPreparationOwner) { token -> weak.get()?.cancelForegroundPreparation(token) }
+    }
+
+    /** Cancelling a wait must also fence a browser viewport that was already queued. */
+    private fun cancelForegroundPreparation(token: Long) {
+        if (!foregroundPreparationOwner.cancelled && foregroundPreparationToken != token) return
+        foregroundPreparationToken = null
+        if (controller != null || CarPlayBackgroundSession.isOwner(this)) return
+        browserConnectionRequested = false
+        reconnectTask?.let(mainHandler::removeCallbacks)
+        reconnectTask = null
+        reconnectScheduled = false
+        shuttingDown.set(true)
+        finish()
     }
 
     override fun onResume() {
@@ -3620,7 +3676,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun applyBrowserSettings() {
         if (headUnitIntegrations() || shuttingDown.get()) return
         // Valid settings resume enabled CarPlay even from idle; the opt-out blocks startup and retries.
-        browserConnectionRequested = !BrowserCarPlaySettings.disabled(this)
+        browserConnectionRequested = !BrowserCarPlaySettings.disabled(this) && !foregroundPreparationOwner.cancelled
         if (!browserConnectionRequested) {
             reconnectTask?.let(mainHandler::removeCallbacks)
             reconnectTask = null
@@ -3638,6 +3694,7 @@ class CarPlayHostActivity : ComponentActivity() {
             restartCarPlay("Settings changed; reconnecting")
         }
         if (browserConnectionRequested) requestStartupPrerequisites()
+        postForegroundPreparation()
         updateDebugOverlays()
     }
 
@@ -5836,7 +5893,7 @@ class CarPlayHostActivity : ComponentActivity() {
             }
         }
         try {
-            ContextCompat.startForegroundService(this, Intent(this, DiPlaySessionService::class.java))
+            DiPlaySessionService.ensureForSession(this)
             next.start()
         } catch (error: RuntimeException) {
             appendLog("Connection could not start: ${error.javaClass.simpleName}")
@@ -6163,7 +6220,7 @@ class CarPlayHostActivity : ComponentActivity() {
     private fun checkBrowserCarPlay() {
         updateDebugOverlays()
         if (!browserReadyForCarPlay()) return
-        if (isDestroyed || isFinishing || shuttingDown.get() || menuOpen || handshakeResetInProgress ||
+        if (isDestroyed || isFinishing || shuttingDown.get() || foregroundPreparationOwner.cancelled || menuOpen || handshakeResetInProgress ||
             BrowserCarPlaySettings.disabled(this)) return
         if (TeslaBrowserLink.airPlayActive) return
         if (resumeCarPlayRecoveryAfterAirPlay()) return
@@ -6196,7 +6253,7 @@ class CarPlayHostActivity : ComponentActivity() {
         if (!browserReadyForCarPlay()) return
         if (!headUnitIntegrations() && BrowserCarPlaySettings.disabled(this)) return
         if (browserMainPage != null && !browserConnectionRequested) return
-        if (shuttingDown.get()) return
+        if (shuttingDown.get() || (!headUnitIntegrations() && foregroundPreparationOwner.cancelled)) return
         if (CarPlayBackgroundSession.hasSession() && !CarPlayBackgroundSession.isOwner(this)) {
             if (!adoptBackgroundSession()) mainHandler.postDelayed({ maybeStartCarPlay() }, 500)
             return
@@ -6635,6 +6692,7 @@ class CarPlayHostActivity : ComponentActivity() {
 
     private fun shutdown(terminateProcess: Boolean, reason: String, completion: () -> Unit = {}) {
         if (!shuttingDown.compareAndSet(false, true)) { completion(); return }
+        val foregroundOwner = DiPlaySessionService.ownerToken()
         browserDisplayReconnectHost.cancel()
         callPopupSessionReady = false
         updateCallPopupGuard()
@@ -6667,7 +6725,7 @@ class CarPlayHostActivity : ComponentActivity() {
             }
             Log.i(TAG, "shutdown complete clean=$clean")
             appendLog("Shutdown complete clean=$clean")
-            applicationContext.stopService(Intent(applicationContext, DiPlaySessionService::class.java))
+            DiPlaySessionService.stopIfIdle(applicationContext, foregroundOwner)
             teardownExecutor.shutdown()
             mainHandler.post { completion() }
             if (terminateProcess) {
