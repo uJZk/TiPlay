@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PACKAGE, GUARD, PROBE, parseServices, parseUidState, instrumentationAbsent, parseRecordingOp, ownedNotifications, frozenAppMetadata,
+import { PACKAGE, GUARD, PROBE, parseServices, serviceHeaderShapes, parseUidState, instrumentationAbsent, parseRecordingOp, ownedNotifications, frozenAppMetadata,
   validateIdentity, validateObservation } from './android-mic-foreground-probe.mjs';
 
 function fixture() {
@@ -32,7 +32,7 @@ function fixture() {
 
 test('AOSP16 service dump parser reads actual type, caller and per-service reasons', () => {
   const source = `ACTIVITY MANAGER SERVICES (dumpsys activity services)
-  * ServiceRecord{a123 u0 ${PACKAGE}/${PROBE}}
+  * ServiceRecord{a123 u0 ${PACKAGE}/${PROBE} c:${PACKAGE}}
     recentCallingUid=10209
     getFgsAllowWiu_forStart=DENIED
     getFgsAllowWiu_forCapabilities=DENIED
@@ -46,6 +46,17 @@ test('AOSP16 service dump parser reads actual type, caller and per-service reaso
   assert.equal(value.component, PROBE); assert.equal(value.types, 16); assert.equal(value.recentCallingUid, 10209);
   assert.equal(value.wiuStart, 'DENIED'); assert.equal(value.startReason, 'PROC_STATE_FGS');
   assert.match(value.recordIdentity, /^[0-9a-f]{16}$/);
+  assert.deepEqual(serviceHeaderShapes(source), { count: 1, truncated: false,
+    shapes: [{ recognized: true, component: 'probe', callingPackage: 'application' }] });
+  assert.equal(parseServices(source.replace(` c:${PACKAGE}`, ''))[0].component, PROBE);
+  const second = source.replace('a123', 'b456').replaceAll(PROBE, GUARD).replace('types=0x00000010', 'types=0x00000090');
+  const records = parseServices(source + second.slice(second.indexOf('  * ServiceRecord')));
+  assert.deepEqual(records.map(record => [record.component, record.types]), [[PROBE, 16], [GUARD, 144]]);
+  assert.notEqual(records[0].recordIdentity, records[1].recordIdentity);
+  assert.throws(() => parseServices(source.replace(` c:${PACKAGE}`, ` c:${PACKAGE} unknown:extra`)), /Unsupported ServiceRecord header/);
+  assert.equal(serviceHeaderShapes(source.replace(` c:${PACKAGE}`, ' unknown:extra')).shapes[0].recognized, false);
+  const bounded = serviceHeaderShapes(Array(13).fill(source).join(''));
+  assert.equal(bounded.count, 13); assert.equal(bounded.truncated, true); assert.equal(bounded.shapes.length, 12);
   assert.throws(() => parseServices('unknown platform output'));
 });
 

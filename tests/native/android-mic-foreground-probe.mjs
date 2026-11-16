@@ -16,21 +16,35 @@ export const PROBE = 'com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionP
 const BASE = 16, MIC = 128, FOREGROUND_MODE = 4;
 const TOP_REASONS = new Set(['PROC_STATE_TOP', 'UID_VISIBLE']);
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+const serviceHeader = /^[ \t]*\* ServiceRecord\{[0-9a-f]+ u[0-9]+ ([^\s{}]+\/[^\s{}]+)(?: c:([A-Za-z0-9_.]+))?\}[ \t]*$/;
+const candidateHeaders = text => [...text.matchAll(/^[ \t]*\* ServiceRecord\{[^\r\n]*$/gm)];
+
+/** Preserve only bounded header classifications when an unfamiliar platform dump fails parsing. */
+export function serviceHeaderShapes(text) {
+  const headers = candidateHeaders(text);
+  return { count: headers.length, truncated: headers.length > 12, shapes: headers.slice(0, 12).map(header => {
+    const fields = serviceHeader.exec(header[0]), component = fields?.[1].split('/')[1];
+    return { recognized: Boolean(fields), component: component === GUARD ? 'guard' : component === PROBE ? 'probe' : 'other-or-unknown',
+      callingPackage: !fields ? 'unknown' : !fields[2] ? 'absent' : fields[2] === PACKAGE ? 'application' : 'other' };
+  }) };
+}
 
 /** Fail closed on unknown dumps; only bounded classifications leave the controller. */
 export function parseServices(text) {
   assert.match(text, /ACTIVITY MANAGER SERVICES/, 'Unsupported service dump.');
-  const headers = [...text.matchAll(/^\s*\* ServiceRecord\{[^\n]*?\s([^\s}]+\/[^\s}]+)\}/gm)];
+  const headers = candidateHeaders(text).map(header => {
+    const fields = serviceHeader.exec(header[0]); assert.ok(fields, 'Unsupported ServiceRecord header.');
+    return { index: header.index, text: header[0], component: fields[1].split('/')[1] };
+  });
   return headers.map((header, index) => {
     const block = text.slice(header.index, headers[index + 1]?.index ?? text.length);
-    const component = header[1].split('/')[1];
     const reason = name => {
       const match = new RegExp('\\b' + name + '=([A-Z0-9_]+)').exec(block);
       return match?.[1] ?? null;
     };
     const type = /\btypes=0x([0-9a-f]+)/i.exec(block);
     const caller = /\brecentCallingUid=(\d+)/.exec(block);
-    return { component, recordIdentity: createHash('sha256').update(header[0]).digest('hex').slice(0, 16),
+    return { component: header.component, recordIdentity: createHash('sha256').update(header.text).digest('hex').slice(0, 16),
       foreground: /\bisForeground=true\b/.test(block),
       types: type ? Number.parseInt(type[1], 16) : 0,
       wiuStart: reason('getFgsAllowWiu_forStart'), wiuCapabilities: reason('getFgsAllowWiu_forCapabilities'),
@@ -227,8 +241,10 @@ export async function runProof({ adb = process.env.ADB || 'adb', serial = proces
             command(['shell', 'cmd', 'appops', 'get', PACKAGE, 'RECORD_AUDIO']),
           ]);
           const recording = parseRecordingOp(ops);
+          result.lastSystemObservation = { phase: report.phase, serviceHeaderShapes: serviceHeaderShapes(services) };
           const snapshot = { services: parseServices(services), instrumentationAbsent: instrumentationAbsent(processes),
             uidState: parseUidState(uidState), recordingActive: recording.active, recordingOpMode: recording.mode };
+          result.lastSystemObservation.system = snapshot;
           // First post-denial heartbeat can be up to two seconds later; observe the same stable phase again.
           if (report.phase === 'negative-mic-rejected-base-live' && !report.events.some(event => event.event === 'guard-heartbeat' &&
             event.atElapsedMs > (report.events.find(event => event.event === 'start-foreground-rejected')?.atElapsedMs ?? Infinity))) {
@@ -262,7 +278,7 @@ export async function runProof({ adb = process.env.ADB || 'adb', serial = proces
         remainingOwnedServices: 0, remainingOwnedNotifications: notifications,
         permissionRevokeDuringMeasuredPhase: false, permissionRevocationProcessKillClaimed: false });
     }
-    delete result.lastAppReport; delete result.currentObservations; delete result.currentScenario;
+    delete result.lastAppReport; delete result.currentObservations; delete result.currentScenario; delete result.lastSystemObservation;
     result.status = 'passed'; result.normalCleanupVerified = true;
   } catch (error) {
     result.status = 'failed'; result.failure = error.message;
