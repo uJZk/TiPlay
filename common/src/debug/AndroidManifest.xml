@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionProofActivity"
+            android:exported="true"
+            android:label="TiPlay foreground admission proof" />
+        <service
+            android:name="com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionGuardService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <service
+            android:name="com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionProbeService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|microphone" />
+    </application>
+</manifest>

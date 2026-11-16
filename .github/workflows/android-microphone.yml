@@ -1,0 +1,103 @@
+name: Android microphone foreground admission
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-microphone-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  foreground-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358 emulator system-images;android-36;google_apis;x86_64
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Check isolated admission evidence gates
+        run: |
+          node tests/native/android-mic-foreground-probe.test.mjs
+          python3 tests/native/test_android_microphone_workflow.py
+      - name: Assemble source-only debug APK without instrumentation
+        run: |
+          ./gradlew :mobile:assembleDebug --no-daemon --max-workers=1 --no-parallel \
+            --no-configuration-cache -Pkotlin.compiler.execution.strategy=in-process \
+            '-Dorg.gradle.jvmargs=-Xmx1280m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -I gradle/ci-memory.init.gradle
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          apks = list(Path('mobile/build/outputs/apk/debug').glob('*.apk'))
+          assert len(apks) == 1
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('ANDROID_FGS_APP_APK=' + str(apks[0].resolve()) + '\n')
+          PY
+      - name: Start owned accelerated API36 emulator
+        env:
+          ANDROID_AVD_HOME: ${{ runner.temp }}/tiplay-fgs-avd
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then echo 'Blocked: KVM unavailable.' >&2; exit 1; fi
+          sudo chmod a+rw /dev/kvm
+          sed -n 's/^Pkg.Revision[[:space:]]*=[[:space:]]*/Android emulator SDK revision: /p' "$ANDROID_HOME/emulator/source.properties"
+          "$ANDROID_HOME/emulator/emulator" -accel-check
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'no\n' | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd -f -n tiplay-fgs \
+            -k 'system-images;android-36;google_apis;x86_64'
+          nohup "$ANDROID_HOME/emulator/emulator" -avd tiplay-fgs -port 5554 -no-window -no-audio \
+            -no-boot-anim -no-snapshot -gpu swiftshader_indirect -accel on \
+            > "$RUNNER_TEMP/tiplay-fgs-emulator.log" 2>&1 &
+          printf 'TIPLAY_FGS_EMULATOR_PID=%s\n' "$!" >> "$GITHUB_ENV"
+          timeout 300 "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 wait-for-device
+          booted=0
+          for attempt in $(seq 1 150); do
+            if [ "$("$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then booted=1; break; fi
+            sleep 2
+          done
+          if [ "$booted" != 1 ]; then echo 'Blocked: API36 emulator boot timed out.' >&2; exit 1; fi
+          printf 'ANDROID_SERIAL=emulator-5554\n' >> "$GITHUB_ENV"
+          "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell input keyevent 82
+      - name: Observe real app-owned foreground admission and degradation
+        env:
+          ANDROID_FGS_PROOF_OUTPUT: ${{ runner.temp }}/tiplay-microphone-admission/proof.json
+        run: node tests/native/android-mic-foreground-probe.mjs
+      - name: Stop only the owned emulator
+        if: always()
+        run: |
+          if [ -n "${TIPLAY_FGS_EMULATOR_PID:-}" ] && kill -0 "$TIPLAY_FGS_EMULATOR_PID" 2>/dev/null; then
+            "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 emu kill || true
+            for attempt in $(seq 1 20); do
+              if ! kill -0 "$TIPLAY_FGS_EMULATOR_PID" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            if kill -0 "$TIPLAY_FGS_EMULATOR_PID" 2>/dev/null; then
+              echo 'Owned emulator required termination after console cleanup.'
+              kill "$TIPLAY_FGS_EMULATOR_PID"
+            fi
+          fi
+      - name: Upload bounded admission evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiplay-android-microphone-admission
+          path: ${{ runner.temp }}/tiplay-microphone-admission/*.json
+          if-no-files-found: warn
+          retention-days: 3
