@@ -13,6 +13,11 @@ export const PACKAGE = 'com.ujzk.tiplay.hudtest';
 export const ACTIVITY = 'com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionProofActivity';
 export const GUARD = 'com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionGuardService';
 export const PROBE = 'com.shilapi.xcertplay.foregroundproof.ForegroundAdmissionProbeService';
+export const REQUIRED_PHASES = Object.freeze({
+  positive: Object.freeze(['positive-visible-armed', 'positive-background-retained', 'positive-background-downgraded']),
+  background: Object.freeze(['negative-guard-visible', 'negative-before-probe', 'negative-mic-rejected-base-live']),
+  missing: Object.freeze(['missing-rejected-base-live']),
+});
 const BASE = 16, MIC = 128, FOREGROUND_MODE = 4;
 const TOP_REASONS = new Set(['PROC_STATE_TOP', 'UID_VISIBLE']);
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -130,6 +135,7 @@ function serviceAt(snapshot, component, types, uid) {
 }
 
 export function validateObservation(phase, report, snapshot) {
+  assert.ok(REQUIRED_PHASES[report.scenario]?.includes(phase), 'Unexpected proof phase for this scenario.');
   const state = report.lastState, uid = report.runtime.uid;
   assert.equal(snapshot.instrumentationAbsent, true, 'Instrumentation exemption invalidates this proof.');
   assert.equal(snapshot.recordingActive, false, 'The admission proof must not record audio.');
@@ -147,10 +153,13 @@ export function validateObservation(phase, report, snapshot) {
     assert.equal(state.recordAudioRawMode, FOREGROUND_MODE, 'A permissive app-op would bypass the negative.');
     assert.equal(snapshot.recordingOpMode, 'foreground', 'Independent app-op mode differs.');
   }
-  if (phase === 'negative-before-probe') {
+  if (phase === 'negative-guard-visible' || phase === 'negative-before-probe') {
     assert.equal(report.probeCreateCount, 0, 'The negative probe must be a fresh ServiceRecord.');
     assert.equal(snapshot.services.some(service => service.component === PROBE), false);
-    serviceAt(snapshot, GUARD, BASE, uid);
+    const guard = serviceAt(snapshot, GUARD, BASE, uid);
+    if (phase === 'negative-guard-visible') {
+      assert.ok(TOP_REASONS.has(guard.wiuStart)); assert.ok(TOP_REASONS.has(guard.wiuCapabilities));
+    }
   } else if (phase === 'negative-mic-rejected-base-live') {
     assert.equal(report.probeCreateCount, 1);
     serviceAt(snapshot, GUARD, BASE, uid);
@@ -220,8 +229,7 @@ export async function runProof({ adb = process.env.ADB || 'adb', serial = proces
       }
       const token = randomBytes(12).toString('hex'), reportPath = `files/foreground-admission-${token}.json`;
       result.currentScenario = scenario;
-      const needed = scenario === 'positive' ? ['positive-visible-armed', 'positive-background-retained', 'positive-background-downgraded'] :
-        scenario === 'background' ? ['negative-guard-visible', 'negative-before-probe', 'negative-mic-rejected-base-live'] : ['missing-rejected-base-live'];
+      const needed = REQUIRED_PHASES[scenario];
       const observations = new Map();
       await command(['shell', 'am', 'start', '-W', '-n', PACKAGE + '/' + ACTIVITY, '--es', 'scenario', scenario, '--es', 'runToken', token]);
       const deadline = Date.now() + 210_000;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PACKAGE, GUARD, PROBE, parseServices, serviceHeaderShapes, parseUidState, instrumentationAbsent, parseRecordingOp, ownedNotifications, frozenAppMetadata,
+import { PACKAGE, GUARD, PROBE, REQUIRED_PHASES, parseServices, serviceHeaderShapes, parseUidState, instrumentationAbsent, parseRecordingOp, ownedNotifications, frozenAppMetadata,
   validateIdentity, validateObservation } from './android-mic-foreground-probe.mjs';
 
 function fixture() {
@@ -143,3 +143,74 @@ test('missing-permission control cannot be relabeled as a while-in-use denial', 
   validateObservation('missing-rejected-base-live', report, snapshot);
   report.lastState.recordAudioGranted = true; assert.throws(() => validateObservation('missing-rejected-base-live', report, snapshot));
 });
+
+function phaseFixture(phase) {
+  const value = fixture(), { report, snapshot } = value;
+  if (phase.startsWith('positive-')) {
+    report.scenario = 'positive'; report.events = []; report.lastState.activeServices = ['probe'];
+    snapshot.services.shift(); const probe = snapshot.services[0];
+    probe.types = phase === 'positive-background-downgraded' ? 16 : 144;
+    probe.wiuStart = probe.wiuCapabilities = 'PROC_STATE_TOP';
+  } else if (['negative-guard-visible', 'negative-before-probe'].includes(phase)) {
+    report.probeCreateCount = 0; report.lastState.activeServices = ['guard']; snapshot.services.pop();
+    snapshot.services[0].wiuStart = snapshot.services[0].wiuCapabilities = 'PROC_STATE_TOP';
+  } else if (phase === 'missing-rejected-base-live') {
+    report.scenario = 'missing'; report.lastState.activeServices = ['probe']; report.lastState.recordAudioGranted = false;
+    report.events[2].details.message = 'MICROPHONE_PERMISSION_MISSING'; snapshot.services.shift();
+  }
+  if (['positive-visible-armed', 'negative-guard-visible', 'missing-rejected-base-live'].includes(phase)) {
+    report.lastState.importance = 100; report.lastState.uiResumed = true;
+    report.lastState.backgroundElapsedMs = -1; snapshot.uidState = 'top';
+  }
+  return value;
+}
+
+const phaseControls = {
+  'positive-visible-armed': [
+    (r, s) => { s.services[0].types = 16; }, (r, s) => { s.services[0].wiuStart = 'DENIED'; },
+    r => { r.lastState.uiResumed = false; },
+  ],
+  'positive-background-retained': [
+    (r, s) => { s.services[0].types = 16; }, r => { r.lastState.backgroundElapsedMs = 500; },
+    (r, s) => { s.services[0].wiuCapabilities = 'DENIED'; },
+  ],
+  'positive-background-downgraded': [
+    (r, s) => { s.services[0].types = 144; }, (r, s) => { s.services[0].foreground = false; },
+  ],
+  'negative-guard-visible': [
+    r => { r.probeCreateCount = 1; }, (r, s) => { s.services.push({ ...s.services[0], component: PROBE }); },
+    (r, s) => { s.services[0].types = 144; }, (r, s) => { s.services[0].recentCallingUid = 2000; },
+    (r, s) => { s.services[0].wiuStart = 'DENIED'; },
+  ],
+  'negative-before-probe': [
+    r => { r.probeCreateCount = 1; }, (r, s) => { s.services.push({ ...s.services[0], component: PROBE }); },
+    (r, s) => { s.uidState = 'top'; },
+  ],
+  'negative-mic-rejected-base-live': [
+    (r, s) => { s.services[1].wiuCapabilities = 'PROC_STATE_TOP'; },
+    r => { r.events[1].details.eligibleStateMentioned = false; },
+    (r, s) => { s.services[0].foreground = false; },
+  ],
+  'missing-rejected-base-live': [
+    r => { r.lastState.recordAudioGranted = true; }, (r, s) => { s.services[0].types = 144; },
+    r => { r.events[2].details.message = 'MICROPHONE_ELIGIBILITY_UNAVAILABLE'; },
+  ],
+};
+
+test('phase-control matrix covers every controller-required observation window', () => {
+  assert.deepEqual(Object.values(REQUIRED_PHASES).flat().sort(), Object.keys(phaseControls).sort());
+  const { report, snapshot } = phaseFixture('positive-visible-armed');
+  assert.throws(() => validateObservation('positive-unknown-window', report, snapshot));
+  assert.throws(() => validateObservation('negative-guard-visible', report, snapshot));
+});
+
+for (const [phase, controls] of Object.entries(phaseControls)) {
+  test(`required phase ${phase} accepts its valid predicate and rejects each invalid control`, () => {
+    const { report, snapshot } = phaseFixture(phase); validateObservation(phase, report, snapshot);
+    for (const mutate of controls) {
+      const changedReport = structuredClone(report), changedSnapshot = structuredClone(snapshot);
+      mutate(changedReport, changedSnapshot);
+      assert.throws(() => validateObservation(phase, changedReport, changedSnapshot));
+    }
+  });
+}
