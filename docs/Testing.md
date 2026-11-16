@@ -7,23 +7,38 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
-### Beta.53 source preparation
+<a id="beta53-source-preparation"></a>
+### Beta.53
 
-Staged beta.53/code95/browser v125 combines typed selected-HEADSET/SCO-input
-association with HFP checks before reads/sends through generic association and
-actual-record-port checks. Warmup reads
-nothing and is followed by a fresh recorder. The early foreground wait lease is
-removed: three main/two test files match `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`; active-session FGS/onResume
-and the intended-radio fixture remain.
-Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
-zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
-has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
+Published beta.53/code95/browser v125 comes from
+`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. Fresh JVM/Robolectric source checks
+pass 153 shared/90 common cases across ten/six suites: 243 distinct cases with zero
+failures/errors/skips. Bootstrap coverage has 36 cases, nineteen added here; tests
+cover generic versus conflicting identities, ambiguous/other HEADSETs, handset/null/
+changed actual ports, stale demand, bounded startup across IPC and no-read warmup
+followed by a fresh recorder. The common rollback preserves active-session FGS,
+onResume and the radio fixture. Another 91 scoped browser, two site, nine
 release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
-Signed/public artifact, Android runtime and physical MIC results remain unverified.
-Android source tests cover ambiguous/other devices, generic addresses versus
-contradictions, handset/null/changed ports, stale demand and warmup-buffer isolation.
-The beta.52 ingress-only capture does not measure outgoing MIC packets or prove
-which microphone supplied partial Siri recognition. Full CI remains waived.
+
+[Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
+passes three scenarios/seven independently replayed phases from the exact final source.
+The source-built beta.53/code95 debug APK runs as UID10216/`untrusted_app`,
+targetSdk37, without instrumentation. Visible MIC foreground admission remains
+through 45.073 seconds in background and then downgrades to base type. A fresh
+background MIC attempt is rejected despite granted permission while the original
+guard/base services survive; missing permission also retains base type. All scenarios
+clean up normally with no owned service/notification left and no forced cleanup.
+The 9,248-byte official artifact matches its API digest. The unchanged helper does
+not exercise the new typed microphone association, warmup, AudioRecord or Bluetooth;
+it does not certify production Host integration or run the signed release APK.
+The beta.52 capture's partial Siri recognition has no established physical/software input source;
+ingress diagnostics do not measure outgoing MIC UDP. MAC or foreground timing is
+not a proven unique cause.
+[Build](Build.md#beta53-release) records actual signed/public identities separately.
+`ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=true`; all
+release/API/file/route checks pass on first request with zero retries. The earlier
+beta.52 retired-route 503 is historical and is not a beta.53 exception.
+Full CI remains waived; physical MIC/Siri quality remains pending.
 
 <a id="beta52-source-preparation"></a>
 ### Beta.52 reference

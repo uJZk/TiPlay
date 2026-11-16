@@ -181,17 +181,17 @@ Host/Service/TeslaBrowserLink and two old tests are byte-identical to beta.51 so
 permission degradation and legal onResume retry remain; `hasSession`/`isOwner`
 semantics and the explicit-radio fixture are preserved. This rollback follows the
 user's request, not a newly established foreground cause.
-Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
-zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
-has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
-release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
-The [frozen beta.52 verification record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Testing.md#beta52-source-preparation)
-retains its 244 Android/91 browser cases and same-source seven-phase API36 helper
-proof. The helper records no AudioRecord/Bluetooth and does not verify production
-Host integration or physical Siri capture; it does not certify removed early-wait
-integration or the new microphone admission. Physical car MIC/acoustic acceptance
-remains pending. No global Bluetooth voice-recognition workaround or handset
-microphone fallback is introduced.
+Beta.53 source checks pass 153 shared/90 common cases: 243 distinct JVM/Robolectric
+cases with zero failures/errors/skips, including nineteen new bootstrap cases.
+Ninety-one scoped browser cases, the site/release/symbol checks and RTC verification
+also pass. [Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
+passes three scenarios/seven independently replayed phases from the exact final source.
+That helper verifies its exact recorded admission/cleanup protocol, not AudioRecord,
+Bluetooth or production Host integration. Publication does not establish that a
+masked input address or foreground timing caused the beta.52 wait. The typed proof,
+independent capture lease and zero-read warmup/fresh-recorder boundaries preserve
+source identity and best-effort output, while actual vehicle MIC samples and Siri
+recognition quality remain physical acceptance work.
 
 Device-route and audio-mode clients are cancelled independently. A platform
 exception retains only the unfinished ownership and retries at most three times,

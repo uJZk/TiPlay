@@ -362,16 +362,23 @@ still showed suppressed video; beta.26 records that separate follow-up.
 
 ## Current browser deployment
 
+### Browser v125
+
+Browser/cache **v125**, product **0.2.20-beta.53**, is deployed by
+[Pages run 43863549457](https://github.com/uJZk/TiPlay/actions/runs/43863549457)
+from `a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. All 226 files (37,828,528 bytes)
+match full bytes/SHA/MIME on first HTTP 200 across eight languages/21 suffix classes.
+All twenty routes match first request: eighteen HTTP 200/two expected retired 404,
+with zero retries. [Beta.53](#beta53-release) retains strict first-request verification
+and the signed/public APK identities.
+
 ### Browser v124
 
-Browser/cache **v124**, product **0.2.20-beta.52**, is deployed by
-[Pages run 43799862350](https://github.com/uJZk/TiPlay/actions/runs/43799862350)
-from `f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. All 226 files (37,828,528 bytes)
-match on first HTTP 200 with MIME checks across 21 suffix classes and eight
-languages. Final routes match eighteen HTTP 200/two expected retired 404; the
-retired `/update.html` needed one recorded retry after an initial 503.
-[Beta.52](#beta52-release) retains this qualified delivery and strict first-request
-failure alongside the published APK identities.
+Browser/cache v124, product beta.52, was deployed by Pages `43799862350` from
+`f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`. Its
+[frozen deployment record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Build.md#browser-v124)
+retains the qualified retired-route first503/second404 and strict first-request
+failure. That exception belongs to beta.52; beta.53's first requests all pass.
 
 ### Browser v123
 
@@ -436,18 +443,43 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
-### Beta.53 source preparation
+<a id="beta53-release"></a>
+### Published beta.53
 
-Beta.53/code95/browser v125 is staged with generated metadata and frozen source.
-It implements typed selected-HEADSET/SCO source association, HFP verification before
-reads through generic association, and fresh-recorder startup after no-read warmup. The requested early
-foreground-wait preparation is removed; existing active-session FGS/onResume remain.
-Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
-zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
-has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
-release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
-No signing, publication, deployment or physical microphone result is recorded yet.
-Full CI remains waived.
+[Beta.53/code95/browser v125](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.53)
+was published **2026-11-16 20:06:19 (UTC+8)**, release `446974835`, from
+`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. It adds typed selected-HEADSET/SCO
+input association, generic-route HFP validation and fresh-recorder startup after
+no-read warmup; it removes early foreground-wait preparation while preserving
+active-session FGS/onResume and best-effort output.
+
+[Signed run 43860786678](https://github.com/uJZk/TiPlay/actions/runs/43860786678)
+passes all three jobs and twelve artifact groups. Twenty-four typed-MIC compiled
+definitions, five common source files restored exactly to `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`,
+early-preparation/debug exclusion, signer/runtime identity and 16 KiB checks pass.
+Durable JNI archive `446974559` inventories 51 libraries: 43 Build IDs/eight
+confirmed no-ID, with 32 matching symbol pairs (24 JNI/eight unchanged producer)
+and nineteen historical symbol gaps. All sixteen packaged notices match, including
+the eleven RTC notices. Four audio JNI ABI libraries are byte-identical to both
+beta.52 and beta.51.
+All three anonymous assets and two API requests pass first HTTP 200; full bytes,
+SHA-256, API digests, checksums, source tag and public notes match the verified inputs.
+Pages `43863549457` from the same source passes all 226 files (37,828,528 bytes) on first
+HTTP 200 with full bytes/SHA/MIME matching across eight languages/21 suffix classes.
+All twenty routes pass first request: eighteen HTTP 200/two expected retired 404.
+`ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=true`; all
+release/API/file/route checks pass on first request with zero retries. The earlier
+beta.52 retired-route 503 is historical and is not a beta.53 exception.
+[Testing](Testing.md#beta53-source-preparation) separates 243 focused Android/91
+browser source cases and the actual helper protocol. Software and delivery checks
+do not establish vehicle microphone source or Siri recognition quality. Full CI
+remains waived.
+
+| Published artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `TiPlay-0.2.20-beta.53.apk` | 114,631,532 | `41419a012f7756c403d313784e2671b37c57e043e4e8c2c7c03fa0a5be6d999c` |
+| `TiPlay-0.2.20-beta.53-source.zip` | 70,400,173 | `98ad69cf68e204486386b4b0dff39aeb431c82fe3dceb93c8f848cc92451fecb` |
+| `SHA256SUMS.txt` | 191 | `e825cf2dcdca223b584bccefcb20cb9b8ca80a31dd5f03c0b3b4debd52953492` |
 
 <a id="beta52-release"></a>
 ### Published beta.52 reference

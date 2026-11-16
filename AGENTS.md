@@ -43,20 +43,48 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume the staged [beta.53 source work](docs/Testing.md#beta53-source-preparation),
-code95/browser v125. Metadata is bumped
-and source is frozen; focused Android checks pass. The published
-[beta.52 reference](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Build.md#beta52-release)
-retains build source `f0d0b7f0fdc573edf1e07cbea8d4c66a9e582357`, signed run
-`43798314175`, Pages `43799862350`, hashes and actual API36 helper proof. Its
-qualified delivery preserves `/update.html` first 503/second 404, twenty-one route
-events and strict first-request failure; no whole-site zero-retry pass is claimed.
-Native inventory retains 32 matching symbol pairs and nineteen historical gaps.
-These results do not apply automatically to beta.53.
+Resume the published [beta.53](docs/Build.md#beta53-release) and its
+[source and runtime checks](docs/Testing.md#beta53-source-preparation).
+Beta.53/code95/browser v125 comes from
+`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3` and was published at
+**2026-11-16 20:06:19 (UTC+8)**. Signed run `43860786678` passes all three jobs and
+twelve artifact groups,
+twenty-four compiled typed-MIC definitions, source-exact foreground rollback and
+early-preparation/debug exclusion. All three release assets and two anonymous API
+requests pass first HTTP 200,
+full-byte/SHA/API-digest/checksum/tag/body checks. Pages `43863549457` succeeds
+from the same source; all 226 files (37,828,528 bytes) pass first HTTP 200,
+full-byte/SHA/MIME checks across eight languages/21 suffix classes. All twenty
+routes pass on the first request: eighteen HTTP 200/two expected retired 404.
+Both product delivery and strict first-request verification pass with zero retries.
+Durable JNI archive `446974559` inventories 51 libraries: 43 Build IDs/eight
+confirmed no-ID, with 32 matching symbol pairs (24 JNI/eight unchanged producer)
+and nineteen historical symbol gaps. All sixteen packaged notices match, including
+the eleven RTC notices. Four audio JNI ABI libraries are byte-identical to both
+beta.52 and beta.51.
+
+Fresh focused source checks pass 153 shared and 90 common cases: 243 distinct
+cases with zero failures/errors/skips, including 36 bootstrap cases (nineteen new).
+Another 91 scoped browser, two site, nine release-draft and sixteen native-symbol
+cases and RTC verification pass. [Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
+passes three scenarios/seven independently replayed phases from the exact final source.
+A helper proof does not execute physical MIC capture or Bluetooth and does not
+certify production Host integration. The helper does not run the signed release APK.
+
+The typed generic-SCO association binds a selected sole connected HEADSET, current
+owned SCO route and unique positive input port to live demand/selection. It rejects
+contradictory identities, ambiguous devices, handset inputs and stale epochs; exact
+address capture keeps its independent route checks. Needed warmup reads nothing,
+then a fresh recorder validates actual ports and the generic association's HFP
+state before every read/send. No warmup buffer or handset fallback is uploaded.
+Early foreground-wait preparation is removed as requested: three common main files
+and two existing tests match `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`, prep-only
+helper/tests are deleted, active-session FGS/onResume and the radio fixture remain.
+This scope does not prove a unique field cause in MAC identity or foreground timing.
 
 Latest beta.52 field evidence on Android 16/API36 spans 46.519 seconds of
-ingress/diagnostics after
-session startup. The current process has thirteen speechrecognition SETUPs and
+ingress/diagnostics after session startup. The current process has thirteen
+speechrecognition SETUPs and
 twelve accepted SCO requests; the raw window has four/three respectively.
 No input grant, duplex-ready, capture-end or uplink marker is observed. Outgoing
 microphone wire packets are not tapped, so MIC UDP/PCM counts remain unknown.
@@ -65,28 +93,11 @@ the recognized sound's physical/software source is unestablished. No codec/gain
 mismatch or current foreground rejection identifies the cause. Actual SCO selection,
 HEADSET audio state and input-address admission are separate unrecorded waiting gates.
 
-The microphone path binds a typed proof to the sole selected connected HEADSET,
-owned current SCO route, unique positive SCO source port and live demand/selection
-revision. Missing/known-placeholder addresses may use that relation; any conflicting
-valid address, ambiguous device, handset input or stale generation rejects it.
-When generic association needs HFP activation, bounded warmup reads nothing and a
-fresh recorder revalidates the actual source port and live HFP state before each
-read/send. Exact-address capture keeps its independent route checks. Never upload a
-warmup buffer or use a handset microphone fallback. Do not relabel suspected
-input-address masking as the captured unique cause or partial recognition as Tesla
-MIC uplink proof. Keep best-effort output and browser call suppression unchanged.
+Physical MIC/Siri acceptance remains pending. Full CI remains waived.
 
-The user-requested early foreground-preparation rollback is source-frozen:
-three common main files and two existing tests match beta.51 source `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`
-byte for byte; preparation helper/two tests are removed. Active-session foreground
-service and legal onResume retry remain, along with the explicit-radio test fixture.
-This is requested scope, not proof that foreground timing caused this capture.
-Fresh Android checks pass 153 shared and 90 common cases: **243 distinct cases,
-zero failures/errors/skips** across ten shared/six common suites. Bootstrap coverage
-has 36 cases, nineteen added here. Another 91 scoped browser, two site, nine
-release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
-Signing, public delivery, production Host runtime and physical MIC/Siri acceptance
-remain pending. Full CI remains waived; no blind repeat logs or diagnostic-only beta.
+The [frozen beta.52 publication record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Build.md#beta52-release)
+retains its earlier qualified 503→404 route history and strict first-request failure;
+those observations belong to beta.52, while beta.53 passes all first requests.
 
 The [frozen beta.51 publication record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Build.md#beta51-release)
 retains its earlier source/delivery identities. The native-audio preference still
