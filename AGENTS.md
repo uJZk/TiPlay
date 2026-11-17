@@ -7,6 +7,9 @@ failure must not suppress all downlink playback. Keep microphone capture indepen
 this output preference does not authorize switching capture to the handset microphone.
 During microphone/call demand, telephone downlink stays on Android and remains
 suppressed in the browser until demand ends and the owned Android route is released.
+Once an Android voice channel exists, the same ownership includes Siri and permitted
+guidance; if no channel can be created, non-call speech keeps its browser path.
+Preserve ordinary browser music and Siri/guidance outside that demand.
 Keep inherited native files for upstream merging; do not add product navigation,
 settings or acceptance tests for native head units. Preserve shared session,
 media, permission and connection contracts used by the phone/browser product.
@@ -43,57 +46,58 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Resume the published [beta.53](docs/Build.md#beta53-release) and its
-[source and runtime checks](docs/Testing.md#beta53-source-preparation).
-Beta.53/code95/browser v125 comes from
-`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3` and was published at
-**2026-11-16 20:06:19 (UTC+8)**. Signed run `43860786678` passes all three jobs and
-twelve artifact groups,
-twenty-four compiled typed-MIC definitions, source-exact foreground rollback and
-early-preparation/debug exclusion. All three release assets and two anonymous API
-requests pass first HTTP 200,
-full-byte/SHA/API-digest/checksum/tag/body checks. Pages `43863549457` succeeds
-from the same source; all 226 files (37,828,528 bytes) pass first HTTP 200,
-full-byte/SHA/MIME checks across eight languages/21 suffix classes. All twenty
-routes pass on the first request: eighteen HTTP 200/two expected retired 404.
-Both product delivery and strict first-request verification pass with zero retries.
-Durable JNI archive `446974559` inventories 51 libraries: 43 Build IDs/eight
-confirmed no-ID, with 32 matching symbol pairs (24 JNI/eight unchanged producer)
-and nineteen historical symbol gaps. All sixteen packaged notices match, including
-the eleven RTC notices. Four audio JNI ABI libraries are byte-identical to both
-beta.52 and beta.51.
+Prepared source for **beta.54/code96/browser v126** addresses MIC-period output;
+resume at [Robustness](docs/Robustness.md#microphone-and-call-period-output),
+[Testing](docs/Testing.md#beta54-source-preparation) and [Todo](docs/Todo.md#browser-and-carplay-audio).
+Fresh focused JVM/Robolectric checks pass **186 distinct cases across eleven
+suites**, with zero failures/errors/skips: 168 media/18 encoded-hub cases.
+Bootstrap has 48 cases (twelve new), the sink 28 (three new). Another 88 browser
+and 27 Python cases plus RTC/cache checks pass. Signed packaging and publication
+remain **pending**; no physical speaker result follows from these checks. Full CI
+remains waived by the user.
 
-Fresh focused source checks pass 153 shared and 90 common cases: 243 distinct
-cases with zero failures/errors/skips, including 36 bootstrap cases (nineteen new).
-Another 91 scoped browser, two site, nine release-draft and sixteen native-symbol
-cases and RTC verification pass. [Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
-passes three scenarios/seven independently replayed phases from the exact final source.
-A helper proof does not execute physical MIC capture or Bluetooth and does not
-certify production Host integration. The helper does not run the signed release APK.
+The latest published package remains beta.53/code95/browser v125, source
+`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. Its
+[frozen publication record](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Build.md#beta53-release)
+and [frozen source/helper checks](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Testing.md#beta53-source-preparation)
+retain signed/public identities and their original verification scope.
 
-The typed generic-SCO association binds a selected sole connected HEADSET, current
-owned SCO route and unique positive input port to live demand/selection. It rejects
-contradictory identities, ambiguous devices, handset inputs and stale epochs; exact
-address capture keeps its independent route checks. Needed warmup reads nothing,
-then a fresh recorder validates actual ports and the generic association's HFP
-state before every read/send. No warmup buffer or handset fallback is uploaded.
-Early foreground-wait preparation is removed as requested: three common main files
-and two existing tests match `9a03b85c61385e616c5cbbf714a60ea3bfe3e101`, prep-only
-helper/tests are deleted, active-session FGS/onResume and the radio fixture remain.
-This scope does not prove a unique field cause in MAC identity or foreground timing.
+New beta.53 field evidence on Android 16/API36 spans **9.808 seconds**, from
+**2026-11-17 17:15:42.098 to 17:15:51.906 (UTC+8)**, with 3,684 continuous
+journal records. The user confirms the microphone now works. The app records
+77,440 captured samples, 75,435 nonzero samples, 241 encoded frames and 240
+microphone UDP sends with zero send errors. These counters establish actual
+capture/encoding/sending, with recognition quality and sustained use still
+requiring physical acceptance. Preserve the typed selected-HEADSET/owned-SCO/unique
+input-port proof, zero-read warmup/fresh recorder and independent MIC revocation.
+Do not restore the removed early foreground-wait preparation.
 
-Latest beta.52 field evidence on Android 16/API36 spans 46.519 seconds of
-ingress/diagnostics after session startup. The current process has thirteen
-speechrecognition SETUPs and
-twelve accepted SCO requests; the raw window has four/three respectively.
-No input grant, duplex-ready, capture-end or uplink marker is observed. Outgoing
-microphone wire packets are not tapped, so MIC UDP/PCM counts remain unknown.
-The user confirms vehicle telephone-channel activation and partial Siri recognition;
-the recognized sound's physical/software source is unestablished. No codec/gain
-mismatch or current foreground rejection identifies the cause. Actual SCO selection,
-HEADSET audio state and input-address admission are separate unrecorded waiting gates.
+The current failure concerns playback while MIC demand is active. The beta.53
+sink sends Siri/guidance to the browser, and SCO capture bootstrap retains the
+Android media/A2DP playback track. The raw window contains Siri only: the browser
+renders nonzero Siri output while Android's last observed output remains A2DP.
+`duplex-ready outputMatched=true` compares against that retained output and does
+not establish SCO speaker playback. Navigation/MIC overlap is a source/test
+requirement, not an event observed in this raw window. The user requires Siri and
+guidance to use car Bluetooth during MIC demand. Vehicle speaker sound and an
+OEM-specific reason for losing browser/A2DP sound remain unmeasured; no codec,
+gain, RTP clock or native change follows from this evidence.
 
-Physical MIC/Siri acceptance remains pending. Full CI remains waived.
+The prepared sink moves Siri/permitted guidance to an existing Android speech
+channel during MIC/call demand, suppressing browser speech until owned cleanup
+completes; absent/throwing factories keep
+non-call browser speech. Telephone browser suppression remains unconditional.
+The same Devices/capture lease keeps one speaker worker, switching to a voice
+AudioTrack for the associated owned SCO sink and requiring the actual type/port.
+Association can switch output while MIC warmup runs; it does not wait for MIC
+success. Held write blocks expire at 160 ms, no-progress has an independent
+two-second limit and pending initial SCO admission retains its original eight-second
+budget. Target CAS/failure markers and target/probe/deadline callback fences reject
+old cancellations. Capture/speaker ACKs precede cleanup; failed owned cleanup
+retains `released=false` while media playback can recover. Fifteen MIC proof
+helpers remain byte-identical to the beta.53 baseline. Typed proof, warmup and
+fresh recording remain intact; no common/FGS, native, codec/RTP or gain change is
+part of this output correction. Actual car speaker acceptance remains open.
 
 The [frozen beta.52 publication record](https://github.com/uJZk/TiPlay/blob/be09f17e52840fbf41a7cc6f22a459c41dcbde89/docs/Build.md#beta52-release)
 retains its earlier qualified 503→404 route history and strict first-request failure;
@@ -140,9 +144,9 @@ Restore it only after demand ends and owned output cleanup completes. This
 supersedes old blanket selected-only output/no-speaker rules; input permission
 and non-interference with another app's call remain independent requirements.
 The user authorized beta publication and waived full CI; keep focused checks,
-previous complete validation and artifact identity separate. Native ICE diagnosis
-is improved, but its vehicle cause, actual mirror picture and physical output/capture
-still require new evidence. Resource checks do not certify media decoding.
+previous complete validation and artifact identity separate. Those beta.49 checks
+did not establish the vehicle ICE cause, mirror picture or physical output/capture. The later MIC evidence above has its own scope.
+Resource checks do not certify media decoding.
 Resume audit remediation at [Robustness](docs/Robustness.md); keep its source
 verification and remaining hardware evidence separate from the published release.
 Beta.49 preserves browser failure generations through immediate bounded reporting,
@@ -215,8 +219,8 @@ packet feedback after replacement and collapse BWE to 30 kbps. Keep TWCC, REMB,
 real congestion guards and the one-time 32 Mbps prior. Do not reorder generated
 SDP or signal the intermediate offer. See [desktop RTP integration](docs/Testing.md#desktop-rtp-integration).
 
-When the source audio codec is negotiated, forward original encoded audio over standard
-WebRTC without Android decode/reencode. The independent audio peer uses libdatachannel's
+When the browser owns a negotiated audio stream, forward original encoded audio
+over standard WebRTC without Android decode/reencode. The independent audio peer uses libdatachannel's
 official packetizers, not private libWebRTC ABI hooks. Unsupported formats retain the
 DataChannel/libav/PCM-NetEq path. Keep RTP and fallback under the same mixing/ducking
 policy, bounded per-stream dispatch and direct decoder-Worker-to-Worklet PCM ports.
@@ -225,7 +229,7 @@ formats to PCM16/48 kHz for PCM-NetEq. Keep live audio and video independent.
 The native audio peer owns one detached, permanently muted, zero-volume audio
 playout anchor to activate Chromium's receiver. Wait for fulfilled `play()` and
 the exact Worklet binding before announcing slot readiness; retire the anchor
-with its peer. All audible sound stays in the common Worklet mixing/ducking graph.
+with its peer. All audible browser sound stays in the common Worklet mixing/ducking graph.
 This activation must not add another audible output or a video element.
 
 URL casting uses pinned libmedia AVPlayer for resource loading, buffering, decoding,

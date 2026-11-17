@@ -138,41 +138,43 @@ class BrowserAudioMediaSinkTest {
         } finally { sink.close(); voice.released() }
     }
 
-    @Test fun retiredCallDecoderFailureCannotRetireOrMarkItsReplacement() {
-        val hub = WebAudioHub(); lateinit var voice: Voice
-        val entered = java.util.concurrent.CountDownLatch(1)
-        val release = java.util.concurrent.CountDownLatch(1)
-        val creations = java.util.concurrent.atomic.AtomicInteger()
-        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
-            voiceFactory = BluetoothVoiceFactory { Voice(it).also { next -> voice = next } },
-            decoderFactory = {
-                creations.incrementAndGet(); entered.countDown()
-                val deadline = System.nanoTime() + 3_000_000_000L
-                while (release.count != 0L && System.nanoTime() < deadline) {
-                    try { release.await(10, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { }
-                }
-                error("retired codec failure")
-            })
-        val call = AudioStreamId(100, "telephony")
-        try {
-            sink.onMicrophoneStarted(call, config("telephony")); voice.ready()
-            sink.onAudioStarted(call, AudioFormat(AudioCodecKind.AAC_LC, 16000, 1, call.type, call.audioType), 0)
-            assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
-            @Suppress("UNCHECKED_CAST")
-            val renderers = BrowserAudioMediaSink::class.java.getDeclaredField("renderers").apply { isAccessible = true }
-                .get(sink) as Map<AudioStreamId, Any>
-            val old = requireNotNull(renderers[call])
-            val oldWorker = old.javaClass.getDeclaredField("thread").apply { isAccessible = true }.get(old) as Thread
-            packet(sink, call, 9)
-            release.countDown()
-            oldWorker.join(1_000)
-            assertFalse(oldWorker.isAlive)
-            awaitMain { voice.audio.isNotEmpty() }
-            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
-            assertNull(hub.voiceStatus()["error"])
-            assertEquals("active", hub.voiceStatus()["state"])
-            assertEquals(1, creations.get())
-        } finally { release.countDown(); sink.close(); voice.released() }
+    @Test fun retiredSpeechDecoderFailureCannotRetireOrMarkItsReplacement() {
+        for (id in listOf(AudioStreamId(100, "telephony"), AudioStreamId(100, "speechrecognition"),
+            AudioStreamId(101, "default"))) {
+            val hub = WebAudioHub(); lateinit var voice: Voice
+            val entered = java.util.concurrent.CountDownLatch(1)
+            val release = java.util.concurrent.CountDownLatch(1)
+            val creations = java.util.concurrent.atomic.AtomicInteger()
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+                voiceFactory = BluetoothVoiceFactory { Voice(it).also { next -> voice = next } },
+                decoderFactory = {
+                    creations.incrementAndGet(); entered.countDown()
+                    val deadline = System.nanoTime() + 3_000_000_000L
+                    while (release.count != 0L && System.nanoTime() < deadline) {
+                        try { release.await(10, java.util.concurrent.TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { }
+                    }
+                    error("retired codec failure")
+                })
+            try {
+                sink.onMicrophoneStarted(AudioStreamId(100, "speechrecognition"), config("speechrecognition")); voice.ready()
+                sink.onAudioStarted(id, AudioFormat(AudioCodecKind.AAC_LC, 16000, 1, id.type, id.audioType), 0)
+                assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
+                @Suppress("UNCHECKED_CAST")
+                val renderers = BrowserAudioMediaSink::class.java.getDeclaredField("renderers").apply { isAccessible = true }
+                    .get(sink) as Map<AudioStreamId, Any>
+                val old = requireNotNull(renderers[id])
+                val oldWorker = old.javaClass.getDeclaredField("thread").apply { isAccessible = true }.get(old) as Thread
+                packet(sink, id, 9)
+                release.countDown()
+                oldWorker.join(1_000)
+                assertFalse(oldWorker.isAlive)
+                awaitMain { voice.audio.isNotEmpty() }
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                assertNull(hub.voiceStatus()["error"])
+                assertEquals("active", hub.voiceStatus()["state"])
+                assertEquals(1, creations.get())
+            } finally { release.countDown(); sink.close(); voice.released() }
+        }
     }
 
     private fun awaitMain(condition: () -> Boolean) {
@@ -459,8 +461,21 @@ class BrowserAudioMediaSinkTest {
         while (voice.audio.size < count && System.nanoTime() < until) Thread.sleep(5)
         assertEquals(count, voice.audio.size)
     }
+    private fun awaitSpeechIdle(sink: BrowserAudioMediaSink, id: AudioStreamId) {
+        val renderers = BrowserAudioMediaSink::class.java.getDeclaredField("renderers").apply { isAccessible = true }
+            .get(sink) as Map<*, *>
+        val decoder = requireNotNull(renderers[id])
+        val worker = decoderThread(sink, id)
+        val speech = decoder.javaClass.getDeclaredField("speechPackets").apply { isAccessible = true }.get(decoder)
+        val lock = speech.javaClass.getDeclaredField("lock").apply { isAccessible = true }.get(speech)
+        val pending = speech.javaClass.getDeclaredField("pending").apply { isAccessible = true }.get(speech) as java.util.ArrayDeque<*>
+        awaitMain {
+            synchronized(lock) { pending.isEmpty() } && worker.state == Thread.State.TIMED_WAITING &&
+                worker.stackTrace.any { it.className == SpeechAudioQueue::class.java.name && it.methodName == "poll" }
+        }
+    }
 
-    @Test fun demandKeepsMusicPromptsAndMirrorInBrowserWhileSpeechUsesOnlyBluetooth() {
+    @Test fun demandKeepsMusicAlertsAndMirrorInBrowserWhileCallsAssistantAndGuidanceUseAndroid() {
         val hub = WebAudioHub(); lateinit var voice: Voice
         val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
             voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
@@ -477,10 +492,10 @@ class BrowserAudioMediaSinkTest {
             voice.ready()
             for (id in listOf(call, AudioStreamId(100, "speechrecognition"), AudioStreamId(100, "default"),
                 AudioStreamId(100, "navigation"))) packet(sink, id, 3)
-            awaitAudio(voice, 1)
-            assertTrue(voice.audio.all { it.first.audioType == "telephony" })
-            val guidance = List(3) { sampleValue(pcm(reader)!!) }
-            assertEquals(listOf(3, 3, 3), guidance)
+            awaitAudio(voice, 4)
+            assertEquals(setOf("telephony", "speechrecognition", "default", "navigation"),
+                voice.audio.map { it.first.audioType }.toSet())
+            assertNull("Android speech must not also reach browser playback", pcm(reader, 50))
             packet(sink, AudioStreamId(100, "alert"), 6)
             packet(sink, AudioStreamId(102, "compatibility"), 7)
             val browserValues = List(2) { sampleValue(pcm(reader)!!) }.toSet()
@@ -503,6 +518,110 @@ class BrowserAudioMediaSinkTest {
             val fresh = pcm(reader)!!
             assertArrayEquals(byteArrayOf(0, 5), fresh.copyOfRange(36, fresh.size))
         } finally { sink.close(); voice.released(); reader.close() }
+    }
+
+    @Test fun existingAssistantAndGuidanceRetireQueuedBrowserAudioUntilTheOwnedAndroidRouteIsReleased() {
+        val hub = WebAudioHub(); lateinit var voice: Voice
+        val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+            voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+        val reader = hub.subscribe()
+        val assistant = AudioStreamId(100, "speechrecognition")
+        val ids = listOf(assistant, AudioStreamId(101, "default"), AudioStreamId(100, "navigation"))
+        val formats = ids.associateWith { AudioFormat(AudioCodecKind.LPCM, 16000, 1, it.type, it.audioType) }
+        fun offer(id: AudioStreamId, sequence: Int, value: Int) {
+            val packet = ByteArray(12) + byteArrayOf(0, value.toByte())
+            packet[3] = sequence.toByte()
+            sink.onAudioRtp(id, formats.getValue(id), packet, sequence * 320)
+        }
+        try {
+            ids.forEach { sink.onAudioStarted(it, formats.getValue(it), 0); offer(it, 0, 1) }
+            repeat(ids.size) { assertEquals(1, sampleValue(requireNotNull(pcm(reader)))) }
+            val oldWorkers = ids.associateWith { decoderThread(sink, it) }
+            ids.forEach { offer(it, 1, 99) }
+            val live = reader.javaClass.getDeclaredField("live").apply { isAccessible = true }
+                .get(reader) as java.util.concurrent.BlockingQueue<*>
+            awaitMain { live.size == ids.size }
+
+            sink.onMicrophoneStarted(assistant, config("speechrecognition"))
+            val retired = mutableListOf<ByteArray>()
+            while (true) retired += reader.take(10) ?: break
+            val endings = retired.filter { it[4].toInt() == 6 &&
+                String(it.copyOfRange(28, it.size)).contains("\"ended\":true") }
+            assertEquals("All already-open speech transports must end before SCO acquisition", ids.size, endings.size)
+            assertTrue("Queued old browser speech must be removed", retired.none { it[4].toInt() == 7 })
+            ids.forEach { assertNotSame(oldWorkers.getValue(it), decoderThread(sink, it)) }
+            ids.forEach { offer(it, 2, 90) }
+            assertNull("Connecting speech cannot leak back into browser output", pcm(reader, 50))
+
+            voice.ready()
+            ids.forEachIndexed { index, id -> offer(id, 3, 20 + index) }
+            awaitAudio(voice, ids.size)
+            assertEquals(ids.toSet(), voice.audio.map { it.first }.toSet())
+            assertEquals(setOf(20, 21, 22), voice.audio.map { it.second[0].toInt() and 255 }.toSet())
+            assertNull(pcm(reader, 50))
+
+            sink.onMicrophoneStopped(assistant)
+            ids.forEach { offer(it, 4, 91) }
+            assertNull("Owned route cleanup must finish before browser speech resumes", pcm(reader, 50))
+            assertEquals(ids.size, voice.audio.size)
+            voice.released()
+            ids.forEachIndexed { index, id -> offer(id, 5, 40 + index) }
+            assertEquals(setOf(40, 41, 42), List(ids.size) { sampleValue(requireNotNull(pcm(reader))) }.toSet())
+            assertEquals(ids.size, voice.audio.size)
+        } finally { sink.close(); voice.released(); reader.close() }
+    }
+
+    @Test fun missingOrFailingAndroidFactoryLeavesExistingNonCallSpeechInTheBrowser() {
+        for (factory in listOf<BluetoothVoiceFactory?>(null, BluetoothVoiceFactory { error("No Android channel") })) {
+            val hub = WebAudioHub()
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub, voiceFactory = factory)
+            val reader = hub.subscribe()
+            val assistant = AudioStreamId(100, "speechrecognition")
+            val guidance = AudioStreamId(101, "default")
+            val formats = listOf(assistant, guidance).associateWith {
+                AudioFormat(AudioCodecKind.LPCM, 16000, 1, it.type, it.audioType)
+            }
+            fun offer(id: AudioStreamId, sequence: Int, value: Int) {
+                val packet = ByteArray(12) + byteArrayOf(0, value.toByte()); packet[3] = sequence.toByte()
+                sink.onAudioRtp(id, formats.getValue(id), packet, sequence * 320)
+            }
+            try {
+                formats.forEach { (id, format) -> sink.onAudioStarted(id, format, 0); offer(id, 0, 10) }
+                repeat(formats.size) { assertEquals(10, sampleValue(requireNotNull(pcm(reader)))) }
+                val oldWorkers = formats.keys.associateWith { decoderThread(sink, it) }
+                sink.onMicrophoneStarted(assistant, config("speechrecognition"))
+                formats.keys.forEach { id -> assertSame(oldWorkers.getValue(id), decoderThread(sink, id)); offer(id, 1, 11) }
+                repeat(formats.size) { assertEquals(11, sampleValue(requireNotNull(pcm(reader)))) }
+                sink.onMicrophoneStopped(assistant)
+                formats.keys.forEach { offer(it, 2, 12) }
+                repeat(formats.size) { assertEquals(12, sampleValue(requireNotNull(pcm(reader)))) }
+            } finally { sink.close(); reader.close() }
+        }
+    }
+
+    @Test fun disabledCarPlayAudioCannotBeBypassedByActiveAndroidSpeechPlayback() {
+        for (disableAll in listOf(false, true)) {
+            val hub = WebAudioHub(); lateinit var voice: Voice
+            val sink = BrowserAudioMediaSink(object : MediaSink {}, hub,
+                voiceFactory = BluetoothVoiceFactory { Voice(it).also { channel -> voice = channel } })
+            val assistant = AudioStreamId(100, "speechrecognition")
+            try {
+                sink.onMicrophoneStarted(assistant, config("speechrecognition")); voice.ready()
+                packet(sink, assistant, 10); awaitAudio(voice, 1)
+                if (disableAll) hub.enabled = false else hub.carPlayEnabled = false
+                val ids = listOf(assistant, AudioStreamId(101, "default"), AudioStreamId(100, "telephony"))
+                for (id in ids) {
+                    packet(sink, id, 99)
+                }
+                // Observe each real worker return to an empty speech wait after consuming its frame.
+                ids.forEach { awaitSpeechIdle(sink, it) }
+                assertEquals("Disabling audio must cover Android speech, as well as browser media", 1, voice.audio.size)
+                assertEquals(1, voice.starts.size)
+                hub.enabled = true; hub.carPlayEnabled = true
+                packet(sink, assistant, 11); awaitAudio(voice, 2)
+                assertEquals(listOf(10, 11), voice.audio.map { it.second[0].toInt() and 255 })
+            } finally { sink.close(); voice.released() }
+        }
     }
 
     @Test fun microphoneTransitionsKeepTheMusicDecoderItsPendingPublicationAndStreamEpoch() {
@@ -671,9 +790,12 @@ class BrowserAudioMediaSinkTest {
                 assertEquals(call, voice.audio.single().first)
                 assertArrayEquals(byteArrayOf(99, 0), voice.audio.single().second)
                 packet(sink, AudioStreamId(103, "media"), 7)
-                packet(sink, AudioStreamId(100, "navigation"), 8)
-                assertEquals(setOf(7, 8), List(2) { sampleValue(requireNotNull(pcm(reader))) }.toSet())
-                assertNull("the call must not also play in the browser", pcm(reader, 50))
+                val navigation = AudioStreamId(101, "default")
+                packet(sink, navigation, 8)
+                awaitAudio(voice, 2)
+                assertEquals(setOf(call, navigation), voice.audio.map { it.first }.toSet())
+                assertEquals(7, sampleValue(requireNotNull(pcm(reader))))
+                assertNull("Android speech must not also play in the browser", pcm(reader, 50))
                 assertEquals(listOf(demand), voice.starts)
                 assertEquals(0, voice.stops)
             } finally { sink.close(); voice.released(); reader.close() }

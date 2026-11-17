@@ -7,38 +7,66 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta54-source-preparation"></a>
+### Beta.54 preparation
+
+Prepared source for **0.2.20-beta.54/code96/browser v126** passes fresh focused
+JVM/Robolectric checks: **186 distinct cases in eleven suites**, with zero
+failures/errors/skips. The media suites contribute 168 cases and
+`WebEncodedAudioHubTest` another eighteen. Bootstrap has 48 cases (twelve new),
+the sink 28 (three new). All four final product/test file hashes match the fresh
+compiled/tested source; prior intermediate runs are not additional distinct cases.
+
+Coverage includes new and preopened Siri/guidance entering Android during MIC
+demand, browser queue/publication retirement, owned cleanup and same-stream
+restoration, telephone priority, disabled CarPlay audio and absent/throwing channel
+factories. Music/102/103 compatibility and alert routes remain independent.
+Compressed decoder failure/retry and stale callbacks retain per-stream ownership.
+The same Devices/capture lease has one speaker worker which switches associated
+owned SCO to voice attributes and requires its actual type/positive port; it does
+not wait for successful MIC reads. Regressions cover suspended A2DP, 160 ms held
+block expiry without replaying an accepted prefix, independent two-second
+no-progress detection and the original eight-second probe budget. CAS/failure
+markers and target/probe/deadline fences protect newer targets from queued old
+failures/timeouts. Real speaker/capture ACKs precede cleanup; both stop/release
+failing retains ownership, while failed owned cleanup still permits media recovery
+without claiming `released=true`. Fifteen MIC proof helpers remain byte-identical
+to beta.53: typed identity, zero-read warmup/fresh recorder and independent MIC
+revocation are preserved.
+
+Fresh direct scoped browser checks pass **88 cases**: audio18, rtc-audio26,
+browser-diagnostics28, service-worker-update12 and site4. Python checks pass
+**27 cases**: site2, release-draft9 and native-symbol16. RTC prebuilt and cache
+checks pass. The unchanged site fixture needed execution permissions for its
+Python child; it then passed all four cases. Full CI remains waived.
+
+No common/foreground, native, codec/RTP or gain source changes are included.
+The earlier plain-Activity foreground helper is not rerun; it does not verify
+this output handoff, AudioRecord, production Host or physical Bluetooth. These
+focused checks are source evidence, not signed-APK runtime or vehicle sound.
+Signed-run/attempt binding, actual APK/source/DEX/native identities, public release
+and Pages verification remain **pending** in [Build](Build.md#beta54-release).
+
+The latest beta.53 field capture contains real MIC samples, encoding and UDP sends,
+and the user confirms working input. Siri is still rendered in the browser while
+Android playback remains A2DP. No simultaneous navigation SETUP is present in the
+9.808-second raw window, and neither software render counters nor route matches
+measure vehicle speaker sound. Validate Siri/navigation during MIC demand on the
+car after installing the matching package/page; see
+[Robustness](Robustness.md#microphone-and-call-period-output).
+
 <a id="beta53-source-preparation"></a>
-### Beta.53
+### Beta.53 reference
 
 Published beta.53/code95/browser v125 comes from
-`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. Fresh JVM/Robolectric source checks
-pass 153 shared/90 common cases across ten/six suites: 243 distinct cases with zero
-failures/errors/skips. Bootstrap coverage has 36 cases, nineteen added here; tests
-cover generic versus conflicting identities, ambiguous/other HEADSETs, handset/null/
-changed actual ports, stale demand, bounded startup across IPC and no-read warmup
-followed by a fresh recorder. The common rollback preserves active-session FGS,
-onResume and the radio fixture. Another 91 scoped browser, two site, nine
-release-draft and sixteen native-symbol cases pass; RTC prebuilt verification passes.
-
-[Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
-passes three scenarios/seven independently replayed phases from the exact final source.
-The source-built beta.53/code95 debug APK runs as UID10216/`untrusted_app`,
-targetSdk37, without instrumentation. Visible MIC foreground admission remains
-through 45.073 seconds in background and then downgrades to base type. A fresh
-background MIC attempt is rejected despite granted permission while the original
-guard/base services survive; missing permission also retains base type. All scenarios
-clean up normally with no owned service/notification left and no forced cleanup.
-The 9,248-byte official artifact matches its API digest. The unchanged helper does
-not exercise the new typed microphone association, warmup, AudioRecord or Bluetooth;
-it does not certify production Host integration or run the signed release APK.
-The beta.52 capture's partial Siri recognition has no established physical/software input source;
-ingress diagnostics do not measure outgoing MIC UDP. MAC or foreground timing is
-not a proven unique cause.
-[Build](Build.md#beta53-release) records actual signed/public identities separately.
-`ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=true`; all
-release/API/file/route checks pass on first request with zero retries. The earlier
-beta.52 retired-route 503 is historical and is not a beta.53 exception.
-Full CI remains waived; physical MIC/Siri quality remains pending.
+`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Testing.md#beta53-source-preparation)
+retains 243 focused JVM/Robolectric cases, 91 scoped browser cases, packaging
+checks and same-source API36 helper `43860792190`. That plain-Activity helper
+covers its admission/cleanup protocol; it does not execute production Host,
+AudioRecord, Bluetooth or the signed release APK. [Build](Build.md#beta53-release)
+retains strict first-request public verification and exact artifact identities.
+These results are historical, not fresh beta.54 execution.
 
 <a id="beta52-source-preparation"></a>
 ### Beta.52 reference

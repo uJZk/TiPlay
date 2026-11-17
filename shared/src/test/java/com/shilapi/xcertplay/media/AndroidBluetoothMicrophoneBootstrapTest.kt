@@ -5,10 +5,12 @@ import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.media.AudioDeviceInfo
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.AudioRecordingConfiguration
+import android.os.Handler
 import android.os.Looper
 import com.shilapi.xcertplay.airplay.AudioStreamId
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
@@ -52,6 +54,14 @@ class AndroidBluetoothMicrophoneBootstrapTest {
         BluetoothPlaybackTrackShadow.reset()
         BootstrapTrackShadow.missing.set(false); BootstrapTrackShadow.missingReads.set(0)
         BootstrapTrackShadow.defaultRoute = null
+        BootstrapTrackShadow.scoRouteOverride = null
+        BootstrapTrackShadow.beforePreference = null
+        BootstrapTrackShadow.mediaWritesZero.set(false); BootstrapTrackShadow.scoWritesZero.set(false)
+        BootstrapTrackShadow.retirementBlocked.set(false)
+        BootstrapTrackShadow.zeroWrites.set(0)
+        BootstrapTrackShadow.maxPlayingTracks.set(0)
+        BootstrapTrackShadow.prefixAllowance.set(0)
+        BootstrapTrackShadow.mediaWriteFailures.set(0); BootstrapTrackShadow.scoWriteFailures.set(0)
         BootstrapRecordBuilderShadow.factory = { error("fixture not installed") }
     }
 
@@ -77,7 +87,6 @@ class AndroidBluetoothMicrophoneBootstrapTest {
         inputAddress: String? = "AA:BB:CC:DD:EE:01") : AutoCloseable {
         val app = RuntimeEnvironment.getApplication()
         private val trackStart = BluetoothPlaybackTrackShadow.tracks.size
-        private var observedTrack: AudioTrack? = null
         val address = "AA:BB:CC:DD:EE:01"
         @Volatile var selection: String? = address
         @Volatile var connectedCount = connected
@@ -200,23 +209,63 @@ class AndroidBluetoothMicrophoneBootstrapTest {
             val before = BluetoothPlaybackTrackShadow.nonzeroSamples.get()
             channel.play(AudioStreamId(100, "telephony"), 48000, 1, ByteArray(1920) { if (it % 2 == 0) 1 else 0 })
             awaitBluetoothPlayback { BluetoothPlaybackTrackShadow.nonzeroSamples.get() > before }
-            val track = BluetoothPlaybackTrackShadow.tracks.drop(trackStart).single()
-            if (observedTrack == null) observedTrack = track else assertSame(observedTrack, track)
+            assertEquals("tracks must never overlap during a route handoff", 1, BootstrapTrackShadow.maxPlayingTracks.get())
+        }
+        fun awaitScoOutput(sink: AudioDeviceInfo = sco): AudioTrack {
+            awaitBluetoothPlayback {
+                BluetoothPlaybackTrackShadow.tracks.drop(trackStart).any {
+                    it.playState == AudioTrack.PLAYSTATE_PLAYING && it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION &&
+                        it.routedDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && it.routedDevice?.id == sink.id
+                } && states.lastOrNull()?.outputReady == true
+            }
+            return BluetoothPlaybackTrackShadow.tracks.drop(trackStart).last { it.playState == AudioTrack.PLAYSTATE_PLAYING }
+        }
+        fun awaitQueuedOutputFailureWithoutDrainingMain() {
+            val owner = ReflectionHelpers.getField<Any>(channel, "devices")
+            val limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (System.nanoTime() < limit) {
+                if (logs.any { "stage=worker-failure operation=output-write" in it } &&
+                    ReflectionHelpers.getField<Any?>(owner, "playbackInUse") == null) return
+                Thread.sleep(5)
+            }
+            fail("speaker error and retirement must finish while its main callback is held")
+        }
+        fun holdMainPosts(): Pair<Handler, CopyOnWriteArrayList<Runnable>> {
+            val original = ReflectionHelpers.getField<Handler>(channel, "main")
+            val tasks = CopyOnWriteArrayList<Runnable>()
+            val held = mock(Handler::class.java)
+            doAnswer { tasks.add(it.getArgument<Runnable>(0)); true }.`when`(held).post(any(Runnable::class.java))
+            ReflectionHelpers.setField(channel, "main", held)
+            return original to tasks
+        }
+        fun releaseMainPosts(held: Pair<Handler, CopyOnWriteArrayList<Runnable>>) {
+            ReflectionHelpers.setField(channel, "main", held.first)
+            held.second.toList().forEach { it.run() }
         }
         override fun close() {
+            BootstrapTrackShadow.beforePreference = null; BootstrapTrackShadow.retirementBlocked.set(false)
+            BootstrapTrackShadow.mediaWritesZero.set(false); BootstrapTrackShadow.scoWritesZero.set(false)
             audio.clearFailures.set(0); audio.modeFailures.set(0)
             channel.close(); awaitBluetoothPlayback { states.lastOrNull()?.released == true }
             received.close()
         }
     }
 
-    @Test fun soleSelectedHeadsetBootstrapsExactInputAndSendsUplinkWithoutReplacingOutput() {
+    @Test fun soleSelectedHeadsetKeepsItsRecorderWhileOutputMovesFromMediaToVoiceSco() {
         Fixture().use { f ->
             f.start()
             val packet = f.awaitPacket()
             assertTrue(packet.size > 640); assertTrue(f.starts.get() > 0)
             assertTrue(f.logs.any { "action=input-associated" in it })
             assertEquals(f.sco.id, f.manager.communicationDevice?.id)
+            val scoTrack = f.awaitScoOutput()
+            val mediaTrack = BluetoothPlaybackTrackShadow.tracks.first()
+            assertNotSame(mediaTrack, scoTrack)
+            assertEquals(AudioAttributes.USAGE_MEDIA, mediaTrack.audioAttributes.usage)
+            assertEquals(AudioTrack.PLAYSTATE_STOPPED, mediaTrack.playState)
+            val retired = shadowOf(mediaTrack) as BootstrapTrackShadow
+            assertTrue(retired.stops.get() > 0); assertTrue(retired.flushes.get() > 0); assertTrue(retired.releases.get() > 0)
+            assertEquals(1, f.records.size); assertEquals(0, f.records.single().releases.get())
             f.proveOutput()
             f.channel.stop(); awaitBluetoothPlayback { f.states.lastOrNull()?.released == true }
             assertEquals(f.starts.get(), f.releases.get())
@@ -237,9 +286,10 @@ class AndroidBluetoothMicrophoneBootstrapTest {
         }
     }
 
-    @Test fun maskedOrMissingInputUsesTheSoleCarProfileAndActualScoPortWithoutReplacingOutput() {
+    @Test fun maskedOrMissingInputUsesTheSoleCarProfileAndCurrentVoiceScoOutput() {
         for (address in listOf("02:00:00:00:00:00", "")) Fixture(inputAddress = address).use { f ->
             f.start(); assertTrue(f.awaitPacket().isNotEmpty()); f.proveOutput()
+            f.awaitScoOutput()
             assertEquals(1, f.records.size)
             assertTrue(f.records.single().reads.get() > 0)
             assertEquals(1, f.maxActiveRecords.get())
@@ -329,7 +379,7 @@ class AndroidBluetoothMicrophoneBootstrapTest {
         }
     }
 
-    @Test fun platformReplacingMaskedSinkWithExactCarPortDoesNotReplaceTheTrack() {
+    @Test fun platformReplacingMaskedSinkWithExactCarPortSelectsThatActualVoiceOutput() {
         Fixture().use { f ->
             val exactSink = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, f.address, 402)
             `when`(f.headset.isAudioConnected(any())).thenAnswer { f.manager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
@@ -345,6 +395,7 @@ class AndroidBluetoothMicrophoneBootstrapTest {
             assertEquals(exactSink.id, f.manager.communicationDevice?.id)
             assertEquals(1, f.audio.requests.get()) // The broker supplies the active port; no extra app request.
             assertFalse(f.logs.any { "stage=output-upgrade" in it })
+            f.awaitScoOutput(exactSink)
             f.proveOutput()
         }
     }
@@ -406,7 +457,7 @@ class AndroidBluetoothMicrophoneBootstrapTest {
         }
     }
 
-    @Test fun aNeverConnectedGenericWarmupTimesOutWithoutReadingOrReplacingOutput() {
+    @Test fun aNeverConnectedGenericWarmupTimesOutUnreadAndRestoresMediaOutput() {
         Fixture(inputAddress = "").use { f ->
             f.audioConnected = false; f.start()
             awaitBluetoothPlayback { f.starts.get() == 1 }
@@ -492,6 +543,7 @@ class AndroidBluetoothMicrophoneBootstrapTest {
             }
             f.start(); assertTrue(f.awaitPacket().isNotEmpty())
             assertNotEquals(nextSink.id, nextInput.id); assertEquals(1, f.audio.requests.get()); f.proveOutput()
+            f.awaitScoOutput(nextSink)
         }
     }
 
@@ -512,7 +564,245 @@ class AndroidBluetoothMicrophoneBootstrapTest {
             f.advanceCaptureRetry()
             awaitBluetoothPlayback { f.records.size >= 2 && f.records[1].reads.get() > 0 }
             assertEquals(1, f.records[0].releases.get()); assertEquals(1, f.maxActiveRecords.get())
+            val actualSink = requireNotNull(f.manager.communicationDevice)
+            f.awaitScoOutput(actualSink)
             assertEquals(1, f.audio.requests.get()); f.proveOutput()
+        }
+    }
+
+    @Test fun suspendedA2dpWriterCanSwitchToVoiceScoWithoutRestartingCapture() {
+        Fixture().use { f ->
+            BootstrapTrackShadow.mediaWritesZero.set(true)
+            f.audio.onRequest = {}
+            f.start(); awaitBluetoothPlayback { BootstrapTrackShadow.zeroWrites.get() > 0 }
+            f.audio.setInputDevices(listOf(f.input))
+            shadowOf(Looper.getMainLooper()).idleFor(110, TimeUnit.MILLISECONDS)
+            assertTrue(f.awaitPacket().isNotEmpty())
+            f.awaitScoOutput(); f.proveOutput()
+            assertTrue(BootstrapTrackShadow.zeroWrites.get() > 0)
+            assertEquals(1, f.records.size); assertEquals(1, f.maxActiveRecords.get())
+            assertFalse(f.logs.any { "stage=worker-failure operation=output-write" in it })
+        }
+    }
+
+    @Test fun suspendedA2dpKeepsTheOriginalEightSecondBudgetForLateScoAssociation() {
+        Fixture().use { f ->
+            BootstrapTrackShadow.mediaWritesZero.set(true)
+            f.audio.onRequest = {}
+            f.start(); awaitBluetoothPlayback { BootstrapTrackShadow.zeroWrites.get() > 0 }
+            shadowOf(Looper.getMainLooper()).idleFor(2500, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { f.logs.any { "stage=output-block-drop reason=waiting-sco" in it } }
+            assertEquals(0, f.audio.clears.get()); assertEquals(0, f.records.size)
+            f.audio.setInputDevices(listOf(f.input))
+            shadowOf(Looper.getMainLooper()).idleFor(110, TimeUnit.MILLISECONDS)
+            assertTrue(f.awaitPacket().isNotEmpty()); f.awaitScoOutput(); f.proveOutput()
+            assertEquals(1, f.audio.requests.get()); assertEquals(1, f.records.size)
+            assertFalse(f.logs.any { "stage=failure" in it })
+        }
+    }
+
+    @Test fun backpressureRecoveryDropsHeldAudioWithoutReplayingAnAcceptedPrefix() {
+        for (prefix in listOf(0, 80)) Fixture(inputAddress = null).use { f ->
+            BootstrapTrackShadow.mediaWritesZero.set(true)
+            f.start(); awaitBluetoothPlayback { BootstrapTrackShadow.zeroWrites.get() > 0 }
+            val stream = AudioStreamId(100, "speechrecognition")
+            val track = shadowOf(BluetoothPlaybackTrackShadow.tracks.last()) as BootstrapTrackShadow
+            f.channel.play(stream, 16000, 1, ByteArray(640) { if (it % 2 == 0) 64 else 1 })
+            shadowOf(Looper.getMainLooper()).idleFor(165, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { track.blockedNonzeroWrites.get() > 0 }
+            if (prefix > 0) {
+                BootstrapTrackShadow.prefixAllowance.set(prefix)
+                awaitBluetoothPlayback { track.nonzeroSamples.get() > 0 && BootstrapTrackShadow.prefixAllowance.get() == 0 }
+            }
+            val acceptedBeforeDrop = track.nonzeroSamples.get()
+            f.channel.clear(stream)
+            val drops = f.logs.count { "stage=output-block-drop reason=backpressure" in it }
+            shadowOf(Looper.getMainLooper()).idleFor(165, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { f.logs.count { "stage=output-block-drop reason=backpressure" in it } > drops }
+            val writes = track.acceptedWrites.get()
+            BootstrapTrackShadow.mediaWritesZero.set(false)
+            awaitBluetoothPlayback { track.acceptedWrites.get() > writes }
+            assertEquals("neither the held remainder nor an admitted prefix may be replayed", acceptedBeforeDrop, track.nonzeroSamples.get())
+            f.proveOutput()
+        }
+    }
+
+    @Test fun stalledScoWritesRetireTheProbeAndRestoreWorkingMediaPlayback() {
+        Fixture().use { f ->
+            BootstrapTrackShadow.scoWritesZero.set(true)
+            f.start(); f.awaitPacket(); f.awaitScoOutput()
+            awaitBluetoothPlayback { BootstrapTrackShadow.zeroWrites.get() > 0 }
+            shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { f.audio.clears.get() == 1 && f.states.lastOrNull()?.outputReady == true &&
+                BluetoothPlaybackTrackShadow.tracks.last().audioAttributes.usage == AudioAttributes.USAGE_MEDIA }
+            assertEquals(AudioManager.MODE_NORMAL, f.manager.mode)
+            assertTrue(f.records.all { it.releases.get() > 0 }); f.proveOutput()
+        }
+    }
+
+    @Test fun aWrongActualScoPortCannotBeAnnouncedAsReadyAndRollsBackToMedia() {
+        Fixture().use { f ->
+            BootstrapTrackShadow.scoRouteOverride = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "", 999)
+            f.start(); f.awaitPacket()
+            awaitBluetoothPlayback { BluetoothPlaybackTrackShadow.tracks.any {
+                it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION &&
+                    (shadowOf(it) as BootstrapTrackShadow).writes.get() > 0 } }
+            shadowOf(Looper.getMainLooper()).idleFor(2100, TimeUnit.MILLISECONDS)
+            awaitBluetoothPlayback { f.audio.clears.get() == 1 && f.states.lastOrNull()?.outputReady == true &&
+                BluetoothPlaybackTrackShadow.tracks.last().audioAttributes.usage == AudioAttributes.USAGE_MEDIA }
+            assertFalse(f.logs.any { "stage=output-ready type=7" in it })
+            assertTrue(BluetoothPlaybackTrackShadow.tracks.filter { it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION }
+                .all { (shadowOf(it) as BootstrapTrackShadow).nonzeroSamples.get() == 0 })
+            assertEquals(AudioManager.MODE_NORMAL, f.manager.mode); f.proveOutput()
+        }
+    }
+
+    @Test fun stopDuringScoPreferenceCannotPublishTheStaleTrackOrReleaseItsOwnedRouteEarly() {
+        val entered = CountDownLatch(1); val resume = CountDownLatch(1)
+        Fixture().use { f ->
+            BootstrapTrackShadow.beforePreference = { target -> if (target?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                entered.countDown(); assertTrue(resume.await(3, TimeUnit.SECONDS))
+            } }
+            try {
+                f.start(); awaitBluetoothPlayback { entered.count == 0L }
+                f.channel.stop(); shadowOf(Looper.getMainLooper()).idle()
+                assertEquals(0, f.audio.clears.get())
+                assertFalse(BluetoothPlaybackTrackShadow.tracks.any {
+                    it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION })
+            } finally { resume.countDown() }
+            awaitBluetoothPlayback { f.states.lastOrNull()?.released == true }
+            assertEquals(1, f.audio.clears.get())
+            assertFalse(BluetoothPlaybackTrackShadow.tracks.any {
+                it.audioAttributes.usage == AudioAttributes.USAGE_VOICE_COMMUNICATION })
+        }
+    }
+
+    @Test fun failedTrackStopAndReleaseHoldTheSpeakerAckUntilItCannotPlay() {
+        Fixture().use { f ->
+            f.start(); f.awaitPacket(); f.awaitScoOutput()
+            BootstrapTrackShadow.retirementBlocked.set(true)
+            try {
+                f.channel.stop()
+                awaitBluetoothPlayback { f.logs.any { "stage=output-retire-retry" in it } }
+                assertEquals(0, f.audio.clears.get())
+                assertFalse(f.states.last().released)
+                assertEquals(1, f.logs.count { "stage=output-retire-retry" in it })
+            } finally { BootstrapTrackShadow.retirementBlocked.set(false) }
+            awaitBluetoothPlayback { f.states.lastOrNull()?.released == true }
+            assertEquals(1, f.audio.clears.get())
+        }
+    }
+
+    @Test fun failedProbeCleanupAfterVoiceScoStillRestoresMediaWithoutClaimingRelease() {
+        Fixture().use { f ->
+            f.start(); f.awaitPacket(); f.awaitScoOutput()
+            f.audio.clearFailures.set(100); f.silenced = true
+            awaitBluetoothPlayback { f.audio.clears.get() == 1 && f.states.lastOrNull()?.outputReady == true &&
+                BluetoothPlaybackTrackShadow.tracks.last().audioAttributes.usage == AudioAttributes.USAGE_MEDIA }
+            f.proveOutput()
+            assertFalse(f.states.last().released)
+            assertTrue(ReflectionHelpers.getField(f.channel, "communicationRequested"))
+            shadowOf(Looper.getMainLooper()).idleFor(3100, TimeUnit.MILLISECONDS)
+            assertEquals(3, f.audio.clears.get()); assertEquals(1, f.audio.modeResets.get())
+            assertEquals(1, f.audio.requests.get()); assertFalse(f.states.last().released)
+            f.proveOutput()
+        }
+    }
+
+    @Test fun queuedA2dpFailureCannotFailANewerVoiceScoTargetOrExitItsSpeaker() {
+        Fixture().use { f ->
+            f.audio.onRequest = {}
+            f.start()
+            BootstrapTrackShadow.mediaWriteFailures.set(1)
+            f.awaitQueuedOutputFailureWithoutDrainingMain()
+            // Associate the selected car on main before delivering the old
+            // A2DP error callback. The same Devices must keep its speaker alive.
+            f.audio.setInputDevices(listOf(f.input))
+            ReflectionHelpers.callInstanceMethod<Unit>(f.channel, "tickMicrophoneProbe")
+            f.awaitScoOutput(); assertTrue(f.awaitPacket().isNotEmpty()); f.proveOutput()
+            assertEquals(0, f.audio.clears.get()); assertEquals(1, f.audio.requests.get())
+            assertFalse(f.logs.any { "stage=failure" in it || "action=rollback" in it })
+        }
+    }
+
+    @Test fun queuedOldScoFailureCannotCancelTheSameProbesNewSink() {
+        Fixture(inputAddress = "").use { f ->
+            f.start(); f.awaitPacket(); f.awaitScoOutput()
+            BootstrapTrackShadow.scoWriteFailures.set(1)
+            f.awaitQueuedOutputFailureWithoutDrainingMain()
+            val sink = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "", 402)
+            val source = device(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "", 401, true)
+            f.audioConnected = true
+            f.audio.setAvailableCommunicationDevices(listOf(sink)); f.audio.currentOverride = sink
+            f.audio.setInputDevices(listOf(source)); f.routed = source
+            ReflectionHelpers.callInstanceMethod<Unit>(f.channel, "tickMicrophoneProbe")
+            f.awaitScoOutput(sink)
+            awaitBluetoothPlayback { f.records.first().releases.get() == 1 }
+            f.advanceCaptureRetry()
+            awaitBluetoothPlayback { f.records.size >= 2 && f.records[1].reads.get() > 0 }
+            f.proveOutput()
+            assertEquals(0, f.audio.clears.get()); assertEquals(1, f.audio.requests.get())
+            assertEquals(1, f.maxActiveRecords.get())
+            assertFalse(f.logs.any { "stage=failure" in it || "action=rollback" in it })
+        }
+    }
+
+    private fun awaitWorkerWithoutMain(condition: () -> Boolean) {
+        val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+        while (System.nanoTime() < until) {
+            if (condition()) return
+            Thread.sleep(5)
+        }
+        assertTrue("worker must reach the held-main callback boundary", condition())
+    }
+
+    @Test fun oldMissingA2dpRouteCallbackCannotCancelItsNewVoiceScoTarget() {
+        Fixture().use { f ->
+            f.audio.onRequest = {}; f.start()
+            val track = shadowOf(BluetoothPlaybackTrackShadow.tracks.last()) as BootstrapTrackShadow
+            val held = f.holdMainPosts()
+            try {
+                BootstrapTrackShadow.missing.set(true)
+                awaitWorkerWithoutMain { BootstrapTrackShadow.missingReads.get() > 0 }
+                val writes = track.writes.get()
+                awaitWorkerWithoutMain { track.writes.get() > writes }
+                ShadowSystemClock.advanceBy(Duration.ofMillis(2100))
+                // One readiness post and the old missing-route cancellation.
+                awaitWorkerWithoutMain { held.second.size >= 2 }
+                BootstrapTrackShadow.missing.set(false)
+                f.audio.setInputDevices(listOf(f.input))
+                ReflectionHelpers.callInstanceMethod<Unit>(f.channel, "tickMicrophoneProbe")
+            } finally {
+                BootstrapTrackShadow.missing.set(false); f.releaseMainPosts(held)
+            }
+            f.awaitScoOutput(); assertTrue(f.awaitPacket().isNotEmpty()); f.proveOutput()
+            assertEquals(0, f.audio.clears.get()); assertEquals(1, f.audio.requests.get())
+            assertFalse(f.logs.any { "action=rollback" in it || "stage=failure" in it })
+        }
+    }
+
+    @Test fun queuedInitialScoTimeoutCannotCancelANewerRecoveryWindowAndSink() {
+        Fixture().use { f ->
+            BootstrapTrackShadow.mediaWritesZero.set(true)
+            f.audio.onRequest = {}; f.start()
+            val held = f.holdMainPosts()
+            try {
+                awaitWorkerWithoutMain { BootstrapTrackShadow.zeroWrites.get() > 0 }
+                ShadowSystemClock.advanceBy(Duration.ofMillis(8100))
+                awaitWorkerWithoutMain { held.second.isNotEmpty() && f.logs.any {
+                    "stage=output-block-drop reason=waiting-sco" in it } }
+                val probe = ReflectionHelpers.getField<Any>(f.channel, "microphoneProbe")
+                // Model a genuine duplex's later recovery epoch using the same
+                // production transition; stale startup callbacks retain the old deadline.
+                ReflectionHelpers.setField(probe, "active", true)
+                ReflectionHelpers.callInstanceMethod<Unit>(f.channel, "retireProbeCapture",
+                    ReflectionHelpers.ClassParameter.from(probe.javaClass, probe))
+                f.audio.setInputDevices(listOf(f.input))
+                ReflectionHelpers.callInstanceMethod<Unit>(f.channel, "tickMicrophoneProbe")
+            } finally { f.releaseMainPosts(held) }
+            f.awaitScoOutput(); assertTrue(f.awaitPacket().isNotEmpty()); f.proveOutput()
+            assertEquals(0, f.audio.clears.get()); assertEquals(1, f.audio.requests.get())
+            assertFalse(f.logs.any { "action=rollback" in it || "stage=failure" in it })
         }
     }
 
@@ -639,24 +929,69 @@ class BootstrapTrackShadow : ShadowAudioTrack() {
     private var preferred: AudioDeviceInfo? = null
     @Volatile private var playing = false
     private var written = 0
-    @Implementation fun setPreferredDevice(device: AudioDeviceInfo?): Boolean { preferred = device; return true }
+    val stops = AtomicInteger(); val flushes = AtomicInteger(); val releases = AtomicInteger()
+    val writes = AtomicInteger(); val nonzeroSamples = AtomicInteger()
+    val acceptedWrites = AtomicInteger(); val blockedNonzeroWrites = AtomicInteger()
+    @Implementation fun setPreferredDevice(device: AudioDeviceInfo?): Boolean {
+        beforePreference?.invoke(device); preferred = device; return true
+    }
     @Implementation override fun getRoutedDevice(): AudioDeviceInfo? {
         if (missing.get()) { missingReads.incrementAndGet(); return null }
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && scoRouteOverride != null) return scoRouteOverride
         return preferred ?: defaultRoute ?: AudioDeviceInfoBuilder.newBuilder().setType(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER).build()
     }
-    @Implementation override fun play() { playing = true; BluetoothPlaybackTrackShadow.tracks.add(realTrack) }
-    @Implementation fun stop() { playing = false }
+    @Implementation override fun play() {
+        playing = true; BluetoothPlaybackTrackShadow.tracks.add(realTrack)
+        maxPlayingTracks.getAndUpdate { old -> maxOf(old,
+            BluetoothPlaybackTrackShadow.tracks.count { it.playState == AudioTrack.PLAYSTATE_PLAYING }) }
+    }
+    @Implementation fun stop() {
+        stops.incrementAndGet()
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && retirementBlocked.get()) error("controlled track stop failure")
+        playing = false
+    }
+    @Implementation override fun flush() { flushes.incrementAndGet() }
+    @Implementation fun release() {
+        releases.incrementAndGet()
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && retirementBlocked.get()) error("controlled track release failure")
+        playing = false
+    }
     @Implementation fun getPlayState() = if (playing) AudioTrack.PLAYSTATE_PLAYING else AudioTrack.PLAYSTATE_STOPPED
     @Implementation override fun getPlaybackHeadPosition() = written
     @Implementation fun write(samples: ShortArray, offset: Int, size: Int, mode: Int): Int {
+        assertEquals(AudioTrack.WRITE_NON_BLOCKING, mode)
         Thread.sleep(5)
         if (!playing) return AudioTrack.ERROR_INVALID_OPERATION
-        BluetoothPlaybackTrackShadow.nonzeroSamples.addAndGet((offset until offset + size).count { samples[it].toInt() != 0 }.toLong())
-        written += size; return size
+        writes.incrementAndGet()
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP &&
+            mediaWriteFailures.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) error("controlled old media write failure")
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO &&
+            scoWriteFailures.getAndUpdate { (it - 1).coerceAtLeast(0) } > 0) error("controlled old SCO write failure")
+        var accepted = size
+        if (preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP && mediaWritesZero.get() ||
+            preferred?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && scoWritesZero.get()) {
+            accepted = prefixAllowance.getAndUpdate { (it - size).coerceAtLeast(0) }.coerceAtMost(size)
+            if (accepted == 0) {
+                if ((offset until offset + size).any { samples[it].toInt() != 0 }) blockedNonzeroWrites.incrementAndGet()
+                zeroWrites.incrementAndGet(); return 0
+            }
+        }
+        acceptedWrites.incrementAndGet()
+        val nonzero = (offset until offset + accepted).count { samples[it].toInt() != 0 }
+        nonzeroSamples.addAndGet(nonzero)
+        BluetoothPlaybackTrackShadow.nonzeroSamples.addAndGet(nonzero.toLong())
+        written += accepted; return accepted
     }
     companion object {
         val missing = AtomicBoolean(); val missingReads = AtomicInteger()
+        val mediaWritesZero = AtomicBoolean(); val scoWritesZero = AtomicBoolean(); val zeroWrites = AtomicInteger()
+        val retirementBlocked = AtomicBoolean()
+        val maxPlayingTracks = AtomicInteger()
+        val prefixAllowance = AtomicInteger()
+        val mediaWriteFailures = AtomicInteger(); val scoWriteFailures = AtomicInteger()
         @Volatile var defaultRoute: AudioDeviceInfo? = null
+        @Volatile var scoRouteOverride: AudioDeviceInfo? = null
+        @Volatile var beforePreference: ((AudioDeviceInfo?) -> Unit)? = null
     }
 }
 

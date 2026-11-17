@@ -707,14 +707,16 @@ class AndroidBluetoothVoiceChannel(
         }
         if (probe.cleaning) {
             devices?.revokeCapture()
-            if (devices?.captureRetiring() == true) return
+            devices?.stopProbePlayback(probe)
+            if (devices?.captureRetiring() == true || devices?.probePlaybackRetiring(probe) == true) return
             if ((communicationOwned || communicationRequested) && !routeReleaseRequested &&
                 SystemClock.elapsedRealtime() >= routeReleaseRetryAt) releaseRoute()
             if (!communicationOwned && !communicationRequested) {
                 closeProbeProxy(); microphoneProbe = null; communicationDevice = null
                 routeReleaseError = null
+                devices?.restorePlayback()
                 devices?.microphoneFailed(probe.reason)
-            }
+            } else if (routeReleaseError != null) devices?.restorePlayback()
             return
         }
         try {
@@ -765,6 +767,9 @@ class AndroidBluetoothVoiceChannel(
                 probe.capture = input
                 devices?.grantCapture(input)
                 report("stage=microphone-bootstrap action=input-associated")
+            }
+            manager.communicationDevice?.takeIf { it.id == input.sinkPort }?.let {
+                devices?.useProbePlayback(probe, it)
             }
         } catch (_: Exception) { cancelMicrophoneProbe("bluetooth-route-failed") }
     }
@@ -902,8 +907,38 @@ class AndroidBluetoothVoiceChannel(
 
     private inner class Devices(val config: MicrophoneConfig, val input: AudioDeviceInfo?, val output: AudioDeviceInfo?,
         val useSco: Boolean, microphoneError: String?, val token: Int, val packetCounters: MicrophoneCounters) {
+        private inner class PlaybackTarget(val device: AudioDeviceInfo?, val sco: Boolean, val probe: MicrophoneProbe? = null,
+            val failed: Boolean = false)
         val running = AtomicBoolean(true)
         val outputReady = AtomicBoolean(false)
+        private val playbackLock = Any()
+        private val playbackTargets = java.util.concurrent.atomic.AtomicReference<PlaybackTarget?>(PlaybackTarget(output, useSco))
+        private val playbackTarget: PlaybackTarget? get() = playbackTargets.get()
+        @Volatile private var playbackInUse: PlaybackTarget? = null
+        fun useProbePlayback(probe: MicrophoneProbe, sink: AudioDeviceInfo) {
+            if (!running.get() || token != generation || wanted !== config || probe.cleaning || microphoneProbe !== probe) return
+            val current = playbackTarget
+            if (current?.probe === probe && current.device?.id == sink.id) return
+            playbackTargets.set(PlaybackTarget(sink, true, probe))
+        }
+        fun stopProbePlayback(probe: MicrophoneProbe) {
+            while (true) {
+                val target = playbackTarget
+                if (target?.probe !== probe || playbackTargets.compareAndSet(target, null)) return
+                // A retiring worker can replace this same target with its failed
+                // marker. Remove that marker too before acknowledging cleanup.
+            }
+        }
+        fun probePlaybackRetiring(probe: MicrophoneProbe) = playbackInUse?.probe === probe
+        fun restorePlayback() {
+            if (running.get() && token == generation && wanted === config)
+                playbackTargets.compareAndSet(null, PlaybackTarget(output, useSco))
+        }
+        private fun playbackCurrent(target: PlaybackTarget): Boolean = running.get() && token == generation &&
+            wanted === config && !closed && !target.failed && playbackTarget === target && (target.probe?.let {
+                !it.cleaning && microphoneProbe === it && communicationOwned && communicationRequested &&
+                    it.capture?.sinkPort == target.device?.id
+            } ?: true)
         private val captureLease = MicrophoneCaptureLease<CaptureInput>()
         fun grantCapture(input: AudioDeviceInfo) {
             grantCapture(CaptureInput(input))
@@ -940,18 +975,8 @@ class AndroidBluetoothVoiceChannel(
             runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
             var outputThread: Thread? = null
             try {
-                val audio = AudioTrack.Builder().setAudioAttributes(if (useSco) attributes else playbackAttributes)
-                    .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(mixer.rate).setChannelMask(AndroidAudioFormat.CHANNEL_OUT_MONO)
-                        .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
-                    .setBufferSizeInBytes(maxOf(AudioTrack.getMinBufferSize(mixer.rate, AndroidAudioFormat.CHANNEL_OUT_MONO,
-                        AndroidAudioFormat.ENCODING_PCM_16BIT), mixer.rate * 2 / 10))
-                    .setTransferMode(AudioTrack.MODE_STREAM).build().also { track = it }
-                check(audio.state == AudioTrack.STATE_INITIALIZED)
-                val preferred = output == null || audio.setPreferredDevice(output)
-                report("stage=output-preference requested=${output != null} accepted=$preferred type=${output?.type ?: 0}")
                 if (!running.get()) return@Thread
-                audio.play()
-                outputThread = Thread({ play(audio) }, "tiplay-bluetooth-speaker").apply { isDaemon = true; start() }
+                outputThread = Thread({ play() }, "tiplay-bluetooth-speaker").apply { isDaemon = true; start() }
                 // The capture worker is optional. Neither initialization nor a later
                 // microphone failure may stop a working playback track.
                 if (input != null) grantCapture(input) else microphoneFailed(microphoneFailure.get() ?: "bluetooth-input-unavailable")
@@ -992,28 +1017,83 @@ class AndroidBluetoothVoiceChannel(
             finally {
                 running.set(false)
                 captureLease.revoke()
-                runCatching { record?.stop() }; runCatching { track?.stop() }
-                outputThread?.join(1000)
-                runCatching { track?.release() }
+                runCatching { record?.stop() }
+                synchronized(playbackLock) { runCatching { track?.stop() } }
+                // The speaker owns creation and release. Do not acknowledge retirement
+                // while a blocking platform write can still hold an old SCO track.
+                outputThread?.join()
                 main.post { workerRetiring = false; tick() }
             }
         }, "tiplay-bluetooth-voice").apply { isDaemon = true; start() } }
 
-        private fun play(audio: AudioTrack) {
+        private fun play() {
             runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO) }
+            while (running.get()) {
+                val target = playbackTarget
+                if (target == null || !playbackCurrent(target)) { Thread.sleep(5); continue }
+                playbackInUse = target
+                try { if (playbackCurrent(target)) play(target) }
+                catch (error: Exception) { if (playbackCurrent(target)) {
+                    report("stage=worker-failure operation=output-write exception=${error.javaClass.simpleName}")
+                    val failed = PlaybackTarget(target.device, target.sco, target.probe, failed = true)
+                    // Compare-and-set prevents an old worker error from overwriting
+                    // a newer target selected by main while this error was reported.
+                    if (playbackTargets.compareAndSet(target, failed)) main.post {
+                        if (token == generation && playbackTarget === failed) {
+                            val probe = failed.probe
+                            if (probe != null) {
+                                if (microphoneProbe === probe) {
+                                    cancelMicrophoneProbe("bluetooth-output-failed"); tick()
+                                }
+                            } else fail(if (error is SecurityException) "bluetooth-permission-denied" else "bluetooth-output-failed")
+                        }
+                    }
+                } }
+                finally {
+                    if (outputReady.getAndSet(false)) publishState()
+                    playbackInUse = null
+                    main.post { tick() }
+                }
+            }
+        }
+
+        private fun play(target: PlaybackTarget) {
+            var audio: AudioTrack? = null
             try {
+                if (!playbackCurrent(target)) return
+                val playing = AudioTrack.Builder().setAudioAttributes(if (target.sco) attributes else playbackAttributes)
+                    .setAudioFormat(AndroidAudioFormat.Builder().setSampleRate(mixer.rate).setChannelMask(AndroidAudioFormat.CHANNEL_OUT_MONO)
+                        .setEncoding(AndroidAudioFormat.ENCODING_PCM_16BIT).build())
+                    .setBufferSizeInBytes(maxOf(AudioTrack.getMinBufferSize(mixer.rate, AndroidAudioFormat.CHANNEL_OUT_MONO,
+                        AndroidAudioFormat.ENCODING_PCM_16BIT), mixer.rate * 2 / 10))
+                    .setTransferMode(AudioTrack.MODE_STREAM).build()
+                audio = playing
+                check(playing.state == AudioTrack.STATE_INITIALIZED)
+                if (!playbackCurrent(target)) return
+                val preferred = target.device == null || playing.setPreferredDevice(target.device)
+                report("stage=output-preference requested=${target.device != null} accepted=$preferred type=${target.device?.type ?: 0} usage=${playing.audioAttributes.usage}")
+                synchronized(playbackLock) {
+                    if (!playbackCurrent(target)) return
+                    track = playing
+                    playing.play()
+                }
                 val silence = ShortArray(mixer.rate / 50)
                 var writtenFrames = 0L; var playedFrames = 0L; var previousHead = 0L
                 var lastRouteId: Int? = null
                 var routeMissingSince = 0L
                 var rollbackRequested = false
-                while (running.get()) {
-                    val actual = audio.routedDevice
-                    if (actual != null) {
+                var probeTimeoutRequested = false
+                var writeProgressAt = SystemClock.elapsedRealtime()
+                var waitingScoReported = false
+                while (playbackCurrent(target)) {
+                    val actual = playing.routedDevice
+                    val matched = actual != null && (target.probe == null ||
+                        actual.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && actual.id == target.device?.id)
+                    if (actual != null && matched) {
                         routeMissingSince = 0L; rollbackRequested = false
                         if (lastRouteId != actual.id) {
                             val selectedCarMatch = permitted() && carAddress != null && sameBluetoothSelection(carAddress, audioAddress(actual))
-                            report("stage=output-route type=${actual.type} requestedMatched=${output?.let { if (permitted()) matches(actual, it) else actual.id == it.id } ?: false} selectedCarMatch=$selectedCarMatch fallback=${!selectedCarMatch}")
+                            report("stage=output-route type=${actual.type} requestedMatched=${target.device?.let { if (permitted()) matches(actual, it) else actual.id == it.id } ?: false} selectedCarMatch=$selectedCarMatch fallback=${!selectedCarMatch}")
                             lastRouteId = actual.id
                         }
                         if (outputReady.compareAndSet(false, true)) {
@@ -1021,25 +1101,66 @@ class AndroidBluetoothVoiceChannel(
                             publishState()
                         }
                     } else {
+                        val wasReady = outputReady.getAndSet(false)
+                        if (wasReady) publishState()
                         val now = SystemClock.elapsedRealtime()
                         if (routeMissingSince == 0L) routeMissingSince = now.coerceAtLeast(1)
+                        if (target.probe != null && wasReady) error("Playback route unavailable")
                         if (now - routeMissingSince >= 2000) {
-                            if (microphoneProbe != null && !rollbackRequested) {
+                            if (target.probe == null && microphoneProbe != null && !rollbackRequested) {
                                 rollbackRequested = true
-                                main.post { if (token == generation) { cancelMicrophoneProbe("bluetooth-output-unavailable"); tick() } }
+                                val probe = microphoneProbe
+                                main.post { if (token == generation && playbackTarget === target && microphoneProbe === probe) {
+                                    cancelMicrophoneProbe("bluetooth-output-unavailable"); tick()
+                                } }
                             }
-                            // A failed probe gets a bounded rollback window, never an endless grace.
                             if (!rollbackRequested || now - routeMissingSince >= 6000) error("Playback route unavailable")
                         }
                     }
-                    val head = audio.playbackHeadPosition.toLong() and 0xffff_ffffL
+                    val head = playing.playbackHeadPosition.toLong() and 0xffff_ffffL
                     playedFrames += (head - previousHead) and 0xffff_ffffL; previousHead = head
                     val queuedNanos = (writtenFrames - playedFrames).coerceAtLeast(0) * 1_000_000_000L / mixer.rate
                     val samples = if (outputReady.get()) mixer.next(outputLeadNanos = queuedNanos) else silence
                     var offset = 0
-                    while (running.get() && offset < samples.size) {
-                        val count = audio.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-                        check(count > 0) { "Bluetooth playback stopped" }
+                    val writeStartedAt = SystemClock.elapsedRealtime()
+                    while (playbackCurrent(target) && offset < samples.size) {
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - writeProgressAt >= 2000) {
+                            val pending = microphoneProbe?.takeIf { target.probe == null && !it.cleaning && !it.active }
+                            if (pending == null) error("Bluetooth playback stalled")
+                            // Starting SCO may suspend the old A2DP writer before its
+                            // input port appears. Preserve the original probe budget,
+                            // discard this stale block and remain interruptible.
+                            if (!waitingScoReported) {
+                                report("stage=output-block-drop reason=waiting-sco"); waitingScoReported = true
+                            }
+                            if (now >= pending.deadline && !probeTimeoutRequested) {
+                                probeTimeoutRequested = true
+                                val deadline = pending.deadline
+                                main.post { if (token == generation && playbackTarget === target && microphoneProbe === pending &&
+                                    !pending.active && pending.deadline == deadline && SystemClock.elapsedRealtime() >= deadline) {
+                                    cancelMicrophoneProbe("bluetooth-connect-timeout"); tick()
+                                } }
+                            }
+                        }
+                        // Match the mixer's bounded voice queue. A future write
+                        // must not replay a block held across a long suspension.
+                        if (now - writeStartedAt >= 160) {
+                            report("stage=output-block-drop reason=backpressure")
+                            break
+                        }
+                        if (target.probe != null && outputReady.get()) {
+                            val routed = playing.routedDevice
+                            check(routed?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO && routed.id == target.device?.id) {
+                                "Playback route unavailable"
+                            }
+                        }
+                        // SCO can suspend A2DP. A blocking writer could otherwise
+                        // prevent this sole speaker worker from switching tracks.
+                        val count = playing.write(samples, offset, samples.size - offset, AudioTrack.WRITE_NON_BLOCKING)
+                        check(count >= 0) { "Bluetooth playback stopped" }
+                        if (count == 0) { Thread.sleep(5); continue }
+                        writeProgressAt = SystemClock.elapsedRealtime(); waitingScoReported = false
                         if (RawTraffic.enabled) {
                             val bytes = java.nio.ByteBuffer.allocate(count * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                             repeat(count) { bytes.putShort(samples[offset + it]) }
@@ -1049,10 +1170,27 @@ class AndroidBluetoothVoiceChannel(
                         writtenFrames += count
                     }
                 }
-            } catch (error: Exception) { if (running.get()) {
-                report("stage=worker-failure operation=output-write exception=${error.javaClass.simpleName}")
-                main.post { if (token == generation) fail(if (error is SecurityException) "bluetooth-permission-denied" else "bluetooth-output-failed") }
-            } }
+            } finally {
+                audio?.let { retiring ->
+                    var reported = false
+                    while (true) {
+                        val retired = synchronized(playbackLock) {
+                            val stopped = runCatching { retiring.stop() }.isSuccess
+                            runCatching { retiring.flush() }
+                            val released = runCatching { retiring.release() }.isSuccess
+                            if (stopped || released) {
+                                if (track === retiring) track = null
+                                true
+                            } else false
+                        }
+                        if (retired) break
+                        if (!reported) { report("stage=output-retire-retry"); reported = true }
+                        // Retain the route ownership and its ACK until this track
+                        // cannot play. A new target must never overlap it.
+                        Thread.sleep(20)
+                    }
+                }
+            }
         }
 
         private fun captureEpochCurrent(grant: MicrophoneCaptureLease.Grant<CaptureInput>): Boolean =
@@ -1251,7 +1389,11 @@ class AndroidBluetoothVoiceChannel(
                     if (!ready && captureEpochCurrent(grant)) {
                         ready = true; microphoneReady.set(true); microphoneFailure.set(null); microphoneRetryDelay = 2000
                         grant.input.probe?.let { if (it.capture === grant.input) it.active = true }
-                        report("stage=duplex-ready inputMatched=true outputMatched=${output?.let { matches(track?.routedDevice, it) } == true}")
+                        val actualOutput = track?.routedDevice
+                        val outputMatched = if (grant.input.probe != null) outputReady.get() &&
+                            playbackInUse?.probe === grant.input.probe && actualOutput?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO &&
+                            actualOutput.id == grant.input.sinkPort else output?.let { matches(actualOutput, it) } == true
+                        report("stage=duplex-ready inputMatched=true outputMatched=$outputMatched outputType=${actualOutput?.type ?: 0}")
                         publishState()
                     }
                 }

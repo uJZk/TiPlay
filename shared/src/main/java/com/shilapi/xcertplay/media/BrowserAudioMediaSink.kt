@@ -13,7 +13,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 
-/** Browser decodes music, navigation and Siri; telephony follows the available Android output. */
+/** Browser decodes music; active microphone speech follows the available Android output. */
 class BrowserAudioMediaSink(
     private val video: MediaSink,
     private val hub: WebAudioHub,
@@ -123,7 +123,12 @@ class BrowserAudioMediaSink(
         val factory = voiceFactory
         if (factory == null) { voiceState(BluetoothVoiceState("failed", "car-bluetooth-unavailable", released = true)); return }
         try {
-            voice = voice ?: factory.create(::voiceState)
+            if (voice == null) {
+                voice = factory.create(::voiceState)
+                // Existing guidance/Siri workers were created before this Android channel existed.
+                // Retire their browser publications before opening the microphone's SCO route.
+                resetDecoders(voiceOnly = true)
+            }
             voice?.start(entry.value)
         } catch (_: Exception) { voiceState(BluetoothVoiceState("failed", "bluetooth-start-failed", released = true)) }
     }
@@ -195,7 +200,7 @@ class BrowserAudioMediaSink(
     /** Retire workers and codec input/output, not just transport queues; in-flight PCM belongs to the old route. */
     private fun resetDecoders(voiceOnly: Boolean = false) {
         if (!voiceOnly) routeEpoch++
-        val previous = renderers.filterKeys { !voiceOnly || callDownlink(it) }
+        val previous = renderers.filterKeys { !voiceOnly || androidDownlink(it) }
         previous.forEach { (id, decoder) ->
             renderers.remove(id)
             downlinkFailures.remove(id)
@@ -226,8 +231,10 @@ class BrowserAudioMediaSink(
         transportIds.clear()
     }
 
-    // Microphone demand must not reroute guidance or Siri away from the browser.
-    private fun callDownlink(id: AudioStreamId): Boolean = id.audioType.equals("telephony", true)
+    // SCO capture can suspend the browser/media output. Share the Android speech route while it
+    // is held; a missing Android channel must still leave non-call guidance in the browser.
+    private fun androidDownlink(id: AudioStreamId): Boolean = id.audioType.equals("telephony", true) ||
+        (voice != null && BluetoothVoicePolicy.allowed(id))
 
     private inner class Decoder(val id: AudioStreamId, val format: AudioFormat, val transportId: Int,
                                 val timeline: RtpAudioTimeline = RtpAudioTimeline(format.rtpClockRate),
@@ -242,8 +249,8 @@ class BrowserAudioMediaSink(
         private var outputChannels = format.channels
         private var nextPcmSample: Double? = null
         val publication = hub.publication(this@BrowserAudioMediaSink)
-        private val bluetoothDecode = !paused && voiceActive && microphoneId != null && callDownlink(id)
-        private val browserForward = !paused && !(voiceHeld && callDownlink(id))
+        private val bluetoothDecode = !paused && voiceActive && microphoneId != null && androidDownlink(id)
+        private val browserForward = !paused && !(voiceHeld && androidDownlink(id))
         private val thread = Thread(::run, if (browserForward) "browser-audio-transport" else "car-bluetooth-audio-decode").apply { isDaemon = true; start() }
 
         fun offer(rtp: ByteArray, sample: Int) {
@@ -358,7 +365,8 @@ class BrowserAudioMediaSink(
 
         private fun send(pcm: ByteArray, sample: Long, lease: SpeechPacket) {
             synchronized(this@BrowserAudioMediaSink) {
-                if (!running || paused || epoch != routeEpoch || !voiceHeld || !voiceActive || microphoneId == null) return
+                if (!running || paused || epoch != routeEpoch || !voiceHeld || !voiceActive || microphoneId == null ||
+                    !hub.enabled || !hub.carPlayEnabled) return
                 val deadline = speechPackets.deadline(lease, sample)
                 val durationNanos = pcm.size.toLong() * 1_000_000_000L / (2 * outputChannels * outputRate)
                 if (deadline + durationNanos <= nowNanos()) return
@@ -366,7 +374,7 @@ class BrowserAudioMediaSink(
                 val discontinuity = expected != null && kotlin.math.abs(sample - expected) >
                     maxOf(1.0, format.rtpClockRate.toDouble() / outputRate)
                 nextPcmSample = sample + pcm.size.toDouble() / (2 * outputChannels) * format.rtpClockRate / outputRate
-                if (callDownlink(id)) voice?.play(id, outputRate, outputChannels, pcm, discontinuity, deadline)
+                if (androidDownlink(id)) voice?.play(id, outputRate, outputChannels, pcm, discontinuity, deadline)
             }
         }
 

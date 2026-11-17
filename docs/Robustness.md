@@ -141,19 +141,68 @@ another usable Bluetooth or system route; permissions, audio focus and ownership
 still apply. Capture independently requires the verified car input, and permanent
 focus loss cannot trigger recovery. Stop and close remove the observer.
 
-A paired car is not necessarily a connected HFP device. The latest beta.52 capture
-on Android 16/API36
-contains thirteen current-process Siri SETUPs and twelve accepted SCO requests;
-its 46.519-second raw window contains four/three. It records no input-verified,
-duplex-ready, capture-end or uplink marker. The source transitions are admitted by
-Standard logging, while the Debug journal observes metadata before Standard
-filtering. This supports a pre-capture admission wait; ingress-only recording does
-not measure outgoing microphone UDP, PCM levels or encoded frames. The user reports
-vehicle telephone-channel activation and partial Siri recognition. That qualitative
-observation remains valid without identifying its physical/software microphone
-source. Incoming iPhone RTP clocks do not diagnose microphone gain/codec mismatch.
-No current foreground rejection establishes a foreground cause. The exact waiting
-subgate—actual SCO sink, HEADSET audio state or exact input-address gate—is unrecorded.
+### Microphone and call-period output
+
+A paired car is not necessarily a connected HFP device. The latest beta.53/code95/
+v125 field capture on Android 16/API36 contains **3,684 continuous records over
+9.808 seconds**, from **2026-11-17 17:15:42.098 to 17:15:51.906 (UTC+8)**.
+The user confirms that the microphone now works. The observed input association
+and duplex admission are followed by 77,440 captured samples, 75,435 nonzero
+samples, 241 encoded frames and 240 UDP sends with zero send errors. This is
+actual capture/encoding/sending evidence; recognition fidelity, echo and sustained
+vehicle operation remain separate physical checks. The
+[frozen beta.52 analysis](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Robustness.md#media-and-wireless-recovery)
+retains the earlier pre-capture wait and unknown UDP count without applying them
+to the successful beta.53 session.
+
+The remaining reported failure is Siri/navigation output during MIC activation.
+The raw window contains one speechrecognition stream and no concurrent navigation
+SETUP. Its Siri stream remains in the browser native RTP path: 289 local send
+attempts return, the exact type-3/epoch-14 track reports ready, and a later snapshot
+has 143,112 nonzero render samples with peak 0.970 and no processor error. Local
+send return is not a receive acknowledgment, and browser render counters do not
+measure the vehicle speaker. They do establish audio in the browser graph.
+
+The Android playback route is selected-car A2DP (type 8) before SCO microphone
+bootstrap. No subsequent SCO output route is observed before teardown. The
+beta.53 `duplex-ready outputMatched=true` compares the playback track against its
+original A2DP target, so it cannot certify SCO speaker output. Source tracing
+finds two policy gaps: only telephony downlink enters Android, leaving Siri and
+guidance in the browser; and the microphone probe retains an Android media/A2DP
+AudioTrack after acquiring SCO input. These are concrete software mismatches with
+the user's requirement for car-Bluetooth playback during MIC demand. Whether the
+vehicle suppresses browser/A2DP output in telephone mode is not measured by this
+archive. No codec/gain/clock or native change is justified by these observations.
+
+Prepared beta.54 source moves permitted Siri/guidance downlink to an existing
+Android voice channel during MIC/call demand, retiring browser publications and
+suppressing browser speech until owned cleanup completes, then restoring their
+ordinary paths. Missing/throwing
+factories preserve non-call browser speech. Telephone browser suppression remains
+unconditional during demand. Music, per-stream decoder ownership and stale
+callback rejection stay independent.
+
+The same Devices/capture lease keeps a single speaker worker. Once the current
+input/sink association is established, it changes to a voice AudioTrack for the
+owned SCO sink and verifies actual SCO type/positive port. It does not wait for
+MIC capture to succeed; warmup may proceed independently. Held write blocks
+expire at 160 ms without replaying accepted prefixes, no-progress retains an
+independent two-second limit and pending initial association keeps its original
+eight-second budget. CAS/failure markers and target/probe/deadline fences reject
+queued old cancellations. Capture and speaker retirement ACKs precede owned
+route cleanup; an old track cannot overlap its replacement. If both stop/release
+fail, ownership remains held. Failed owned cleanup retains `released=false` while
+media playback can recover; MIC failure must not stop all output.
+
+Fresh focused source checks pass **186 distinct cases in eleven suites**, with
+zero failures/errors/skips; bootstrap48 includes twelve new cases and sink28
+includes three new cases. Another 88 browser/27 Python cases and RTC/cache checks
+pass. Fifteen MIC proof helpers are byte-identical to beta.53; no common/FGS,
+native, codec/RTP or gain source change is included. Signed artifacts and public
+delivery remain **pending**, and these checks do not certify vehicle speaker
+sound. The raw capture's final input-route error occurs beside teardown/releasing
+and does not establish a separate sustained MIC fault. Earlier foreground
+rejection does not explain the successful beta.53 capture.
 
 AOSP registers SCO input/output as the active headset route and can return generic
 public device identities; masking is conditional, not proof that this phone's MIC
@@ -172,8 +221,8 @@ independent route checks. Needed bounded warmup reads no samples; a fresh record
 instance then verifies its actual SCO source port under the same live typed proof before
 reading or forwarding. Warmup/handset buffers must never be reused merely because
 the current route later becomes SCO. This changes a potentially circular admission
-sequence without proving that such a loop or input-address masking caused the field
-failure. No codec/gain/clock or AudioTrack-usage change follows from this capture.
+sequence without proving that such a loop or input-address masking caused the
+older beta.52 failure. The later playback evidence above has a separate scope.
 
 The requested early foreground-wait preparation is removed independently: common
 Host/Service/TeslaBrowserLink and two old tests are byte-identical to beta.51 source
@@ -181,17 +230,12 @@ Host/Service/TeslaBrowserLink and two old tests are byte-identical to beta.51 so
 permission degradation and legal onResume retry remain; `hasSession`/`isOwner`
 semantics and the explicit-radio fixture are preserved. This rollback follows the
 user's request, not a newly established foreground cause.
-Beta.53 source checks pass 153 shared/90 common cases: 243 distinct JVM/Robolectric
-cases with zero failures/errors/skips, including nineteen new bootstrap cases.
-Ninety-one scoped browser cases, the site/release/symbol checks and RTC verification
-also pass. [Same-source API36 helper run 43860792190](https://github.com/uJZk/TiPlay/actions/runs/43860792190)
-passes three scenarios/seven independently replayed phases from the exact final source.
-That helper verifies its exact recorded admission/cleanup protocol, not AudioRecord,
-Bluetooth or production Host integration. Publication does not establish that a
-masked input address or foreground timing caused the beta.52 wait. The typed proof,
-independent capture lease and zero-read warmup/fresh-recorder boundaries preserve
-source identity and best-effort output, while actual vehicle MIC samples and Siri
-recognition quality remain physical acceptance work.
+The [frozen beta.53 source/helper verification](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Testing.md#beta53-source-preparation)
+retains its focused test counts and same-source API36 helper protocol. That helper
+does not run AudioRecord, Bluetooth, production Host integration or the signed
+release APK. Publication checks do not identify the unique cause of the older
+beta.52 admission wait. The later beta.53 field evidence now establishes MIC
+samples and sending without certifying speaker output or recognition quality.
 
 Device-route and audio-mode clients are cancelled independently. A platform
 exception retains only the unfinished ownership and retries at most three times,
@@ -211,9 +255,10 @@ An earlier local Chromium attempt was blocked before signaling by this executor'
 UDP policy; its zero candidates are not a vehicle finding. Later configured
 Android/browser proof and the beta.51 field capture have separate scopes. The
 field capture now shows connected native audio alongside the main video/control
-peer. TiPlay-specific physical sound, selected-car microphone capture, ordinary
-mirror pixels, sustained recovery and exact source-preference/fallback execution
-remain acceptance boundaries. See [Testing](Testing.md).
+peer. Those earlier checks did not establish vehicle sound or capture. The latest
+MIC field evidence above is narrower than sustained recovery, physical speaker
+output, ordinary mirror pixels or exact source-preference/fallback execution.
+See [Testing](Testing.md).
 
 ### Diagnostic sufficiency
 
@@ -393,8 +438,9 @@ verified-car microphone gate. The earlier beta.51 field report's three single-IP
 answers are consistent with the preference, without direct bind-mode/address or
 assignment-check evidence. That capture does not exercise same-address-revision
 ANY fallback. Successful ICE/DTLS and nonzero Worklet output establish the observed
-improvement, not the earlier route fault's unique cause. TiPlay/Siri physical
-audibility, TiPlay microphone capture and ordinary mirror presentation remain unverified.
+improvement, not the earlier route fault's unique cause. That beta.51 capture did
+not verify MIC or physical speaker output. Later MIC evidence is described above;
+Siri/navigation speaker playback and ordinary mirror presentation remain open.
 
 ## Matched post-stop native crash
 
