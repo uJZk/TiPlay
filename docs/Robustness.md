@@ -174,11 +174,10 @@ the user's requirement for car-Bluetooth playback during MIC demand. Whether the
 vehicle suppresses browser/A2DP output in telephone mode is not measured by this
 archive. No codec/gain/clock or native change is justified by these observations.
 
-Prepared beta.54 source moves permitted Siri/guidance downlink to an existing
+Beta.54 moves permitted Siri/guidance downlink to an existing
 Android voice channel during MIC/call demand, retiring browser publications and
 suppressing browser speech until owned cleanup completes, then restoring their
-ordinary paths. Missing/throwing
-factories preserve non-call browser speech. Telephone browser suppression remains
+ordinary paths. Missing/throwing factories preserve non-call browser speech. Telephone browser suppression remains
 unconditional during demand. Music, per-stream decoder ownership and stale
 callback rejection stay independent.
 
@@ -195,12 +194,17 @@ fail, ownership remains held. Failed owned cleanup retains `released=false` whil
 media playback can recover; MIC failure must not stop all output.
 
 Fresh focused source checks pass **186 distinct cases in eleven suites**, with
-zero failures/errors/skips; bootstrap48 includes twelve new cases and sink28
-includes three new cases. Another 88 browser/27 Python cases and RTC/cache checks
+zero failures/errors/skips; 48 bootstrap cases include twelve new cases and
+28 sink cases include three new cases. Another 88 browser/27 Python cases and RTC/cache checks
 pass. Fifteen MIC proof helpers are byte-identical to beta.53; no common/FGS,
-native, codec/RTP or gain source change is included. Signed artifacts and public
-delivery remain **pending**, and these checks do not certify vehicle speaker
-sound. The raw capture's final input-route error occurs beside teardown/releasing
+native, codec/RTP or gain source change is included. Published source
+`dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac` passes signed run `44061134348`
+attempt 1, including 24 MIC and 33 speech-output executable-definition contracts
+and actual artifact/source/attempt binding. Matching product release and same-source
+Pages `44065088740` pass anonymous public verification: three assets/two API
+requests, 226 files and twenty routes all meet first-request checks with zero
+retries. [Build](Build.md#beta54-release) records exact identities. These source,
+artifact and delivery checks do not certify vehicle speaker sound. The raw capture's final input-route error occurs beside teardown/releasing
 and does not establish a separate sustained MIC fault. Earlier foreground
 rejection does not explain the successful beta.53 capture.
 

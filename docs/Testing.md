@@ -8,9 +8,10 @@ recorded source, not interchangeable coverage counts for later engines.
 ## Current release source
 
 <a id="beta54-source-preparation"></a>
-### Beta.54 preparation
+### Beta.54
 
-Prepared source for **0.2.20-beta.54/code96/browser v126** passes fresh focused
+Published **0.2.20-beta.54/code96/browser v126** source
+`dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac` passes fresh focused
 JVM/Robolectric checks: **186 distinct cases in eleven suites**, with zero
 failures/errors/skips. The media suites contribute 168 cases and
 `WebEncodedAudioHubTest` another eighteen. Bootstrap has 48 cases (twelve new),
@@ -44,8 +45,15 @@ No common/foreground, native, codec/RTP or gain source changes are included.
 The earlier plain-Activity foreground helper is not rerun; it does not verify
 this output handoff, AudioRecord, production Host or physical Bluetooth. These
 focused checks are source evidence, not signed-APK runtime or vehicle sound.
-Signed-run/attempt binding, actual APK/source/DEX/native identities, public release
-and Pages verification remain **pending** in [Build](Build.md#beta54-release).
+Signed run `44061134348` attempt 1 passes exact source/APK/attempt binding,
+24 MIC and 33 speech-output executable-definition contracts, code-item/PC/CFG/value
+checks, native/notice identities and independent artifact review. These checks do
+not execute the signed APK's vehicle route. All three public assets/two anonymous
+API requests pass first HTTP 200. Same-source Pages `44065088740` attempt 1 passes
+226 files (37,828,528 bytes), eight languages and twenty routes (eighteen HTTP 200/
+two expected retired 404), all on the first request with zero retries. Product
+delivery and strict first-request verification pass; [Build](Build.md#beta54-release)
+retains exact signed/public identities. These checks do not certify physical sound.
 
 The latest beta.53 field capture contains real MIC samples, encoding and UDP sends,
 and the user confirms working input. Siri is still rendered in the browser while

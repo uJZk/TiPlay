@@ -46,21 +46,28 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Prepared source for **beta.54/code96/browser v126** addresses MIC-period output;
-resume at [Robustness](docs/Robustness.md#microphone-and-call-period-output),
+Published [beta.54/code96/browser v126](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.54)
+addresses MIC-period output, from source `dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac`,
+at **2026-11-17 18:27:12 (UTC+8)**. Resume at
+[Build](docs/Build.md#beta54-release), [Robustness](docs/Robustness.md#microphone-and-call-period-output),
 [Testing](docs/Testing.md#beta54-source-preparation) and [Todo](docs/Todo.md#browser-and-carplay-audio).
 Fresh focused JVM/Robolectric checks pass **186 distinct cases across eleven
 suites**, with zero failures/errors/skips: 168 media/18 encoded-hub cases.
 Bootstrap has 48 cases (twelve new), the sink 28 (three new). Another 88 browser
-and 27 Python cases plus RTC/cache checks pass. Signed packaging and publication
-remain **pending**; no physical speaker result follows from these checks. Full CI
-remains waived by the user.
+and 27 Python cases plus RTC/cache checks pass. Signed run `44061134348` attempt 1
+passes all three jobs and twelve base artifact groups, actual 24-method MIC and
+33-method speech-output code contracts, exact source/attempt binding, signer and
+native/notice checks. All three public assets and two anonymous API requests pass
+first HTTP 200 with full-byte/digest/source/body matching. Same-source Pages
+`44065088740` attempt 1 succeeds; 226 files (37,828,528 bytes) pass first HTTP 200,
+SHA/MIME checks across eight languages. Twenty routes pass first request:
+eighteen HTTP 200/two expected retired 404. Product delivery and strict
+first-request verification pass with zero retries. These checks do not establish
+car speaker sound. Full CI remains waived.
 
-The latest published package remains beta.53/code95/browser v125, source
-`a3e2e2f342458c9e3eef0994f0b2ec513407d8e3`. Its
-[frozen publication record](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Build.md#beta53-release)
-and [frozen source/helper checks](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Testing.md#beta53-source-preparation)
-retain signed/public identities and their original verification scope.
+The [frozen beta.53 publication record](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Build.md#beta53-release)
+and [source/helper checks](https://github.com/uJZk/TiPlay/blob/fc1f41401259d4d7619fdf8094480788f15a7fd2/docs/Testing.md#beta53-source-preparation)
+retain their exact historical scope.
 
 New beta.53 field evidence on Android 16/API36 spans **9.808 seconds**, from
 **2026-11-17 17:15:42.098 to 17:15:51.906 (UTC+8)**, with 3,684 continuous
@@ -83,10 +90,9 @@ guidance to use car Bluetooth during MIC demand. Vehicle speaker sound and an
 OEM-specific reason for losing browser/A2DP sound remain unmeasured; no codec,
 gain, RTP clock or native change follows from this evidence.
 
-The prepared sink moves Siri/permitted guidance to an existing Android speech
+The beta.54 sink moves Siri/permitted guidance to an existing Android speech
 channel during MIC/call demand, suppressing browser speech until owned cleanup
-completes; absent/throwing factories keep
-non-call browser speech. Telephone browser suppression remains unconditional.
+completes; absent/throwing factories keep non-call browser speech. Telephone browser suppression remains unconditional.
 The same Devices/capture lease keeps one speaker worker, switching to a voice
 AudioTrack for the associated owned SCO sink and requiring the actual type/port.
 Association can switch output while MIC warmup runs; it does not wait for MIC

@@ -362,13 +362,15 @@ still showed suppressed video; beta.26 records that separate follow-up.
 
 ## Current browser deployment
 
-### Browser v126 preparation
+### Browser v126
 
-Working metadata is browser/cache **v126**, product **0.2.20-beta.54/code96**.
-The source commit, Pages run and public-byte/route verification are **pending**.
-The current published site remains v125 until the verified replacement deploys.
-See [beta.54 preparation](#beta54-release); a local cache/metadata check is not a
-public deployment check.
+Browser/cache **v126**, product **0.2.20-beta.54**, is deployed by
+[Pages run 44065088740](https://github.com/uJZk/TiPlay/actions/runs/44065088740)
+attempt 1 from `dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac`. All 226 files
+(37,828,528 bytes) pass first HTTP 200, full-byte/SHA/MIME matching across eight
+languages. All twenty routes pass first request: eighteen HTTP 200/two expected
+retired 404. There are zero retries or exceptions. [Beta.54](#beta54-release)
+records the matching signed/public APK identities and strict first-request pass.
 
 ### Browser v125 reference
 
@@ -450,12 +452,12 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta54-release"></a>
-### Beta.54 preparation
+### Published beta.54
 
-Prepared source for **0.2.20-beta.54/code96/browser v126** addresses playback
-during MIC/call demand. Signed run/attempt, release ID, publication time and Pages
-run are **pending**; no beta.54 signed or public-delivery result is asserted here.
-The latest published package remains [beta.53](#beta53-release).
+[Beta.54/code96/browser v126](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.54)
+was published **2026-11-17 18:27:12 (UTC+8)**, release `448442652`, from
+`dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac`. The signed/public provenance and
+physical speaker acceptance remain separate below.
 
 The sink moves permitted Siri/low-rate guidance alongside telephone into an
 existing Android speech channel, retires browser publications and restores their
@@ -481,18 +483,30 @@ helper is not rerun; its historical result does not verify this output handoff o
 physical Bluetooth. Full CI remains waived. [Testing](Testing.md#beta54-source-preparation)
 separates source checks, signed artifacts and actual vehicle acceptance.
 
-Signed APK/source identity, certificate continuity, runtime identity, typed MIC and
-output DEX contracts, foreground/debug exclusion, native/notice inventory and
-16 KiB checks are **pending** against the exact signed run/attempt. Durable JNI
-archive identity and anonymous release/site/API checks are also **pending**.
-`ProductDeliveryAccepted` and `AllRequestsFirstAttemptPassed` are **pending**;
-prior-release passes do not certify beta.54. Vehicle speaker sound remains open.
+[Signed run 44061134348](https://github.com/uJZk/TiPlay/actions/runs/44061134348)
+attempt 1 passes three jobs/twelve base artifact groups. Source/signing-attempt
+and actual APK binding, certificate/runtime continuity, 24 typed-MIC definitions,
+33 speech-output executable definitions with code-item/PC/CFG/value-flow checks,
+foreground/debug exclusion and 16 KiB alignment pass. The code checks establish
+selected implementation, not full Kotlin semantics or physical sound. Four audio
+JNI ABI libraries are byte-identical to beta.53 and beta.52; all sixteen packaged
+notices match. Retained JNI archive `448442346` is a private draft. Its inventory
+has 51 libraries: 43 Build IDs/eight confirmed no-ID, 32 matching symbol pairs
+(24 current JNI/eight unchanged producer) and nineteen historical gaps.
 
-| Intended artifact | Bytes | SHA-256 |
+All three anonymous assets and two API requests pass first HTTP 200; full bytes,
+SHA-256/API digests, checksums, exact tag source and public notes match. Same-source
+Pages `44065088740` attempt 1 succeeds; all 226 files (37,828,528 bytes) match first
+HTTP 200/SHA/MIME across eight languages. Twenty routes pass first request:
+eighteen HTTP 200/two expected retired 404. `ProductDeliveryAccepted=true` and
+`AllRequestsFirstAttemptPassed=true`; zero retries or exceptions are recorded.
+Vehicle speaker sound remains open.
+
+| Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.54.apk` | pending | pending |
-| `TiPlay-0.2.20-beta.54-source.zip` | pending | pending |
-| `SHA256SUMS.txt` | pending | pending |
+| `TiPlay-0.2.20-beta.54.apk` | 114,647,912 | `ad443454d98e341cf1e9f5e536c3e760041c495aac1dc27f184503c01e195cf0` |
+| `TiPlay-0.2.20-beta.54-source.zip` | 70,410,224 | `d5044dd6de15ec38e331d85e77112d66f464e610d82fdd92ae7977cdb93907f0` |
+| `SHA256SUMS.txt` | 191 | `5982c20b7d190129fd1f18b57064ed0acff5d99d23941a6f7f7fc76e06857aaf` |
 
 <a id="beta53-release"></a>
 ### Published beta.53 reference
