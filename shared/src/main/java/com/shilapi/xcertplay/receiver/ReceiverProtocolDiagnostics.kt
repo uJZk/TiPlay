@@ -42,7 +42,7 @@ internal class ReceiverProtocolDiagnostics(private val log: (String) -> Unit) {
     fun stage(connection: Long, stage: Stage) = emit("c=$connection stage=$stage")
 
     fun trustIdentity(connection: Long, source: String) {
-        val safe = source.takeIf { it in setOf("verified-key", "x-apple-client-id", "connection-only") } ?: "other"
+        val safe = source.takeIf { it in setOf("verified-key", "x-apple-client-id", "setup-device-id", "connection-only") } ?: "other"
         emit("c=$connection stage=TRUST_IDENTITY source=$safe")
     }
 

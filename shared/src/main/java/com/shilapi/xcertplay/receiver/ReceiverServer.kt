@@ -76,6 +76,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     private val closed = AtomicBoolean(false)
+    private val discoveryLifecycle = Any()
+    private var discoveryInfoLease: Closeable? = null
     private val server = ServerSocket()
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(12)
@@ -141,6 +143,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     }
 
     fun start(): Int {
+        check(!closed.get()) { "Receiver is closed" }
         maintenance.scheduleWithFixedDelay({ runCatching { dispatchNextResource() } }, 1, 1, TimeUnit.SECONDS)
         server.reuseAddress = true
         server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
@@ -160,11 +163,17 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 if (!closed.get()) listener.status("failed")
             }
         }, "tiplay-airplay-listener").apply { isDaemon = true; start() }
+        synchronized(discoveryLifecycle) {
+            check(!closed.get()) { "Receiver is closed" }
+            discoveryInfoLease = ReceiverDiscoveryInfo.register { if (closed.get()) null else displayConfig }
+        }
         return port
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        val discovery = synchronized(discoveryLifecycle) { discoveryInfoLease.also { discoveryInfoLease = null } }
+        discovery?.close()
         maintenance.shutdownNow()
         remoteCommands.shutdownNow()
         dacpDiscovery.close()
@@ -427,6 +436,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         val peerAddress: InetAddress get() = peer
         private var mediaIdentity: ByteArray? = null
         private var claimedIdentity: ByteArray? = null
+        private var claimedIdentitySource: ReceiverSenderIdentity.Source? = null
         // Display only; never used to identify a sender or authorize a connection.
         private var reportedDeviceName: String? = null
         private var lastTrustSource: String? = null
@@ -839,7 +849,25 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 ?.filter { !it.isISOControl() }
                 ?.trim()?.take(80)?.takeIf { it.isNotEmpty() }
                 ?.let { reportedDeviceName = it }
-            if (claimedIdentity == null) claimedIdentity = ReceiverSenderIdentity.identity(request.headers)
+            val setupMetadata = if (request.method == "SETUP")
+                runCatching { BplistCodec.decode(request.body) as? Map<*, *> }.getOrNull() else null
+            val clientIdPresent = request.headers.keys.any { it.equals("x-apple-client-id", true) }
+            // A header learned on an earlier request keeps priority over a later body-only claim.
+            val keepClientId = !clientIdPresent && claimedIdentitySource == ReceiverSenderIdentity.Source.CLIENT_ID
+            val claim = if (keepClientId) null else ReceiverSenderIdentity.claim(request.headers, setupMetadata)
+            val explicitClaim = clientIdPresent || !keepClientId &&
+                setupMetadata?.keys?.any { it is String && it.equals("deviceID", true) } == true
+            if (pairing.verifiedPublicKey == null) {
+                val previous = claimedIdentity
+                if (previous != null && explicitClaim && (claim == null || !previous.contentEquals(claim.identity)))
+                    return RtspMessage.Response(status = 403, statusText = "Forbidden")
+                // Preserve existing header semantics. Body-only claims are committed only after
+                // the actual control SETUP validates and establishes its transport below.
+                if (previous == null && claim?.source == ReceiverSenderIdentity.Source.CLIENT_ID) {
+                    claimedIdentity = claim.identity
+                    claimedIdentitySource = claim.source
+                }
+            }
             val mediaType = receiverMediaType(request, path, raop != null)
             // Reverse is established before the sender reveals its media type. It is
             // an event channel only; media access still requires the later typed request.
@@ -870,7 +898,8 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 val senderIdentity = claimedIdentity
                 val verifiedKey = pairing.verifiedPublicKey
                 val consentIdentity = verifiedKey ?: senderIdentity
-                val source = if (verifiedKey != null) "verified-key" else if (senderIdentity != null) "x-apple-client-id" else "connection-only"
+                val source = if (verifiedKey != null) "verified-key" else if (senderIdentity != null)
+                    claimedIdentitySource?.diagnosticName ?: "x-apple-client-id" else "connection-only"
                 if (source != lastTrustSource) {
                     diagnostics.trustIdentity(diagnosticId, source)
                     lastTrustSource = source
@@ -956,7 +985,18 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 request.method == "OPTIONS" -> return RtspMessage.Response(headers = mapOf("Public" to
                     "ANNOUNCE, SETUP, RECORD, TEARDOWN, OPTIONS, GET_PARAMETER, SET_PARAMETER, FLUSH"))
                 request.method == "ANNOUNCE" -> return announce(request)
-                request.method == "SETUP" -> return setup(request)
+                request.method == "SETUP" -> {
+                    val response = setup(request)
+                    val establishedControl = timing != null && setupMetadata != null &&
+                        (setupMetadata["ekey"] is ByteArray && key?.size == 16 && audioIv?.size == 16 ||
+                            setupMetadata["timingProtocol"] == "NTP" && controlCipher != null && !setupMetadata.containsKey("streams"))
+                    if ((response.status ?: 200) == 200 && establishedControl && claimedIdentity == null &&
+                        pairing.verifiedPublicKey == null && claim?.source == ReceiverSenderIdentity.Source.SETUP_DEVICE_ID) {
+                        claimedIdentity = claim.identity
+                        claimedIdentitySource = claim.source
+                    }
+                    return response
+                }
                 request.method == "RECORD" -> {
                     synchronized(ownership) {
                         if (raop != null && (owner !== this || audio == null))

@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.airplay
 import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.util.Log
 import com.shilapi.xcertplay.mfi.MfiAuthenticator
+import com.shilapi.xcertplay.receiver.ReceiverDiscoveryInfo
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -727,6 +728,7 @@ class AirPlaySession(
     }
 
     private fun handle(request: RtspMessage.Request): RtspMessage.Response {
+        ReceiverDiscoveryInfo.response(request)?.let { return it }
         when (request.method) {
             "SETUP" -> return handleSetup(request)
             "SET_PARAMETER" -> {

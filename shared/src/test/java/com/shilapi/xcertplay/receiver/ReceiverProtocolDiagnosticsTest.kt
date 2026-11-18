@@ -6,6 +6,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiverProtocolDiagnosticsTest {
+    @Test fun trustIdentityLogsOnlyKnownSourceNames() {
+        val messages = mutableListOf<String>()
+        val diagnostics = ReceiverProtocolDiagnostics(messages::add)
+        diagnostics.trustIdentity(1, "setup-device-id")
+        diagnostics.trustIdentity(2, "private-sender-value")
+        assertEquals(listOf("c=1 stage=TRUST_IDENTITY source=setup-device-id",
+            "c=2 stage=TRUST_IDENTITY source=other"), messages)
+    }
+
     @Test fun setupDistinguishesMissingMalformedAndEmptyFieldsWithoutLoggingValues() {
         val logs = mutableListOf<String>()
         val diagnostics = ReceiverProtocolDiagnostics { logs += it }
