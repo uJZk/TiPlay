@@ -7,43 +7,58 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta56-source-preparation"></a>
+### Beta.56
+
+Published **0.2.20-beta.56/code98/browser v128** corrects the beta.55 fixed-endpoint ordinary
+AirPlay failure. Fresh JVM/Robolectric execution passes **227 distinct cases across
+24 suites**, with zero failures/errors/skips.
+Fifty-two selected fresh compiled JVM classes and seven changed/test source hashes
+bind the checked source. Six key audio/identity/info/common/JNI files remain
+byte-identical to beta.55. Browser62/Python27, RTC/cache and local public-tree
+checks pass. Independent handoff-source final-freeze review passes without blockers.
+Source `94a983186935c84c3d4c2faf2b81df01c74ee3b7` passes signed workflow
+`44289047781` attempt 1's three jobs and formal artifact review: 40 receiver
+definitions/42 call edges, 24 MIC/33 speech definitions, original-certificate v2,
+source/attempt/frozen-source/native/notices. Release `449857203` is published;
+Pages `44291624092` attempt 1 succeeds. Three public assets match signed bytes;
+226 files/twenty routes pass every first request with zero site retries. One
+anonymous GitHub API 503 needs a retry to 200: qualified delivery passes, combined
+strict first-request acceptance fails (one total retry; original validator exit1).
+Final two API/tag/source/notes checks pass. This hosting transient does not diagnose
+APK functionality; physical recovery remains pending.
+[Build](Build.md#beta56-release) records identities and qualification. Full CI is waived; retain the same signing certificate, sender-identity
+policy and working audio. Prior beta.55 results are not fresh beta.56 passes.
+
+Required regressions must start at the actual main endpoint and follow ordinary
+discovery into public FairPlay (16→142 and 164→32 bytes), valid initial control
+SETUP and typed-110 authorization/mirror port. Exercise same-connection reuse and
+new TCP connections, pre-read request plus pipelined remainder, original peer and
+socket ownership, twelve-slot admission, close/replacement races and receiver
+unavailability. MFi/CarPlay pairing/control/media must remain separate and active
+CarPlay/audio must survive the handoff. Keep direct ordinary-listener and
+remember/connection-only controls; malformed FairPlay must not receive empty success.
+Do not claim continuity from an info reply followed by unrelated CarPlay pairing,
+or from ordinary tests that bypass the selected fixed endpoint.
+
+The beta.55 raw window contains two 16-byte FairPlay requests on CarPlay7000,
+each answered 200/zero bytes then EOF. Neither reaches ReceiverServer, SETUP,
+identity403 or consent. Beta.55 advertised ordinary info while retaining the
+CarPlay pipeline; this source defect matches the failing stage. The preceding
+BT info/cache transition is outside the window. Recovery is pending after an
+observed failure, not simply untested hardware. See
+[AirPlay](AirPlay.md#mirror-startup-evidence).
+
 <a id="beta55-source-preparation"></a>
-### Beta.55
+### Beta.55 reference
 
-Published **0.2.20-beta.55/code97/browser v127** corrects BT discovery information
-and persistent sender-claim eligibility. Fresh focused JVM/Robolectric execution passes **184
-distinct cases in nineteen suites**, with zero failures/errors/skips, including
-actual TCP, FairPlay and pairing regressions. Source hashes bind 39 compiled classes.
-Both independent BLE/identity final-source reviews pass without blockers. Browser
-checks pass **62 cases**: trust9, presentation9, diagnostics28, service-worker12 and
-site4. Python passes **27 cases**: site2, release9 and symbols16; RTC prebuilt verify
-and cache checks exit zero. Source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352` passes signed run `44220793369`
-attempt 1: twelve artifact groups, actual 24 MIC/33 speech/21 receiver executable
-definitions (24 receiver call groups), source/attempt/SDK v2 old-certificate,
-frozen-source/native/notice checks. Same-source Pages `44223600106` attempt 1
-succeeds. Three public assets/two API requests, 226 files (37,828,528 bytes),
-21 MIME classes/eight languages and twenty routes (18 HTTP 200/two expected retired
-404) pass every first request with zero retries. [Build](Build.md#beta55-release)
-retains exact identities. Physical first-attempt/reconnect acceptance remains pending.
-Full CI remains waived; preserve the signing certificate and working audio contracts.
-
-Executed real sockets cover the exact no-CSeq BT query, ordinary receiver identity,
-both decoded Bonjour TXT records, live configuration, shutdown 503, owner
-replacement and close/snapshot races. Normal CarPlay info/pairing stays separate;
-unrelated request shapes must not delegate. Identity controls pin old header
-hashes and verified-key priority, strictly validate/namespace SETUP deviceID,
-reject invalid-header fallback and changed claims, cache only successful initial
-SETUP and exercise once/remember/reconnect/failed setup/new-key authorization.
-No IP/name/interface macAddress/session UUID identity or raw-claim diagnostics.
-
-Three beta.54 first/retry pairs complete FairPlay/control/NTP; only retries reach
-media type 110 and consent. Missing type 110 is a boundary, not a cause. Only the
-latest first query has raw empty-BT-reply evidence; similar probes precede two
-successful retries. Initial combined-SETUP response bodies are absent; equal
-lengths do not prove equal content. Ignored stable deviceID explains permanent
-eligibility, without a browser gesture/popup fix. See
-[AirPlay](AirPlay.md#mirror-startup-evidence). The user's “only mirroring remains”
-supports current-combination audio recovery, not broad acoustic/device acceptance.
+Beta.55/code97/v127 source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352` passes
+184 focused JVM/Robolectric/62 browser/27 Python cases and RTC/cache checks. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/0233d5128e6e610e9f59004152abfe3457174d5b/docs/Testing.md#beta55-source-preparation)
+retains compiled/source reviews, signed/public provenance and first-request success.
+Those isolated checks missed endpoint continuity; later user feedback and two empty
+FairPlay replies expose a current regression, overriding any assumption of functional
+acceptance from publication or test counts.
 
 <a id="beta54-source-preparation"></a>
 ### Beta.54 reference
@@ -791,7 +806,8 @@ unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 ## Ordinary AirPlay acceptance
 
 [AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
-protocol limits. For beta.55, verify first-cast consent and actual picture after
+protocol limits. For beta.56, verify recovery from the observed beta.55 failure,
+then first-cast consent and actual picture after
 fresh CarPlay, plus remembered approval across reconnect. Changed claims/new keys
 need separate consent. Local BT-info/socket passes do not establish physical retry
 elimination; [source checks](#beta55-source-preparation) have their separate scope. Before the remote migration, the Chromium notification harness

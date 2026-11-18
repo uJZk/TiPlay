@@ -362,16 +362,25 @@ still showed suppressed video; beta.26 records that separate follow-up.
 
 ## Current browser deployment
 
-### Browser v127
+### Browser v128
 
-Browser/cache **v127**, product **0.2.20-beta.55**, is deployed by
-[Pages run 44223600106](https://github.com/uJZk/TiPlay/actions/runs/44223600106)
-attempt 1 from `6db3fa9d2bf444ce034c15ec2ca9fd410b852352`. All 226 files
-(37,828,528 bytes) pass first HTTP 200/full-byte/SHA/MIME matching across 21 MIME
-classes/eight languages. Twenty routes pass first request: eighteen HTTP 200/two
-expected retired 404, with zero retries. [Beta.55](#beta55-release) records the
-matching signed/public APK. Retained browser v125 in the field capture has the
-same trust module as v126; the new claim uses its existing consent API.
+Browser/cache **v128**, product **0.2.20-beta.56/code98**, is deployed by Pages
+`44291624092` attempt 1 from `94a983186935c84c3d4c2faf2b81df01c74ee3b7`.
+All 226 files (37,828,528 bytes), 21 MIME classes/eight languages and twenty routes
+(18 HTTP200/two expected retired404) pass first request with zero site retries.
+Overall delivery is qualified: a separate GitHub API 503 requires one retry, so
+combined strict first-request acceptance fails; see [beta.56](#beta56-release).
+The browser does not fix the current server endpoint failure; preserve the existing
+trust API and working audio. See [beta.56 preparation](#beta56-release).
+
+### Browser v127 reference
+
+Browser/cache v127, product beta.55, was deployed by Pages `44223600106` attempt 1
+from `6db3fa9d2bf444ce034c15ec2ca9fd410b852352`. Its
+[frozen deployment record](https://github.com/uJZk/TiPlay/blob/0233d5128e6e610e9f59004152abfe3457174d5b/docs/Build.md#browser-v127)
+retains 226 files/twenty routes passing every first request with zero retries.
+That verifies deployment bytes, not ordinary mirror connectivity. The later
+beta.55 field report identifies a full connection regression before browser consent.
 
 ### Browser v126 reference
 
@@ -460,51 +469,71 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
-<a id="beta55-release"></a>
-### Published beta.55
+<a id="beta56-release"></a>
+### Published beta.56
 
-[Beta.55/code97/browser v127](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.55)
-was published **2026-11-18 10:28:52 (UTC+8)**, release `449440387`, from
-`6db3fa9d2bf444ce034c15ec2ca9fd410b852352`. The main-listener BT info query now
-returns the current ordinary receiver profile/requested Bonjour TXT data. A strict,
-namespace-hashed initial-SETUP deviceID claim enables persistent consent when
-verified pairing key and Client-ID UUID are absent. Consent remains at actual media
-admission; working Bluetooth/MIC/Siri/navigation paths are unchanged.
-[AirPlay](AirPlay.md#mirror-startup-evidence) retains the two defects and causal limits.
+[Beta.56/code98/browser v128](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.56)
+was published **2026-11-18 19:06:09 (UTC+8)**, release `449857203`, from
+`94a983186935c84c3d4c2faf2b81df01c74ee3b7`. It transfers complete classified legacy
+connections to the ordinary receiver while preserving original peer/socket,
+pre-read/pipelined bytes, twelve-slot admission and exact ownership. MFi/CarPlay,
+sender-identity policy and working audio remain unchanged. The beta.55 user report
+and two captured empty FairPlay replies establish an observed regression; software
+handoff success does not establish physical recovery or eliminate first-try retries.
+[AirPlay](AirPlay.md#mirror-startup-evidence) retains that boundary.
 
-Fresh focused JVM/Robolectric execution passes **184 distinct cases/nineteen suites**,
-zero failures/errors/skips, including actual TCP/FairPlay/pairing regressions and
-39 source-bound compiled classes. Another 62 browser/27 Python cases plus RTC/cache
-checks pass; both independent final-source reviews have no blockers. Full CI remains
-waived. [Testing](Testing.md#beta55-source-preparation) records scope.
+Fresh source execution passes 227 distinct JVM/Robolectric cases/24 suites, zero
+failures/errors/skips, 62 browser/27 Python cases and RTC/cache/local-public-tree
+checks. Fifty-two selected compiled classes/seven source hashes bind checked source;
+six key files remain byte-identical to beta.55. Independent final source review
+passes. Full CI remains waived; [Testing](Testing.md#beta56-source-preparation)
+separates these results from the actual vehicle.
 
-[Signed run 44220793369](https://github.com/uJZk/TiPlay/actions/runs/44220793369)
-attempt 1 passes release/symbols/draft jobs, twelve base artifact groups, 24 MIC,
-33 speech-output and 21 receiver executable definitions (24 receiver call groups),
-plus source/attempt binding and exact frozen source-container bytes. API36 signature
-verification confirms valid v2 with the existing certificate
-`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Package version/code, min28/target37, nondebug, CRC and 16 KiB checks pass. Four
-RTC-audio JNI ABIs remain byte-identical to beta.54/.53 and sixteen notices match.
-Private JNI draft `449440237` preserves this build's 24 JNI symbol entries.
-The packaged native inventory has 51 libraries (43 Build IDs/eight confirmed
-no-ID), with 32 matched symbol pairs (24 current/eight dependency-producer) and
-nineteen historical gaps. Artifact/code checks do not execute physical vehicle routes.
+[Signed run 44289047781](https://github.com/uJZk/TiPlay/actions/runs/44289047781)
+attempt 1 passes all three jobs and formal artifact review. Actual executable
+contracts pass 40 receiver definitions/42 call edges (54 metadata entries), 24 MIC
+and 33 speech definitions. Both attempt archives and frozen-source ZIP bytes match.
+API36 verifies valid v2 with the single original certificate
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`;
+code98/v128, min28/target37, nondebug, CRC and 16 KiB checks pass. Four RTC-audio
+JNI ABIs are byte-identical to beta.55/.54; sixteen notices match. Private JNI draft
+`449856611` retains 24 current symbol entries plus 27 prebuilt metadata records.
+The packaged inventory has 51 ELF libraries (43 Build IDs/eight confirmed no-ID),
+32 matched symbol pairs (24 current/eight producer) and nineteen historical gaps;
+the draft does not contain symbols for all 51. Code checks are not physical playback.
 
-All three anonymous assets/two API requests pass first HTTP 200 with exact bytes,
-digests, source and release-note body. Same-source Pages `44223600106` attempt 1
-succeeds; 226 files (37,828,528 bytes), 21 MIME classes/eight languages and twenty
-routes (eighteen HTTP 200/two expected retired 404) pass every first request with
-zero retries. Independent public review passes without blockers;
-`ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=true`. Actual
-iPhone first-attempt startup and persistent approval across reconnect remain
-physical acceptance, separate from artifact/public delivery.
+Same-source Pages `44291624092` attempt 1 succeeds. All 226 files (37,828,528
+bytes), 21 MIME classes/eight languages and twenty routes (18 HTTP200/two expected
+retired404) pass their first request with zero site retries. Three public assets
+pass first HTTP200/full-byte matching to signed artifacts; final two API responses,
+tag/source/notes are correct. One anonymous GitHub API request returns 503 first,
+then helper retry 200: **one total retry**. `ProductDeliveryAccepted=true` is
+qualified delivery; `AllRequestsFirstAttemptPassed=false` and
+`strictFirstRequestPassed=false`. The original strict validator retains exit1;
+independent review confirms delivered bytes and preserves the first-request exception.
+This API hosting transient is not evidence of an APK/mirror functional failure.
+Physical recovery, first-attempt picture and remembered approval remain open.
 
 | Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.55.apk` | 114,647,916 | `5e0672c7a455e5bffd4af2a957d1ea516f4117613f7aac4ed15f39844404d918` |
-| `TiPlay-0.2.20-beta.55-source.zip` | 70,426,048 | `a3cebd52cbd8ca85ccc93c8bcdf54ca8d0e581f1c1fded2cec2e0a87d67cdd73` |
-| `SHA256SUMS.txt` | 191 | `54063c30ad8d831ebf5cf97988a04a6a4da099020468ce404cec2300a1a1be2d` |
+| `TiPlay-0.2.20-beta.56.apk` | 114,647,916 | `eb509d8ca5de63c77f576ab335896a47726bd8dc4bf484dd19f2ee8f2876dab9` |
+| `TiPlay-0.2.20-beta.56-source.zip` | 70,438,342 | `8d73107f33b9f34f006610b71e963e5c3926110c9303981f3215ade19f41ac14` |
+| `SHA256SUMS.txt` | 191 | `1779422b00a25aa119312629b76c63ef929464a673a5b9809665107c9cd60743` |
+
+<a id="beta55-release"></a>
+### Published beta.55 reference
+
+Beta.55/code97/browser v127 was published **2026-11-18 10:28:52 (UTC+8)**,
+release `449440387`, from `6db3fa9d2bf444ce034c15ec2ca9fd410b852352`. Its
+[frozen complete record](https://github.com/uJZk/TiPlay/blob/0233d5128e6e610e9f59004152abfe3457174d5b/docs/Build.md#beta55-release)
+retains exact APK/source/checksum hashes, signed run `44220793369` attempt 1,
+Pages `44223600106` attempt 1, private JNI draft `449440237`, existing-certificate
+v2, actual MIC/speech/receiver code gates, source/attempt/native/notices and all
+first-request public checks. The isolated 184 JVM/Robolectric/62 browser/27 Python
+passes did not establish fixed-endpoint protocol continuity. The subsequent user
+reports complete mirror connection failure; two raw attempts confirm empty
+FairPlay replies on the wrong pipeline. Published-byte acceptance remains historical
+and does not convert this known physical regression into functional acceptance.
 
 <a id="beta54-release"></a>
 ### Published beta.54 reference
