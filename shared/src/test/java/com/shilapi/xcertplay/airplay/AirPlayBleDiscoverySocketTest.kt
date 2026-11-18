@@ -2,10 +2,28 @@ package com.shilapi.xcertplay.airplay
 
 import com.shilapi.xcertplay.receiver.ReceiverConfig
 import com.shilapi.xcertplay.receiver.ReceiverDiscoveryInfo
+import com.shilapi.xcertplay.receiver.ReceiverAudioCapabilities
+import com.shilapi.xcertplay.receiver.ReceiverDeviceTrust
+import com.shilapi.xcertplay.receiver.ReceiverPlay
+import com.shilapi.xcertplay.receiver.ReceiverPlayback
+import com.shilapi.xcertplay.receiver.ReceiverServer
+import com.shilapi.xcertplay.receiver.ReceiverSdrFixtures
+import com.shilapi.xcertplay.receiver.readReceiverRequest
+import com.shilapi.xcertplay.web.BrowserDisplaySource
+import com.shilapi.xcertplay.web.WebMediaSink
+import com.shilapi.xcertplay.web.WebVideoHub
 import java.io.ByteArrayOutputStream
+import java.io.Closeable
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Test
@@ -87,6 +105,306 @@ class AirPlayBleDiscoverySocketTest {
             val response = exchange(peer, "GET", "/info?txtAirPlay&txtRAOP", mapOf("X-Apple-QR" to "BT"))
             assertEquals("503", response.path)
             assertTrue(response.body.isEmpty())
+        }
+    }
+
+    @Test fun discoveryThenNewConnectionsCompleteFairPlayControlMirrorAndRememberedConsentOnTheSameEndpoint() {
+        ReceiverFixture().use { fixture ->
+            ControlEndpoint().use { endpoint ->
+                endpoint.peer().use { peer ->
+                    val info = BplistCodec.decode(peer.request("GET", "/info?txtAirPlay&txtRAOP",
+                        headers = mapOf("X-Apple-QR" to "BT")).body) as Map<*, *>
+                    assertEquals(fixture.receiver.displayConfig.deviceId, info["deviceID"])
+                    assertArrayEquals(fixture.receiver.displayConfig.identity.publicKey, info["pk"] as ByteArray)
+                }
+                await { endpoint.legacyClosed.get() == 1 }
+                for (session in listOf("11111111-2222-3333-4444-555555555555", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")) {
+                    endpoint.peer().use { peer ->
+                        prepareAndMirror(peer, fixture, session)
+                        assertEquals("200", peer.request("TEARDOWN", "/session").path)
+                    }
+                    await { fixture.ended.get() == if (session.startsWith("111")) 1 else 2 }
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(3, endpoint.legacyClosed.get())
+                assertEquals(0, endpoint.carPlayEnded.get())
+                assertEquals(0, endpoint.carPlayMediaClosed.get())
+                assertEquals(0, endpoint.carPlayBorrowChanges.get())
+                assertEquals(0, endpoint.carPlaySetupResponses.get())
+                assertEquals(listOf(true), fixture.prompts.toList())
+                assertEquals(1, fixture.store.values.size)
+            }
+        }
+    }
+
+    @Test fun sameConnectionDiscoveryAndPipelinedFairPlayKeepQueuedRequestsAndPartialTail() {
+        ReceiverFixture().use { fixture ->
+            ControlEndpoint().use { endpoint ->
+                endpoint.peer().use { peer ->
+                    val third = wire("GET", "/info", mapOf("CSeq" to "3"))
+                    val prefix = 13
+                    peer.write(wire("GET", "/info?txtAirPlay&txtRAOP", mapOf("X-Apple-QR" to "BT")) +
+                        wire("POST", "/fp-setup", mapOf("CSeq" to "1"), fairPlay(16)) +
+                        wire("POST", "/fp-setup", mapOf("CSeq" to "2"), fairPlay(164)) + third.copyOf(prefix))
+                    val discovery = BplistCodec.decode(peer.read().body) as Map<*, *>
+                    assertEquals(fixture.receiver.displayConfig.deviceId, discovery["deviceID"])
+                    assertEquals(142, peer.read().body.size)
+                    assertEquals(32, peer.read().body.size)
+                    peer.write(third.copyOfRange(prefix, third.size))
+                    val info = BplistCodec.decode(peer.read().body) as Map<*, *>
+                    assertArrayEquals(fixture.receiver.displayConfig.identity.publicKey, info["pk"] as ByteArray)
+                    prepareAndMirror(peer, fixture, "11111111-2222-3333-4444-555555555555", fairPlayDone = true)
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(1, endpoint.legacyClosed.get())
+                assertEquals(0, endpoint.carPlayEnded.get())
+                assertEquals(0, endpoint.carPlayMediaClosed.get())
+            }
+        }
+    }
+
+    @Test fun unavailableLegacyReceiverReturns503AndClosesWithoutCarPlayLossCallbacks() {
+        val lease = ReceiverDiscoveryInfo.register { null }
+        try {
+            ControlEndpoint().use { endpoint ->
+                endpoint.peer().use { peer ->
+                    val response = peer.request("POST", "/fp-setup", fairPlay(16))
+                    assertEquals("503", response.path)
+                    assertTrue(response.body.isEmpty())
+                    assertEquals(-1, peer.socket.getInputStream().read())
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(1, endpoint.legacyClosed.get())
+                assertEquals(0, endpoint.carPlayEnded.get())
+                assertEquals(0, endpoint.carPlayMediaClosed.get())
+                assertEquals(0, endpoint.carPlayBorrowChanges.get())
+            }
+        } finally { lease.close() }
+    }
+
+    @Test fun connectionCannotSwitchFromItsAdvertisedReceiverToAReplacement() {
+        ReceiverFixture().use { first ->
+            ControlEndpoint().use { endpoint ->
+                endpoint.peer().use { peer ->
+                    assertEquals("200", peer.request("GET", "/info?txtAirPlay&txtRAOP",
+                        headers = mapOf("X-Apple-QR" to "BT")).path)
+                    ReceiverFixture().use { replacement ->
+                        assertNotEquals(first.receiver.displayConfig.identity.pairingId,
+                            replacement.receiver.displayConfig.identity.pairingId)
+                        assertEquals("503", peer.request("POST", "/fp-setup", fairPlay(16)).path)
+                        assertEquals(-1, peer.socket.getInputStream().read())
+                        endpoint.peer().use { fresh ->
+                            assertEquals(142, fresh.request("POST", "/fp-setup", fairPlay(16)).body.size)
+                        }
+                    }
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(0, endpoint.carPlayEnded.get())
+                assertEquals(0, endpoint.carPlayMediaClosed.get())
+            }
+        }
+    }
+
+    @Test fun selectedCarPlayPairingAuthOrSetupNeverSwitchesToTheOrdinaryReceiver() {
+        val calls = AtomicInteger()
+        val config = ReceiverConfig("ordinary", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        val lease = ReceiverDiscoveryInfo.register({ config }, { _, _, _ -> calls.incrementAndGet(); true })
+        try {
+            ControlEndpoint().use { endpoint ->
+                for ((path, body) in listOf(
+                    "/pair-setup" to Tlv8Codec.encode(listOf(Tlv8Item(6, byteArrayOf(1)))),
+                    "/auth-setup" to byteArrayOf(),
+                    "/session" to BplistCodec.encode(mapOf("streams" to emptyList<Any>())),
+                )) endpoint.peer().use { peer ->
+                    peer.request(if (path == "/session") "SETUP" else "POST", path, body)
+                    assertTrue(peer.request("POST", "/fp-setup", fairPlay(16)).body.isEmpty())
+                    assertTrue(peer.request("GET", "/info?txtAirPlay&txtRAOP",
+                        headers = mapOf("X-Apple-QR" to "BT")).body.isEmpty())
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(0, calls.get())
+                assertEquals(0, endpoint.legacyClosed.get())
+                assertEquals(3, endpoint.carPlayEnded.get())
+            }
+        } finally { lease.close() }
+    }
+
+    @Test fun encryptedCarPlayControlNeverSwitchesToTheOrdinaryReceiver() {
+        val calls = AtomicInteger()
+        val config = ReceiverConfig("ordinary", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        val lease = ReceiverDiscoveryInfo.register({ config }, { _, _, _ -> calls.incrementAndGet(); true })
+        try {
+            ControlEndpoint().use { endpoint ->
+                endpoint.peer(encrypted = true).use { peer ->
+                    assertTrue(peer.request("POST", "/fp-setup", fairPlay(16)).body.isEmpty())
+                    assertTrue(peer.request("GET", "/info?txtAirPlay&txtRAOP",
+                        headers = mapOf("X-Apple-QR" to "BT")).body.isEmpty())
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(0, calls.get())
+                assertEquals(0, endpoint.legacyClosed.get())
+                assertEquals(1, endpoint.carPlayEnded.get())
+            }
+        } finally { lease.close() }
+    }
+
+    private class Store : ReceiverDeviceTrust.Store {
+        val values = ConcurrentHashMap.newKeySet<String>()
+        override fun contains(fingerprint: String) = fingerprint in values
+        override fun remember(fingerprint: String) { values.add(fingerprint) }
+        override fun forgetAll() { values.clear() }
+    }
+
+    private class ReceiverFixture : Closeable, ReceiverServer.Listener {
+        val store = Store()
+        val prompts = CopyOnWriteArrayList<Boolean>()
+        val logs = CopyOnWriteArrayList<String>()
+        val ended = AtomicInteger()
+        val authorized = AtomicInteger()
+        private val trust = ReceiverDeviceTrust(store)
+        private val hub = WebVideoHub(Executor { it.run() })
+        val receiver = ReceiverServer(ReceiverConfig("ordinary-receiver", "02:11:22:33:44:55",
+            AirPlayIdentity.generate(), audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS), this,
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
+            fairPlayDecrypt = { _, _ -> ByteArray(16) })
+        init { receiver.start() }
+        override fun authorizeDevice(sessionToken: String, identity: ByteArray, deviceName: String,
+            mediaType: String, verifiedSessionId: String?): Boolean {
+            authorized.incrementAndGet()
+            trust.browserSeen("synthetic-browser")
+            if (trust.requestSession(sessionToken, identity, deviceName, mediaType, verifiedSessionId)
+                is ReceiverDeviceTrust.Decision.Pending) {
+                val prompt = requireNotNull(trust.prompt("synthetic-browser"))
+                prompts.add(prompt["verified"] as Boolean)
+                assertTrue(trust.respond("synthetic-browser", prompt["id"] as String, allow = true, remember = true))
+            }
+            return trust.authorizeSession(sessionToken, identity, deviceName, mediaType, verifiedSessionId)
+        }
+        override fun onAuthorizationSessionEnded(sessionToken: String) { trust.endSession(sessionToken); ended.incrementAndGet() }
+        override fun mirrorSink() = WebMediaSink(hub, 720, 1280, 60, BrowserDisplaySource.AIRPLAY)
+        override fun play(item: ReceiverPlay) = error("Unexpected playback")
+        override fun stopPlayback() {}
+        override fun seek(seconds: Double) {}
+        override fun rate(value: Double) {}
+        override fun playback() = ReceiverPlayback()
+        override fun status(state: String) {}
+        override fun log(message: String) { logs.add(message) }
+        override fun close() { receiver.close(); trust.close() }
+    }
+
+    private class ControlEndpoint : Closeable {
+        private val server = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
+        val live = ConcurrentHashMap.newKeySet<AirPlaySession>()
+        val legacyClosed = AtomicInteger()
+        val carPlayEnded = AtomicInteger()
+        val carPlayMediaClosed = AtomicInteger()
+        val carPlayBorrowChanges = AtomicInteger()
+        val carPlaySetupResponses = AtomicInteger()
+        fun peer(encrypted: Boolean = false): ControlPeer {
+            val peer = connectFrom("127.0.0.2", server.localPort)
+            val session = AirPlaySession(server.accept(), AirPlayConfig("carplay", "02:99:88:77:66:55",
+                "02:00:00:00:00:01", "1.0", main = AirPlayDisplayConfig(800, 480)),
+                AirPlayIdentity.generate(), PairingStore(), null,
+                object : AirPlaySessionListener {
+                    override fun onSessionEnded(session: AirPlaySession) { carPlayEnded.incrementAndGet(); live.remove(session) }
+                    override fun onLegacyConnectionClosed(session: AirPlaySession) { legacyClosed.incrementAndGet(); live.remove(session) }
+                    override fun onScreenBorrowChanged(session: AirPlaySession, state: CarPlayScreenBorrowState) { carPlayBorrowChanges.incrementAndGet() }
+                }, object : AirPlayMediaHandler {
+                    override fun onSessionClosed(session: AirPlaySession) { carPlayMediaClosed.incrementAndGet() }
+                    override fun onSetupResponseSent(session: AirPlaySession) { carPlaySetupResponses.incrementAndGet() }
+                })
+            val readKey = ByteArray(32) { 1 }
+            val writeKey = ByteArray(32) { 2 }
+            if (encrypted) session.cipher = ControlCipher(readKey, writeKey)
+            live.add(session)
+            session.start()
+            return ControlPeer(peer, if (encrypted) ControlCipher(writeKey, readKey) else null)
+        }
+        override fun close() { live.toList().forEach { it.close() }; server.close() }
+    }
+
+    private class ControlPeer(val socket: Socket, private val cipher: ControlCipher?) : Closeable {
+        private var cseq = 10
+        private var encrypted = byteArrayOf()
+        private var plaintext = byteArrayOf()
+        fun request(method: String, path: String, body: ByteArray = byteArrayOf(),
+            headers: Map<String, String> = mapOf("CSeq" to (++cseq).toString())): RtspMessage.Request {
+            write(wire(method, path, headers, body))
+            return read()
+        }
+        fun write(bytes: ByteArray) { socket.getOutputStream().apply { write(cipher?.encrypt(bytes) ?: bytes); flush() } }
+        fun read(): RtspMessage.Request {
+            if (cipher == null) return requireNotNull(readReceiverRequest(socket.getInputStream()))
+            val buffer = ByteArray(4096)
+            while (true) {
+                val parsed = RtspMessage.parseMessages(plaintext)
+                parsed.messages.firstOrNull()?.let { plaintext = parsed.rest; return it }
+                val count = socket.getInputStream().read(buffer)
+                check(count >= 0) { "Encrypted control closed before response" }
+                encrypted += buffer.copyOf(count)
+                val decoded = cipher.decrypt(encrypted)
+                encrypted = decoded.rest
+                plaintext += decoded.data
+            }
+        }
+        override fun close() { socket.close() }
+    }
+
+    companion object {
+        private fun wire(method: String, path: String, headers: Map<String, String>, body: ByteArray = byteArrayOf()): ByteArray =
+            buildString {
+                append("$method $path RTSP/1.0\r\n")
+                for ((name, value) in headers) append("$name: $value\r\n")
+                append("Content-Length: ${body.size}\r\n\r\n")
+            }.toByteArray(Charsets.US_ASCII) + body
+        private fun fairPlay(size: Int) = ByteArray(size).apply {
+            byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, (if (size == 16) 1 else 3).toByte(), 0).copyInto(this)
+            ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+        }
+        private fun prepareAndMirror(peer: ControlPeer, fixture: ReceiverFixture, session: String,
+            fairPlayDone: Boolean = false) {
+            if (!fairPlayDone) {
+                assertEquals(142, peer.request("POST", "/fp-setup", fairPlay(16)).body.size)
+                assertEquals(32, peer.request("POST", "/fp-setup", fairPlay(164)).body.size)
+            }
+            val before = fixture.authorized.get()
+            val setup = peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
+                "ekey" to ByteArray(72), "eiv" to ByteArray(16), "timingPort" to 0,
+                "timingProtocol" to "NTP", "combinedGetInfoWithControlSetup" to true,
+                "isScreenMirroringSession" to true, "sessionUUID" to session, "deviceID" to "02:AA:22:33:44:55")))
+            assertEquals("200", setup.path)
+            val info = (BplistCodec.decode(setup.body) as Map<*, *>)["info"] as Map<*, *>
+            assertArrayEquals(fixture.receiver.displayConfig.identity.publicKey, info["pk"] as ByteArray)
+            assertEquals("200", peer.request("RECORD", "/session").path)
+            assertEquals(before, fixture.authorized.get())
+            val mirror = peer.request("SETUP", "/stream", BplistCodec.encode(mapOf("streams" to listOf(
+                mapOf("type" to 110, "streamConnectionID" to 1234L)))))
+            assertEquals("200", mirror.path)
+            val stream = ((BplistCodec.decode(mirror.body) as Map<*, *>)["streams"] as List<*>).single() as Map<*, *>
+            val dataPort = (stream["dataPort"] as Number).toInt()
+            assertTrue(dataPort in 1..65535)
+            assertEquals(before + 1, fixture.authorized.get())
+            // A loopback proxy would incorrectly bind the receiver's peer to 127.0.0.1.
+            connectFrom("127.0.0.1", dataPort).use { wrong -> assertEquals(-1, wrong.getInputStream().read()) }
+            val configsBefore = fixture.logs.count { "mirror stage=CONFIG codec=" in it }
+            connectFrom("127.0.0.2", dataPort).use { media ->
+                val config = ReceiverSdrFixtures.avcc()
+                val header = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN).apply {
+                    putInt(0, config.size); put(4, 1.toByte()); putFloat(56, 720f); putFloat(60, 1280f)
+                }.array()
+                media.getOutputStream().apply { write(header + config); flush() }
+                await { fixture.logs.count { "mirror stage=CONFIG codec=" in it } > configsBefore }
+            }
+        }
+        private fun connectFrom(address: String, port: Int) = Socket().apply {
+            bind(InetSocketAddress(InetAddress.getByName(address), 0))
+            connect(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 1_000)
+            soTimeout = 3_000
+        }
+        private fun await(condition: () -> Boolean) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+            while (!condition() && System.nanoTime() < deadline) Thread.yield()
+            assertTrue(condition())
         }
     }
 

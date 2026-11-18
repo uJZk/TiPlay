@@ -351,6 +351,10 @@ class CarPlayVpnService : VpnService() {
                                 removeSession(session)
                                 if (current.listenerIdentity == null || !internalPeer) current.listener.onSessionEnded(session)
                             }
+
+                            override fun onLegacyConnectionClosed(session: AirPlaySession) {
+                                removeSession(session)
+                            }
                         },
                         media = current.media,
                     ).also(::addSession)

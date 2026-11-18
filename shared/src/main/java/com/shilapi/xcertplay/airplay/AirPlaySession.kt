@@ -7,8 +7,10 @@ import com.shilapi.xcertplay.receiver.ReceiverDiscoveryInfo
 import com.shilapi.xcertplay.transport.BlockingDuplexByteStream
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.IOException
+import java.io.SequenceInputStream
 import java.math.BigInteger
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -35,6 +37,8 @@ interface AirPlaySessionListener {
     fun onTcpAccepted(event: AirPlayTcpAccepted) {}
     fun onSessionActive(session: AirPlaySession) {}
     fun onSessionEnded(session: AirPlaySession) {}
+    /** Remove an ordinary receiver connection without reporting CarPlay media or UI loss. */
+    fun onLegacyConnectionClosed(session: AirPlaySession) {}
     fun onVideoFrameRendered(session: AirPlaySession) {}
     /** Validated downstream; immutable copy of iPhone's top-left grayscale coverage PNG. */
     fun onCornerMask(session: AirPlaySession, png: ByteArray, displayWidth: Int) {}
@@ -100,6 +104,7 @@ class AirPlaySession(
     private val audioSetups = AirPlayAudioSetupDiagnostics()
     private val audioModes = AirPlayAudioModeDiagnostics()
     @Volatile private var recorded = false
+    @Volatile private var legacyConnection = false
 
     /** Counts the iPhone's cluster stream setups; 0 while no cluster stream is up. */
     @Volatile var clusterStream = 0
@@ -206,6 +211,14 @@ class AirPlaySession(
         if (closed.compareAndSet(false, true)) ({ finishClose(reason) }) else null
 
     private fun finishClose(reason: CarPlayConnectionCloseReason) {
+        if (legacyConnection) {
+            commandResults.retire()
+            closeEventResources()
+            eventWriteDeadline.close()
+            safeClose(socket)
+            if (notified.compareAndSet(false, true)) listener.onLegacyConnectionClosed(this)
+            return
+        }
         val cancelled = commandResults.retire()
         // Native writes hold eventWriteLock and can wait indefinitely for a slow peer. Closing
         // their owned sockets must precede any listener or teardown that might need that lock.
@@ -643,6 +656,8 @@ class AirPlaySession(
         val buffer = ByteArray(READ_CHUNK_BYTES)
         var closeReason = "session closed"
         var closeBoundary = CarPlayConnectionCloseReason.CONTROL_STOPPED
+        var carPlayProtocolSelected = false
+        var receiverDiscovery: ReceiverDiscoveryInfo.Discovery? = null
         try {
             while (!closed.get()) {
                 val count = input.read(buffer)
@@ -669,7 +684,30 @@ class AirPlaySession(
                 accumulated += plaintext
                 val parsed = RtspMessage.parseMessages(accumulated)
                 accumulated = parsed.rest
-                for (request in parsed.messages) {
+                for ((requestIndex, request) in parsed.messages.withIndex()) {
+                    val unselectedPlaintext = !carPlayProtocolSelected && cipher == null &&
+                        !pairSetup.complete && !pairVerify.isVerified && !recorded && activeStreams.isEmpty()
+                    if (unselectedPlaintext &&
+                        ReceiverDiscoveryInfo.isLegacyStart(request)) {
+                        legacyConnection = true
+                        output.flush()
+                        val queued = parsed.messages.drop(requestIndex)
+                        val legacyInput = SequenceInputStream(ByteArrayInputStream(accumulated), input)
+                        debugLog("airplay legacy handoff queuedRequests=${queued.size} bufferedBytes=${accumulated.size}")
+                        val served = ReceiverDiscoveryInfo.serveLegacyConnection(socket, legacyInput, queued, receiverDiscovery)
+                        if (!served) {
+                            val response = RtspMessage.Response(status = 503, statusText = "Service Unavailable")
+                            output.write(RtspMessage.buildResponse(request, response))
+                            output.flush()
+                        }
+                        closeReason = if (served) "legacy receiver completed" else "legacy receiver unavailable"
+                        return
+                    }
+                    val bluetoothProbe = unselectedPlaintext && ReceiverDiscoveryInfo.isBluetoothProbe(request)
+                    if (bluetoothProbe) legacyConnection = true else {
+                        carPlayProtocolSelected = true
+                        legacyConnection = false
+                    }
                     val cseq = request.headers["cseq"] ?: "-"
                     val path = request.path.lowercase()
                     val showInDebugOverlay =
@@ -688,7 +726,11 @@ class AirPlaySession(
                             "bodyHex=${request.body.toHex()}",
                     )
                     val response = try {
-                        handle(request)
+                        if (bluetoothProbe) {
+                            val discovery = requireNotNull(ReceiverDiscoveryInfo.discover(request, receiverDiscovery))
+                            receiverDiscovery = discovery
+                            discovery.response
+                        } else handle(request)
                     } catch (error: Exception) {
                         Log.e(
                             TAG,
@@ -715,7 +757,7 @@ class AirPlaySession(
                     }
                 }
                 output.flush()
-                notifySetupResponseSent()
+                if (!legacyConnection) notifySetupResponseSent()
             }
         } catch (error: Exception) {
             closeReason = "control I/O failed: ${error.message ?: error.javaClass.simpleName}"
@@ -728,7 +770,6 @@ class AirPlaySession(
     }
 
     private fun handle(request: RtspMessage.Request): RtspMessage.Response {
-        ReceiverDiscoveryInfo.response(request)?.let { return it }
         when (request.method) {
             "SETUP" -> return handleSetup(request)
             "SET_PARAMETER" -> {

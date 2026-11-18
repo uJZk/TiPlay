@@ -6,6 +6,9 @@ import com.shilapi.xcertplay.airplay.RtspMessage
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
+import java.io.ByteArrayInputStream
+import java.net.Socket
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -74,6 +77,92 @@ class ReceiverDiscoveryInfoTest {
                 probe.copy(path = "/pair-verify?txtRAOP"), probe.copy(body = byteArrayOf(1)),
             )) assertNull(ReceiverDiscoveryInfo.response(request))
         } finally { lease.close() }
+    }
+
+    @Test fun legacyAdmissionPreservesTheOriginalSocketInputAndQueuedRequests() {
+        val config = profile("ordinary")
+        val calls = AtomicInteger()
+        Socket().use { socket ->
+            val input = ByteArrayInputStream(byteArrayOf(1, 2, 3))
+            val requests = listOf(probe.copy(method = "POST", path = "/fp-setup"), probe.copy(path = "/info"))
+            val lease = ReceiverDiscoveryInfo.register({ config }, { actualSocket, actualInput, actualRequests ->
+                assertSame(socket, actualSocket)
+                assertSame(input, actualInput)
+                assertSame(requests, actualRequests)
+                calls.incrementAndGet()
+                true
+            })
+            try {
+                assertTrue(ReceiverDiscoveryInfo.isCurrent(lease))
+                assertTrue(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, requests))
+                assertEquals(1, calls.get())
+            } finally { lease.close() }
+            assertFalse(ReceiverDiscoveryInfo.isCurrent(lease))
+            assertFalse(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, requests))
+        }
+    }
+
+    @Test fun advertisedOwnerCannotSwitchToAReplacementButAFreshConnectionUsesIt() {
+        val config = profile("ordinary")
+        val old = ReceiverDiscoveryInfo.register({ config }, { _, _, _ -> error("Retired owner was called") })
+        val advertised = requireNotNull(ReceiverDiscoveryInfo.discover(probe))
+        val calls = AtomicInteger()
+        val replacement = ReceiverDiscoveryInfo.register({ config.copy(name = "replacement") }, { _, _, _ -> calls.incrementAndGet(); true })
+        try {
+            old.close()
+            assertFalse(ReceiverDiscoveryInfo.isCurrent(old))
+            assertTrue(ReceiverDiscoveryInfo.isCurrent(replacement))
+            assertEquals(503, ReceiverDiscoveryInfo.discover(probe, advertised)!!.response.status)
+            Socket().use { socket ->
+                val input = ByteArrayInputStream(byteArrayOf())
+                val requests = listOf(probe.copy(method = "POST", path = "/fp-setup"))
+                assertFalse(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, requests, advertised))
+                assertTrue(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, requests))
+            }
+            assertEquals(1, calls.get())
+        } finally { old.close(); replacement.close() }
+    }
+
+    @Test fun providerFailureOrNonLegacyFirstRequestCannotInvokeTheSessionCallback() {
+        val lease = ReceiverDiscoveryInfo.register({ error("Closed provider") }, { _, _, _ -> error("Callback must not run") })
+        try {
+            assertEquals(503, ReceiverDiscoveryInfo.discover(probe)!!.response.status)
+            Socket().use { socket ->
+                val input = ByteArrayInputStream(byteArrayOf())
+                for (request in listOf(probe, probe.copy(method = "POST", path = "/fp-setup"),
+                    probe.copy(method = "GET", path = "/fp-setup"),
+                    probe.copy(method = "POST", path = "/fp-setup?txtAirPlay"))) {
+                    assertFalse(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, listOf(request)))
+                }
+                assertFalse(ReceiverDiscoveryInfo.serveLegacyConnection(socket, input, emptyList()))
+            }
+        } finally { lease.close() }
+    }
+
+    @Test fun replacementDuringProviderSnapshotCannotEnterTheRetiredSession() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val config = profile("old")
+        val old = ReceiverDiscoveryInfo.register({
+            entered.countDown()
+            check(release.await(2, TimeUnit.SECONDS))
+            config
+        }, { _, _, _ -> error("Retired callback must not run") })
+        Socket().use { socket ->
+            val result = AtomicReference<Boolean>()
+            val worker = Thread { result.set(ReceiverDiscoveryInfo.serveLegacyConnection(socket,
+                ByteArrayInputStream(byteArrayOf()), listOf(probe.copy(method = "POST", path = "/fp-setup")))) }
+            var replacement: java.io.Closeable? = null
+            try {
+                worker.start()
+                assertTrue(entered.await(2, TimeUnit.SECONDS))
+                replacement = ReceiverDiscoveryInfo.register { config.copy(name = "replacement") }
+                release.countDown()
+                worker.join(2_000)
+                assertFalse(worker.isAlive)
+                assertEquals(false, result.get())
+            } finally { release.countDown(); worker.join(2_000); old.close(); replacement?.close() }
+        }
     }
 
     private fun profile(name: String) = ReceiverConfig(name, "02:11:22:33:44:55", AirPlayIdentity.generate())

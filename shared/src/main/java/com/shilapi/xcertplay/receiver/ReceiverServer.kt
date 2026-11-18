@@ -10,6 +10,7 @@ import com.shilapi.xcertplay.network.TcpLiveness
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.io.InputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -165,9 +166,39 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         }, "tiplay-airplay-listener").apply { isDaemon = true; start() }
         synchronized(discoveryLifecycle) {
             check(!closed.get()) { "Receiver is closed" }
-            discoveryInfoLease = ReceiverDiscoveryInfo.register { if (closed.get()) null else displayConfig }
+            discoveryInfoLease = ReceiverDiscoveryInfo.register(
+                { if (closed.get()) null else displayConfig }, ::serveLegacyConnection,
+            )
         }
         return port
+    }
+
+    /** Adopt the original main-listener connection without changing its peer or buffered bytes. */
+    internal fun serveLegacyConnection(socket: Socket, input: InputStream,
+                                       initialRequests: List<RtspMessage.Request>): Boolean {
+        synchronized(discoveryLifecycle) {
+            val lease = discoveryInfoLease
+            if (closed.get() || !ReceiverDiscoveryInfo.isCurrent(lease) || !slots.tryAcquire()) return false
+            if (!sockets.add(socket)) {
+                slots.release()
+                return false
+            }
+            if (closed.get() || !ReceiverDiscoveryInfo.isCurrent(lease)) {
+                sockets.remove(socket)
+                slots.release()
+                return false
+            }
+        }
+        try {
+            Connection(socket).run(input, initialRequests)
+        } catch (_: Exception) {
+            // Admission transferred ownership even if shutdown closed the socket before construction.
+            runCatching { socket.close() }
+        } finally {
+            sockets.remove(socket)
+            slots.release()
+        }
+        return true
     }
 
     override fun close() {
@@ -456,17 +487,26 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         private val peer = socket.inetAddress
         val diagnosticId = connectionIds.incrementAndGet()
 
-        fun run() {
+        fun run(prefetchedInput: InputStream? = null, initialRequests: List<RtspMessage.Request> = emptyList()) {
             var stage = ReceiverProtocolDiagnostics.Stage.ACCEPT
             diagnostics.stage(diagnosticId, stage)
             try {
                 TcpLiveness.configure(socket) {}
                 socket.tcpNoDelay = true
                 socket.soTimeout = 120_000
-                var input: java.io.InputStream = BufferedInputStream(RawTraffic.input("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
+                var input: InputStream = BufferedInputStream(RawTraffic.input(
+                    "iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/in",
+                    prefetchedInput ?: socket.getInputStream(),
+                ))
+                val queued = java.util.ArrayDeque(initialRequests)
                 while (!closed.get() && !socket.isClosed) {
                     stage = ReceiverProtocolDiagnostics.Stage.READ
-                    val request = try { readReceiverRequest(input) } catch (error: ReceiverRequestBodyTooLarge) {
+                    val request = try {
+                        (if (queued.isEmpty()) readReceiverRequest(input) else queued.removeFirst())?.also {
+                            if (it.body.size > receiverRequestBodyLimit(it.path))
+                                throw ReceiverRequestBodyTooLarge(it.copy(body = ByteArray(0)))
+                        }
+                    } catch (error: ReceiverRequestBodyTooLarge) {
                         val response = RtspMessage.Response(status = 413, statusText = "Payload Too Large",
                             headers = mapOf("Connection" to "close"))
                         synchronized(output) {
@@ -1585,6 +1625,12 @@ internal fun receiverMediaType(request: RtspMessage.Request, path: String = rece
 
 internal class ReceiverRequestBodyTooLarge(val request: RtspMessage.Request) : IllegalArgumentException("receiver body too large")
 
+private fun receiverRequestBodyLimit(path: String): Int = when (receiverRequestPath(path)) {
+    "/photo" -> ReceiverPhotos.MAX_IMAGE_BYTES
+    "/action" -> 32 * 1024 * 1024
+    else -> 1024 * 1024
+}
+
 /** Bound allocation by endpoint before passing framing to the shared RTSP parser. */
 internal fun readReceiverRequest(input: java.io.InputStream, maximumBodyBytes: Int = Int.MAX_VALUE): RtspMessage.Request? {
     val header = ByteArrayOutputStream()
@@ -1601,11 +1647,7 @@ internal fun readReceiverRequest(input: java.io.InputStream, maximumBodyBytes: I
     val length = lengths.firstOrNull()?.substringAfter(':')?.trim()?.toIntOrNull() ?: if (lengths.isEmpty()) 0 else error("invalid content length")
     require(length >= 0)
     val target = bytes.toString(Charsets.US_ASCII).substringBefore("\r\n").split(' ').getOrNull(1).orEmpty()
-    val limit = minOf(maximumBodyBytes, when (receiverRequestPath(target)) {
-        "/photo" -> ReceiverPhotos.MAX_IMAGE_BYTES
-        "/action" -> 32 * 1024 * 1024
-        else -> 1024 * 1024
-    })
+    val limit = minOf(maximumBodyBytes, receiverRequestBodyLimit(target))
     if (length > limit) {
         // Header-only parse with zero length preserves protocol/CSeq for the explicit 413 reply.
         val emptyHeader = bytes.toString(Charsets.US_ASCII).replace(Regex("(?im)^Content-Length:[^\r\n]*"), "Content-Length: 0")
