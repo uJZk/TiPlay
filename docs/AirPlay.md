@@ -6,7 +6,7 @@ subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
 described here shipped in beta.23/v95 on the beta.22/code64 base;
-current signed artifacts are recorded separately in [Build](Build.md#beta24-release).
+current publication and artifact identities are recorded in [Build](Build.md#beta55-release).
 Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
 a bounded WebRTC decoding-capability probe; it does not change the iPhone's
 encoded stream or establish vehicle hardware decoding. See the
@@ -28,16 +28,28 @@ Android Advanced settings can disable AirPlay immediately or **Reset AirPlay tru
 devices**. Disablement persists without reconnecting CarPlay. Reset removes stored
 and connection-only grants, cancels pending prompts and leaves already-running media,
 CarPlay pairing and browser pairing intact; later authorization requires a fresh choice.
-Always allow uses a signature-verified pairing public key when available, otherwise a
-normalized sender-reported `X-Apple-Client-ID` UUID. The header is an unauthenticated
-claim, not proof of device ownership. An existing Client-ID grant does not authorize
-a newly presented key; that key requires its own approval. A sender providing no valid client
-UUID or verified key can receive connection permission but cannot be recognized on a later
-connection, so the permanent-allow choice is hidden. Allow once never persists trust; concurrent connections with the same
-verified key and strong AirPlay session share it while any of them remains active.
-IP/name is never trust, and approval
-cannot displace another active sender. Ordinary AirPlay uses no PIN; browser pairing
-retains its separate code.
+Always allow prefers a signature-verified pairing public key, otherwise a
+normalized sender-reported `X-Apple-Client-ID` UUID. Beta.55
+adds a strict initial-SETUP `deviceID` MAC48 fallback when neither is available.
+Client-ID and deviceID are unauthenticated convenience claims, not proof of device
+ownership; their hash namespaces remain distinct. A newly presented verified key
+requires its own approval and cannot inherit a claim-based grant. Invalid/conflicting
+explicit Client-ID headers cannot fall back to a body claim. A changed or invalid
+claim on an established connection cannot inherit its old authorization.
+
+Only a valid successful initial control SETUP may cache a body claim. Reject
+malformed, placeholder, broadcast and multicast device IDs; do not use interface
+`macAddress`, IP, name or session UUID. Without a valid supported claim or verified
+key, authorization remains connection-only and the permanent choice is hidden.
+The existing browser API exposes that persistence eligibility; its flag does not
+turn an unauthenticated claim into cryptographic verification. Allow once never
+persists trust; concurrent connections with the same verified key and strong
+AirPlay session share it while any remains active. Approval cannot displace
+another active sender. Ordinary AirPlay uses no PIN; browser pairing retains its
+separate code. Beta.55 [focused source checks](Testing.md#beta55-source-preparation)
+pass for source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352`;
+signed/public delivery pass. Actual remembered approval across reconnect remains
+a physical acceptance check; see [Build](Build.md#beta55-release).
 
 A reverse event channel can be staged before media authorization. At most four
 unattached channels remain staged, for at most 60 seconds; attaching approved
@@ -61,6 +73,53 @@ LAN Bonjour and CarPlay running. No Bluetooth pairing, scan or device-name chang
 is performed. The observed packet reference is
 [Continuity AirPlay target](https://github.com/furiousMAC/continuity/blob/d9fa98bddafbfa3baafc84e37a417d78a0598546/messages/airplay_target.md);
 real iPhone picker behavior remains a device acceptance check.
+
+Beta.55 bridges the special TCP request
+`GET /info?txtAirPlay&txtRAOP` with `X-Apple-QR: BT`, no CSeq and no body from
+the main CarPlay listener to the live ordinary receiver profile. Requested TXT
+values use DNS-SD one-byte length-prefixed records from the same current Bonjour
+configuration. The BLE hint carries no service port; do not invent a port field,
+redirect or substitute CarPlay's identity/features. A receiver registers only
+after successful start and releases its exact owner lease on close; a stale close
+cannot clear a successor. Missing/shutdown/replaced snapshots return 503, rather
+than successful empty or stale information. Normal CarPlay info/pairing and media
+routes remain separate. This follows [UxPlay's BLE info handling](https://github.com/FDH2/UxPlay/blob/48f5ce47c9ef694afccfac907c9e8828329657fe/lib/raop.c)
+and [TXT encoding](https://github.com/FDH2/UxPlay/blob/48f5ce47c9ef694afccfac907c9e8828329657fe/lib/raop_handlers.h).
+
+## Mirror startup evidence
+
+The beta.54/code96 capture includes three first/retry pairs on Android API36.
+Both attempts complete FairPlay/control setup and NTP; the first does not receive
+a type-110 media SETUP, whereas the retry reaches it, creates consent and forwards
+mirror frames after Allow once. The browser's notification is an in-page card
+polled from current server state, not a browser popup requiring a gesture. No
+media request means no media-consent prompt; missing type 110 locates the boundary
+but does not explain the iPhone's decision. Keep authorization and screen borrowing
+at actual media admission rather than guessing intent from transport setup.
+
+Two concrete defects are visible. The latest first attempt's special BT-info GET
+receives a successful 200 with a zero-byte body on the main listener. Both captured initial
+SETUPs also contain the same valid stable deviceID, but no Client-ID or verified
+pairing key; ignoring that claim produces connection-only consent and correctly
+hides the permanent choice. Session UUID changes across the attempts. The fixes
+address the information reply and identity eligibility, without an unconditional
+browser remember option or working-audio change.
+
+The empty BT reply is a protocol defect, not a proven unique/sufficient cause of
+first-attempt failure. Similar short main-listener probes also precede two
+successful retries. Only the latest first query has raw method/header/empty-body
+coverage; earlier probe contents are unknown. The initial combined-SETUP response
+bodies are not captured: equal logged 1,126-byte lengths do not prove equal content.
+Browser v125 in the capture has the same trust module as v126. Beta.55 passes
+184 focused JVM/Robolectric cases across nineteen suites, 62 browser and 27 Python
+cases plus RTC/cache checks; both independent final-source reviews have no blockers.
+These include actual TCP/FairPlay/pairing regressions, not physical iPhone retry
+elimination. Source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352` passes signed run
+`44220793369` attempt 1 and same-source Pages `44223600106` attempt 1. Anonymous
+release/API/file/route checks pass every first request with zero retries;
+[Build](Build.md#beta55-release) records exact identities. Physical first-try and
+remembered approval across reconnect remain pending; software delivery does not
+establish the iPhone's private decision or eliminate the retry by observation.
 
 ## Playback and limitations
 

@@ -7,61 +7,55 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta55-source-preparation"></a>
+### Beta.55
+
+Published **0.2.20-beta.55/code97/browser v127** corrects BT discovery information
+and persistent sender-claim eligibility. Fresh focused JVM/Robolectric execution passes **184
+distinct cases in nineteen suites**, with zero failures/errors/skips, including
+actual TCP, FairPlay and pairing regressions. Source hashes bind 39 compiled classes.
+Both independent BLE/identity final-source reviews pass without blockers. Browser
+checks pass **62 cases**: trust9, presentation9, diagnostics28, service-worker12 and
+site4. Python passes **27 cases**: site2, release9 and symbols16; RTC prebuilt verify
+and cache checks exit zero. Source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352` passes signed run `44220793369`
+attempt 1: twelve artifact groups, actual 24 MIC/33 speech/21 receiver executable
+definitions (24 receiver call groups), source/attempt/SDK v2 old-certificate,
+frozen-source/native/notice checks. Same-source Pages `44223600106` attempt 1
+succeeds. Three public assets/two API requests, 226 files (37,828,528 bytes),
+21 MIME classes/eight languages and twenty routes (18 HTTP 200/two expected retired
+404) pass every first request with zero retries. [Build](Build.md#beta55-release)
+retains exact identities. Physical first-attempt/reconnect acceptance remains pending.
+Full CI remains waived; preserve the signing certificate and working audio contracts.
+
+Executed real sockets cover the exact no-CSeq BT query, ordinary receiver identity,
+both decoded Bonjour TXT records, live configuration, shutdown 503, owner
+replacement and close/snapshot races. Normal CarPlay info/pairing stays separate;
+unrelated request shapes must not delegate. Identity controls pin old header
+hashes and verified-key priority, strictly validate/namespace SETUP deviceID,
+reject invalid-header fallback and changed claims, cache only successful initial
+SETUP and exercise once/remember/reconnect/failed setup/new-key authorization.
+No IP/name/interface macAddress/session UUID identity or raw-claim diagnostics.
+
+Three beta.54 first/retry pairs complete FairPlay/control/NTP; only retries reach
+media type 110 and consent. Missing type 110 is a boundary, not a cause. Only the
+latest first query has raw empty-BT-reply evidence; similar probes precede two
+successful retries. Initial combined-SETUP response bodies are absent; equal
+lengths do not prove equal content. Ignored stable deviceID explains permanent
+eligibility, without a browser gesture/popup fix. See
+[AirPlay](AirPlay.md#mirror-startup-evidence). The user's “only mirroring remains”
+supports current-combination audio recovery, not broad acoustic/device acceptance.
+
 <a id="beta54-source-preparation"></a>
-### Beta.54
+### Beta.54 reference
 
-Published **0.2.20-beta.54/code96/browser v126** source
-`dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac` passes fresh focused
-JVM/Robolectric checks: **186 distinct cases in eleven suites**, with zero
-failures/errors/skips. The media suites contribute 168 cases and
-`WebEncodedAudioHubTest` another eighteen. Bootstrap has 48 cases (twelve new),
-the sink 28 (three new). All four final product/test file hashes match the fresh
-compiled/tested source; prior intermediate runs are not additional distinct cases.
-
-Coverage includes new and preopened Siri/guidance entering Android during MIC
-demand, browser queue/publication retirement, owned cleanup and same-stream
-restoration, telephone priority, disabled CarPlay audio and absent/throwing channel
-factories. Music/102/103 compatibility and alert routes remain independent.
-Compressed decoder failure/retry and stale callbacks retain per-stream ownership.
-The same Devices/capture lease has one speaker worker which switches associated
-owned SCO to voice attributes and requires its actual type/positive port; it does
-not wait for successful MIC reads. Regressions cover suspended A2DP, 160 ms held
-block expiry without replaying an accepted prefix, independent two-second
-no-progress detection and the original eight-second probe budget. CAS/failure
-markers and target/probe/deadline fences protect newer targets from queued old
-failures/timeouts. Real speaker/capture ACKs precede cleanup; both stop/release
-failing retains ownership, while failed owned cleanup still permits media recovery
-without claiming `released=true`. Fifteen MIC proof helpers remain byte-identical
-to beta.53: typed identity, zero-read warmup/fresh recorder and independent MIC
-revocation are preserved.
-
-Fresh direct scoped browser checks pass **88 cases**: audio18, rtc-audio26,
-browser-diagnostics28, service-worker-update12 and site4. Python checks pass
-**27 cases**: site2, release-draft9 and native-symbol16. RTC prebuilt and cache
-checks pass. The unchanged site fixture needed execution permissions for its
-Python child; it then passed all four cases. Full CI remains waived.
-
-No common/foreground, native, codec/RTP or gain source changes are included.
-The earlier plain-Activity foreground helper is not rerun; it does not verify
-this output handoff, AudioRecord, production Host or physical Bluetooth. These
-focused checks are source evidence, not signed-APK runtime or vehicle sound.
-Signed run `44061134348` attempt 1 passes exact source/APK/attempt binding,
-24 MIC and 33 speech-output executable-definition contracts, code-item/PC/CFG/value
-checks, native/notice identities and independent artifact review. These checks do
-not execute the signed APK's vehicle route. All three public assets/two anonymous
-API requests pass first HTTP 200. Same-source Pages `44065088740` attempt 1 passes
-226 files (37,828,528 bytes), eight languages and twenty routes (eighteen HTTP 200/
-two expected retired 404), all on the first request with zero retries. Product
-delivery and strict first-request verification pass; [Build](Build.md#beta54-release)
-retains exact signed/public identities. These checks do not certify physical sound.
-
-The latest beta.53 field capture contains real MIC samples, encoding and UDP sends,
-and the user confirms working input. Siri is still rendered in the browser while
-Android playback remains A2DP. No simultaneous navigation SETUP is present in the
-9.808-second raw window, and neither software render counters nor route matches
-measure vehicle speaker sound. Validate Siri/navigation during MIC demand on the
-car after installing the matching package/page; see
-[Robustness](Robustness.md#microphone-and-call-period-output).
+Published beta.54/code96/browser v126 source
+`dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac` passes 186 focused JVM/Robolectric
+cases in eleven suites, 88 browser and 27 Python cases plus RTC/cache checks. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/9d37aada3b1229573d414a3201528a8acae893b9/docs/Testing.md#beta54-source-preparation)
+retains coverage, final-file binding, unchanged MIC helpers, signed run
+`44061134348`, Pages `44065088740` and all first-request public checks with zero
+retries. [Build](Build.md#beta54-release) retains artifact identities. These are
+beta.54 results, not beta.55 execution or physical sound proof.
 
 <a id="beta53-source-preparation"></a>
 ### Beta.53 reference
@@ -125,41 +119,29 @@ beta.51 executions.
 
 ### Beta.48 reference
 
-Beta.48/code90/browser v120 was published from
-`eccd1f6f6762574974c698a400426761cfe68faf`. It prefers selected-car Bluetooth,
-then usable Bluetooth/system playback, independently of microphone readiness.
-During call/MIC demand, browser telephone downlink stays suppressed until demand
-ends and owned Android cleanup completes; music/navigation/Siri retain their paths.
-Its 580 shared, 716 browser and 27 Python checks, signed artifacts, public bytes,
-cache lifecycle and production-resource evidence are retained in the
-[immutable verification record](https://github.com/uJZk/TiPlay/blob/43e4e0954774f054f4959148421e9d81f69a140d/docs/Testing.md#current-release-source)
-and [Build](Build.md#beta48-release). Later diagnostic-retention fixes are not in
-that package. Physical media and vehicle ICE remained unverified.
+Beta.48/code90/v120 source `eccd1f6f6762574974c698a400426761cfe68faf` preserves
+best-effort output, independent MIC and browser telephone suppression. Its
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/9d37aada3b1229573d414a3201528a8acae893b9/docs/Testing.md#beta48-reference)
+and [Build](Build.md#beta48-release) retain 580 shared/716 browser/27 Python cases,
+cache/artifact/public checks and the later diagnostic-export correction boundary.
+Physical media and vehicle ICE remained unverified.
 
 ### Beta.47 reference
 
-Beta.47/code89 was published from `83634d299052291c02afc6aa0c221b85d7a3b035`
-with browser/cache v119. Focused validation passed 475 shared cases in 65 classes,
-700 browser tests and 27 Python checks, plus the Chromium three-resource lifecycle
-fixture. Twelve artifact checks and anonymous site/release bytes matched;
-[Build](Build.md#beta47-release) records the exact release provenance.
-The November 11 field capture independently contains 687 mirror AUs: two IDRs
-and 685 P frames, no non-IDR I slices, SEI recovery points or B slices. This is
-NAL/slice verification, not decoded-picture verification. That capture exposed
-missing-CSeq ACK handling and initial encoder selection losses; beta.47 fixes
-those software defects, with actual vehicle presentation still to be verified.
+Beta.47/code89/v119 source `83634d299052291c02afc6aa0c221b85d7a3b035` passes
+475 shared/700 browser/27 Python checks and publication verification; its
+[frozen record](https://github.com/uJZk/TiPlay/blob/9d37aada3b1229573d414a3201528a8acae893b9/docs/Testing.md#beta47-reference)
+retains the 687-AU analysis (two IDRs/685 P frames), missing-CSeq/cold-start fixes
+and actual-picture limits. [Build](Build.md#beta47-release) retains provenance.
 
 ### Beta.46 reference
 
-Beta.46/code88 was published from `924700b0aae374991c1682cbe6313bf961546bff`
-with browser/cache v118. Focused validation passed 411 tests (367 shared/44 common),
-700 browser tests, Python release/native-symbol/site checks and independent signed
-artifact/public-byte verification; [Build](Build.md#beta46-release) records provenance.
-The November 11 capture no longer shows the previous five-second packet-age peer
-mis-kill. CarPlay Opus source packets decode, but all native audio slots remain
-unready; ordinary-mirror AAC produces nonzero Worklet samples. HFP and A2DP both
-report the selected vehicle connected while no SCO address matches it. These
-observations do not identify the underlying ICE or SCO identity cause.
+Beta.46/code88/v118 source `924700b0aae374991c1682cbe6313bf961546bff` passes
+411 Android/700 browser cases plus packaging/public checks. Its
+[frozen record](https://github.com/uJZk/TiPlay/blob/9d37aada3b1229573d414a3201528a8acae893b9/docs/Testing.md#beta46-reference)
+and [Build](Build.md#beta46-release) retain the packet-age fix, unready native slots,
+nonzero mirror AAC and unmatched SCO-address observations. Those observations
+did not uniquely identify ICE/SCO causes.
 
 ### Beta.45 reference
 
@@ -809,7 +791,10 @@ unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 ## Ordinary AirPlay acceptance
 
 [AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
-protocol limits. Before the remote migration, the Chromium notification harness
+protocol limits. For beta.55, verify first-cast consent and actual picture after
+fresh CarPlay, plus remembered approval across reconnect. Changed claims/new keys
+need separate consent. Local BT-info/socket passes do not establish physical retry
+elimination; [source checks](#beta55-source-preparation) have their separate scope. Before the remote migration, the Chromium notification harness
 passed 48 English/Chinese prompts at 320/800 pixels, covering all three choices,
 audio/mirror copy, layout and readability. Pure-audio fixtures exercise sender
 metadata/artwork, Video.js controls, DACP command delivery and CarPlay hiding;

@@ -143,7 +143,13 @@ focus loss cannot trigger recovery. Stop and close remove the observer.
 
 ### Microphone and call-period output
 
-A paired car is not necessarily a connected HFP device. The latest beta.53/code95/
+The user’s current “only mirroring remains” report supports qualitative recovery
+of MIC and MIC-period Siri/navigation on the current phone/car combination. It
+does not certify telephone overlap, every route/device, recognition quality, echo
+or sustained acoustic behavior. Preserve the shipped audio contracts; the current
+mirror/discovery correction makes no working-audio change.
+
+A paired car is not necessarily a connected HFP device. The beta.53/code95/
 v125 field capture on Android 16/API36 contains **3,684 continuous records over
 9.808 seconds**, from **2026-11-17 17:15:42.098 to 17:15:51.906 (UTC+8)**.
 The user confirms that the microphone now works. The observed input association
@@ -155,7 +161,7 @@ vehicle operation remain separate physical checks. The
 retains the earlier pre-capture wait and unknown UDP count without applying them
 to the successful beta.53 session.
 
-The remaining reported failure is Siri/navigation output during MIC activation.
+The beta.53 reported failure concerned Siri/navigation output during MIC activation.
 The raw window contains one speechrecognition stream and no concurrent navigation
 SETUP. Its Siri stream remains in the browser native RTP path: 289 local send
 attempts return, the exact type-3/epoch-14 track reports ready, and a later snapshot
@@ -193,20 +199,16 @@ route cleanup; an old track cannot overlap its replacement. If both stop/release
 fail, ownership remains held. Failed owned cleanup retains `released=false` while
 media playback can recover; MIC failure must not stop all output.
 
-Fresh focused source checks pass **186 distinct cases in eleven suites**, with
-zero failures/errors/skips; 48 bootstrap cases include twelve new cases and
-28 sink cases include three new cases. Another 88 browser/27 Python cases and RTC/cache checks
-pass. Fifteen MIC proof helpers are byte-identical to beta.53; no common/FGS,
-native, codec/RTP or gain source change is included. Published source
+The [frozen beta.54 verification record](https://github.com/uJZk/TiPlay/blob/9d37aada3b1229573d414a3201528a8acae893b9/docs/Testing.md#beta54-source-preparation)
+retains 186 focused JVM/Robolectric, 88 browser and 27 Python passes, unchanged
+MIC proof helpers and exact source binding. Published source
 `dbd2b61dabd18c5daa1b6825fb283e0b4f59b5ac` passes signed run `44061134348`
-attempt 1, including 24 MIC and 33 speech-output executable-definition contracts
-and actual artifact/source/attempt binding. Matching product release and same-source
-Pages `44065088740` pass anonymous public verification: three assets/two API
-requests, 226 files and twenty routes all meet first-request checks with zero
-retries. [Build](Build.md#beta54-release) records exact identities. These source,
-artifact and delivery checks do not certify vehicle speaker sound. The raw capture's final input-route error occurs beside teardown/releasing
-and does not establish a separate sustained MIC fault. Earlier foreground
-rejection does not explain the successful beta.53 capture.
+attempt 1 and same-source Pages `44065088740`, including all first-request public
+checks with zero retries. [Build](Build.md#beta54-release) retains exact identities.
+These source/artifact/delivery checks do not measure vehicle sound; the later user
+observation has its own limited scope. The beta.53 capture's final input-route
+error occurs beside teardown/releasing and does not establish a sustained MIC
+fault. Earlier foreground rejection does not explain its successful capture.
 
 AOSP registers SCO input/output as the active headset route and can return generic
 public device identities; masking is conditional, not proof that this phone's MIC
@@ -263,6 +265,50 @@ peer. Those earlier checks did not establish vehicle sound or capture. The lates
 MIC field evidence above is narrower than sustained recovery, physical speaker
 output, ordinary mirror pixels or exact source-preference/fallback execution.
 See [Testing](Testing.md).
+
+### Ordinary AirPlay discovery and consent
+
+Beta.54/code96 evidence contains three first/retry pairs. Both flows complete
+FairPlay/control setup and NTP, but the first receives no media type-110 SETUP;
+only the retry creates browser consent. This is a sender-request boundary, not a
+causal explanation. Keep unknown/transport-only setup free of media permission,
+screen borrowing and speculative early prompts. Browser consent is an in-page
+card refreshed from current server state, so no window-popup permission is needed.
+
+Beta.55 corrects two concrete software gaps.
+The latest first attempt's TCP BT discovery `GET /info?txtAirPlay&txtRAOP` on the
+main listener returns a successful 200 with an empty body. Its scoped bridge must supply
+the live ordinary receiver profile and the requested actual DNS-SD TXT records,
+without CarPlay identity or an invented service port. Register after successful
+receiver start, close only the exact owner lease, reject retired snapshots and
+return 503 if no current receiver exists. Normal CarPlay info/pairing stays separate.
+
+Both initial SETUPs contain the same valid stable deviceID, with no Client-ID or
+verified pairing key; ignoring deviceID makes the prompt connection-only and
+correctly hides permanent approval. The new strict namespace-hashed deviceID is
+an unauthenticated convenience claim. Preserve verified-key/Client-ID priority,
+old header hashes, invalid-header rejection, successful-initial-setup caching and
+same-connection claim-change rejection. Never persist by IP/name, interface
+macAddress or session UUID. A new verified key still needs independent consent;
+the existing browser eligibility API is sufficient.
+
+The empty BT reply is not a proven unique or sufficient cause of the retry.
+Similar short probes precede two successful retries as well; only the latest first
+query has raw request/header/empty-response coverage. Initial combined-SETUP
+response bodies are absent, so equal logged lengths do not prove equal content.
+Local socket/profile/identity regressions cannot prove that the actual iPhone will
+send type 110 on the first attempt. Fresh beta.55 source checks pass 184 distinct
+JVM/Robolectric cases in nineteen suites with no failures/errors/skips, 62 browser/
+27 Python cases and RTC/cache checks. Actual TCP/FairPlay/pairing regressions and
+39 source-bound compiled classes pass; both independent final-source reviews have
+no blockers. Source `6db3fa9d2bf444ce034c15ec2ca9fd410b852352` passes signed run
+`44220793369` attempt 1 and same-source Pages `44223600106` attempt 1. The existing
+v2 certificate, actual MIC/speech/receiver contracts, source/attempt/native/notice
+checks pass. Three public assets/two APIs, 226 files and twenty routes pass every
+first request with zero retries. Physical first-try/remember acceptance remains open;
+see [Testing](Testing.md#beta55-source-preparation) and
+[AirPlay](AirPlay.md#mirror-startup-evidence). No audio/native/codec/gain workaround
+follows from this mirror evidence.
 
 ### Diagnostic sufficiency
 
