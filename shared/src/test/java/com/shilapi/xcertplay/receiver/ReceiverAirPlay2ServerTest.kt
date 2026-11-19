@@ -55,7 +55,7 @@ class ReceiverAirPlay2ServerTest {
         override fun status(state: String) {}
     }
 
-    @Test fun combinedTransientControlSetupUsesTheSameFullInfoWithoutStartingMedia() {
+    @Test fun combinedTransientMirrorIntentControlSetupKeepsTheFullInfoWithoutStartingMedia() {
         val listener = Listener()
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
             audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS), listener)
@@ -66,6 +66,7 @@ class ReceiverAirPlay2ServerTest {
                 val response = peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
                     "timingProtocol" to "NTP", "timingPort" to 0L,
                     "combinedGetInfoWithControlSetup" to true,
+                    "isScreenMirroringSession" to true,
                 )))
                 assertEquals("200", response.path)
                 val session = BplistCodec.decode(response.body) as Map<*, *>

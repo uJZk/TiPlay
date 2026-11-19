@@ -8,12 +8,16 @@ import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverPlayback
 import com.shilapi.xcertplay.receiver.ReceiverServer
 import com.shilapi.xcertplay.receiver.ReceiverSdrFixtures
+import com.shilapi.xcertplay.receiver.aesCtr
 import com.shilapi.xcertplay.receiver.readReceiverRequest
 import com.shilapi.xcertplay.web.BrowserDisplaySource
 import com.shilapi.xcertplay.web.WebMediaSink
 import com.shilapi.xcertplay.web.WebVideoHub
+import com.shilapi.xcertplay.web.WebVideoRecords
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -127,6 +131,30 @@ class AirPlayBleDiscoverySocketTest {
                 }
                 await { endpoint.live.isEmpty() }
                 assertEquals(3, endpoint.legacyClosed.get())
+                assertEquals(0, endpoint.carPlayEnded.get())
+                assertEquals(0, endpoint.carPlayMediaClosed.get())
+                assertEquals(0, endpoint.carPlayBorrowChanges.get())
+                assertEquals(0, endpoint.carPlaySetupResponses.get())
+                assertEquals(listOf(true), fixture.prompts.toList())
+                assertEquals(1, fixture.store.values.size)
+            }
+        }
+    }
+
+    @Test fun unpairedMirrorRefreshesInfoOnTheFixedEndpointWithoutReplacingItsKeysOrTiming() {
+        ReceiverFixture().use { fixture ->
+            ControlEndpoint(port = 7000).use { endpoint ->
+                DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.2"), 0)).use { timing ->
+                    timing.soTimeout = 3000
+                    endpoint.peer().use { peer ->
+                        assertEquals(7000, peer.socket.port)
+                        prepareAndMirror(peer, fixture, "11111111-2222-3333-4444-555555555555", timing = timing)
+                        assertEquals(1, fixture.decryptions.get())
+                        assertEquals("200", peer.request("TEARDOWN", "/session").path)
+                    }
+                }
+                await { endpoint.live.isEmpty() }
+                assertEquals(1, endpoint.legacyClosed.get())
                 assertEquals(0, endpoint.carPlayEnded.get())
                 assertEquals(0, endpoint.carPlayMediaClosed.get())
                 assertEquals(0, endpoint.carPlayBorrowChanges.get())
@@ -261,13 +289,17 @@ class AirPlayBleDiscoverySocketTest {
         val logs = CopyOnWriteArrayList<String>()
         val ended = AtomicInteger()
         val authorized = AtomicInteger()
+        val preparations = AtomicInteger()
+        val decryptions = AtomicInteger()
+        val transportKey = ByteArray(16) { (it + 1).toByte() }
         private val trust = ReceiverDeviceTrust(store)
         private val hub = WebVideoHub(Executor { it.run() })
         val receiver = ReceiverServer(ReceiverConfig("ordinary-receiver", "02:11:22:33:44:55",
             AirPlayIdentity.generate(), audioOutputFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS), this,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
-            fairPlayDecrypt = { _, _ -> ByteArray(16) })
+            fairPlayDecrypt = { _, _ -> decryptions.incrementAndGet(); transportKey.copyOf() })
         init { receiver.start() }
+        fun video() = hub.subscribe(reliable = true)
         override fun authorizeDevice(sessionToken: String, identity: ByteArray, deviceName: String,
             mediaType: String, verifiedSessionId: String?): Boolean {
             authorized.incrementAndGet()
@@ -281,6 +313,7 @@ class AirPlayBleDiscoverySocketTest {
             return trust.authorizeSession(sessionToken, identity, deviceName, mediaType, verifiedSessionId)
         }
         override fun onAuthorizationSessionEnded(sessionToken: String) { trust.endSession(sessionToken); ended.incrementAndGet() }
+        override fun prepareMirror() { preparations.incrementAndGet() }
         override fun mirrorSink() = WebMediaSink(hub, 720, 1280, 60, BrowserDisplaySource.AIRPLAY)
         override fun play(item: ReceiverPlay) = error("Unexpected playback")
         override fun stopPlayback() {}
@@ -292,8 +325,11 @@ class AirPlayBleDiscoverySocketTest {
         override fun close() { receiver.close(); trust.close() }
     }
 
-    private class ControlEndpoint : Closeable {
-        private val server = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
+    private class ControlEndpoint(port: Int = 0) : Closeable {
+        private val server = ServerSocket().apply {
+            reuseAddress = true
+            bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 8)
+        }
         val live = ConcurrentHashMap.newKeySet<AirPlaySession>()
         val legacyClosed = AtomicInteger()
         val carPlayEnded = AtomicInteger()
@@ -329,7 +365,14 @@ class AirPlayBleDiscoverySocketTest {
         private var plaintext = byteArrayOf()
         fun request(method: String, path: String, body: ByteArray = byteArrayOf(),
             headers: Map<String, String> = mapOf("CSeq" to (++cseq).toString())): RtspMessage.Request {
-            write(wire(method, path, headers, body))
+            val contentType = when {
+                body.isEmpty() -> null
+                path == "/fp-setup" -> "application/octet-stream"
+                method == "SETUP" -> "application/x-apple-binary-plist"
+                else -> null
+            }
+            val typedHeaders = if (contentType == null) headers else headers + ("Content-Type" to contentType)
+            write(wire(method, path, typedHeaders, body))
             return read()
         }
         fun write(bytes: ByteArray) { socket.getOutputStream().apply { write(cipher?.encrypt(bytes) ?: bytes); flush() } }
@@ -362,20 +405,42 @@ class AirPlayBleDiscoverySocketTest {
             ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
         }
         private fun prepareAndMirror(peer: ControlPeer, fixture: ReceiverFixture, session: String,
-            fairPlayDone: Boolean = false) {
+            fairPlayDone: Boolean = false, timing: DatagramSocket? = null) {
             if (!fairPlayDone) {
                 assertEquals(142, peer.request("POST", "/fp-setup", fairPlay(16)).body.size)
                 assertEquals(32, peer.request("POST", "/fp-setup", fairPlay(164)).body.size)
             }
             val before = fixture.authorized.get()
-            val setup = peer.request("SETUP", "/session", BplistCodec.encode(mapOf(
-                "ekey" to ByteArray(72), "eiv" to ByteArray(16), "timingPort" to 0,
+            val preparationsBefore = fixture.preparations.get()
+            val decryptionsBefore = fixture.decryptions.get()
+            val target = "rtsp://127.0.0.2/session"
+            val setup = peer.request("SETUP", target, BplistCodec.encode(mapOf(
+                "ekey" to ByteArray(72), "eiv" to ByteArray(16), "timingPort" to (timing?.localPort ?: 0),
                 "timingProtocol" to "NTP", "combinedGetInfoWithControlSetup" to true,
                 "isScreenMirroringSession" to true, "sessionUUID" to session, "deviceID" to "02:AA:22:33:44:55")))
             assertEquals("200", setup.path)
-            val info = (BplistCodec.decode(setup.body) as Map<*, *>)["info"] as Map<*, *>
+            val ports = BplistCodec.decode(setup.body) as Map<*, *>
+            assertEquals(setOf("timingPort", "eventPort"), ports.keys)
+            val timingPort = (ports["timingPort"] as Number).toInt()
+            assertTrue(timingPort in 1..65535)
+            assertTrue((ports["eventPort"] as Number).toInt() in 1..65535)
+            timing?.let { answerTimingProbe(it, timingPort) }
+            // The optional combined response is omitted on this unpaired legacy mirror path.
+            // Refresh on the same control connection without a qualifier body or another SETUP.
+            val information = peer.request("GET", "/info")
+            assertEquals("200", information.path)
+            assertEquals("application/x-apple-binary-plist", information.headers["content-type"])
+            val info = BplistCodec.decode(information.body) as Map<*, *>
             assertArrayEquals(fixture.receiver.displayConfig.identity.publicKey, info["pk"] as ByteArray)
-            assertEquals("200", peer.request("RECORD", "/session").path)
+            assertEquals(fixture.receiver.displayConfig.deviceId, info["deviceID"])
+            assertEquals(fixture.receiver.displayConfig.name, info["name"])
+            assertEquals(fixture.receiver.displayConfig.features, (info["features"] as Number).toLong())
+            assertTrue((info["displays"] as List<*>).isNotEmpty())
+            assertFalse(info.containsKey("txtAirPlay"))
+            assertEquals(decryptionsBefore + 1, fixture.decryptions.get())
+            assertEquals(preparationsBefore, fixture.preparations.get())
+            timing?.let { answerTimingProbe(it, timingPort) }
+            assertEquals("200", peer.request("RECORD", target).path)
             assertEquals(before, fixture.authorized.get())
             val mirror = peer.request("SETUP", "/stream", BplistCodec.encode(mapOf("streams" to listOf(
                 mapOf("type" to 110, "streamConnectionID" to 1234L)))))
@@ -384,17 +449,47 @@ class AirPlayBleDiscoverySocketTest {
             val dataPort = (stream["dataPort"] as Number).toInt()
             assertTrue(dataPort in 1..65535)
             assertEquals(before + 1, fixture.authorized.get())
+            assertEquals(preparationsBefore + 1, fixture.preparations.get())
+            assertEquals(decryptionsBefore + 1, fixture.decryptions.get())
+            timing?.let { answerTimingProbe(it, timingPort) }
             // A loopback proxy would incorrectly bind the receiver's peer to 127.0.0.1.
             connectFrom("127.0.0.1", dataPort).use { wrong -> assertEquals(-1, wrong.getInputStream().read()) }
-            val configsBefore = fixture.logs.count { "mirror stage=CONFIG codec=" in it }
-            connectFrom("127.0.0.2", dataPort).use { media ->
-                val config = ReceiverSdrFixtures.avcc()
-                val header = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN).apply {
-                    putInt(0, config.size); put(4, 1.toByte()); putFloat(56, 720f); putFloat(60, 1280f)
-                }.array()
-                media.getOutputStream().apply { write(header + config); flush() }
-                await { fixture.logs.count { "mirror stage=CONFIG codec=" in it } > configsBefore }
+            fixture.video().use { video ->
+                connectFrom("127.0.0.2", dataPort).use { media ->
+                    fun packet(type: Int, body: ByteArray) {
+                        val header = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN).apply {
+                            putInt(0, body.size); put(4, type.toByte()); putFloat(56, 720f); putFloat(60, 1280f)
+                        }.array()
+                        media.getOutputStream().apply { write(header); write(body); flush() }
+                    }
+                    packet(1, ReceiverSdrFixtures.avcc())
+                    val configuration = requireNotNull(video.take(3000))
+                    assertEquals(WebVideoRecords.KIND_CONFIG, configuration.kind)
+                    val encryption = aesCtr(
+                        AirPlayCrypto.sha512("AirPlayStreamKey1234".toByteArray(), fixture.transportKey).copyOf(16),
+                        AirPlayCrypto.sha512("AirPlayStreamIV1234".toByteArray(), fixture.transportKey).copyOf(16),
+                    )
+                    packet(0, encryption.update(byteArrayOf(0, 0, 0, 3, 0x65, 1, 2)))
+                    val frame = requireNotNull(video.take(3000))
+                    assertEquals(WebVideoRecords.KIND_FRAME, frame.kind)
+                    assertTrue(frame.keyFrame)
+                    assertEquals(configuration.epoch, frame.epoch)
+                    assertArrayEquals(byteArrayOf(0, 0, 0, 1, 0x65, 1, 2), frame.payload)
+                    assertEquals(decryptionsBefore + 1, fixture.decryptions.get())
+                }
             }
+        }
+        private fun answerTimingProbe(timing: DatagramSocket, expectedPort: Int) {
+            val probe = DatagramPacket(ByteArray(64), 64)
+            timing.receive(probe)
+            assertEquals(expectedPort, probe.port)
+            assertEquals(32, probe.length)
+            assertEquals(210, probe.data[1].toInt() and 0xff)
+            val response = ByteArray(32).apply {
+                this[0] = 0x80.toByte(); this[1] = 211.toByte(); this[3] = 7
+                for (offset in listOf(8, 16, 24)) probe.data.copyInto(this, offset, 24, 32)
+            }
+            timing.send(DatagramPacket(response, response.size, probe.socketAddress))
         }
         private fun connectFrom(address: String, port: Int) = Socket().apply {
             bind(InetSocketAddress(InetAddress.getByName(address), 0))

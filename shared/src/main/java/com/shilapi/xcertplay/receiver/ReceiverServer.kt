@@ -1417,6 +1417,12 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             return ports
         }
 
+        private fun omitCombinedLegacyMirrorInfo(dict: Map<*, *>, encrypted: ByteArray?): Boolean =
+            encrypted != null && !dict.containsKey("streams") &&
+                dict["isScreenMirroringSession"] == true && config.mirrorEnabled &&
+                pairing.sharedSecret == null && pairing.verifiedPublicKey == null &&
+                pairing.presentedPublicKey == null && controlCipher == null && !pairing2.complete
+
         private fun setup(request: RtspMessage.Request): RtspMessage.Response = synchronized(ownership) {
             if (closed.get() || (owner != null && owner !== this && !sameVerifiedPeer(owner!!)) ||
                 (playbackPeer != null && (playbackConnection?.let { !sameVerifiedPeer(it) } != false))) return busy()
@@ -1593,10 +1599,11 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                     dict["isScreenMirroringSession"] == true && config.mirrorEnabled ->
                     mirrorControlPreparation.begin(dict["combinedGetInfoWithControlSetup"] == true)
             }
-            // Match the sender's explicit combined-control request, using the same current
-            // full-info source as /info (protocol comparison: doubletake 5e2f1cbe).
+            // Unpaired legacy mirror control follows UxPlay's ports-only reply. A sender can
+            // refresh the complete profile with /info on this connection without resetting it.
+            // Other control paths retain the optional combined information.
             if (dict["combinedGetInfoWithControlSetup"] == true &&
-                initialControlSetup) {
+                initialControlSetup && !omitCombinedLegacyMirrorInfo(dict, encrypted)) {
                 response["info"] = ReceiverInfoProtocol.fullInfo(config)
             }
             plist(response)

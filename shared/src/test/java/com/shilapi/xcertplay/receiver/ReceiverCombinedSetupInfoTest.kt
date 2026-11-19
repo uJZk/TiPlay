@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.receiver
 
+import com.shilapi.xcertplay.airplay.AirPlayCrypto
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.BplistCodec
 import com.shilapi.xcertplay.airplay.RtspMessage
@@ -7,7 +8,10 @@ import com.shilapi.xcertplay.web.WebMediaSink
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.Closeable
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.CopyOnWriteArrayList
@@ -15,9 +19,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** Combined information uses the existing receiver profile without granting a media lease. */
 class ReceiverCombinedSetupInfoTest {
-    @Test fun requestedCombinedInfoMatchesTheCompleteInfoEndpoint() {
+    @Test fun pairedLegacyCombinedInfoMatchesTheCompleteInfoEndpoint() {
         Fixture().use { fixture ->
             fixture.peer().use { peer ->
+                peer.pairLegacy()
                 peer.fairPlay()
                 val setup = peer.setup(true)
                 assertEquals("200", setup.path)
@@ -38,6 +43,37 @@ class ReceiverCombinedSetupInfoTest {
         }
     }
 
+    @Test fun unpairedMirrorInfoRefreshKeepsItsEstablishedTransportWithoutEarlyConsent() {
+        Fixture().use { fixture ->
+            DatagramSocket(InetSocketAddress("127.0.0.1", 0)).use { timing ->
+                timing.soTimeout = 3000
+                fixture.peer().use { peer ->
+                    peer.fairPlay()
+                    val setup = peer.setup(true, mapOf("timingPort" to timing.localPort))
+                    assertEquals("200", setup.path)
+                    val ports = dictionary(setup)
+                    assertEquals(setOf("timingPort", "eventPort"), ports.keys)
+                    val timingPort = (ports["timingPort"] as Number).toInt()
+                    val eventPort = (ports["eventPort"] as Number).toInt()
+                    assertTrue(timingPort in 1..65535)
+                    assertTrue(eventPort in 1..65535)
+                    assertEquals(timingPort, timingProbePort(timing))
+                    Socket(InetAddress.getByName("127.0.0.1"), eventPort).use {
+                        val information = peer.request("GET", "/info")
+                        assertEquals("200", information.path)
+                        assertPlistEquals(ReceiverInfoProtocol.fullInfo(fixture.receiver.displayConfig), dictionary(information))
+                        assertEquals("200", peer.request("RECORD", "/session").path)
+                        assertEquals(timingPort, timingProbePort(timing))
+                        assertEquals(1, fixture.decryptions.get())
+                        assertEquals(0, fixture.authorizations.get())
+                        assertEquals(0, fixture.preparations.get())
+                        assertTrue(fixture.states.isEmpty())
+                    }
+                }
+            }
+        }
+    }
+
     @Test fun absentFalseAndNonBooleanCombinedRequestsKeepThePortOnlyReply() {
         for (flag in listOf(null, false, "true", 1L)) {
             Fixture().use { fixture ->
@@ -53,9 +89,10 @@ class ReceiverCombinedSetupInfoTest {
         }
     }
 
-    @Test fun aLaterCombinedSetupUsesTheCurrentDisplayCodecAndAudioProfile() {
+    @Test fun aLaterPairedCombinedSetupUsesTheCurrentDisplayCodecAndAudioProfile() {
         Fixture().use { fixture ->
             fixture.peer().use { peer ->
+                peer.pairLegacy()
                 peer.fairPlay()
                 val previous = dictionary(peer.setup(true))["info"] as Map<*, *>
                 fixture.receiver.updateDisplay(24, hevc = true)
@@ -73,6 +110,91 @@ class ReceiverCombinedSetupInfoTest {
                 assertArrayEquals(previous["pk"] as ByteArray, updated["pk"] as ByteArray)
                 assertEquals(0, fixture.preparations.get())
                 assertEquals(0, fixture.authorizations.get())
+            }
+        }
+    }
+
+    @Test fun nonMirrorIntentAndStreamListsRetainTheRequestedCombinedInfo() {
+        val requests = listOf(
+            mapOf("isScreenMirroringSession" to false),
+            mapOf("isScreenMirroringSession" to "true"),
+            mapOf("isScreenMirroringSession" to 1L),
+            mapOf("streams" to emptyList<Map<String, Any>>()),
+        )
+        for (changes in requests) {
+            Fixture().use { fixture ->
+                fixture.peer().use { peer ->
+                    peer.fairPlay()
+                    val response = peer.setup(true, changes)
+                    assertEquals("200", response.path)
+                    assertPlistEquals(ReceiverInfoProtocol.fullInfo(fixture.receiver.displayConfig), dictionary(response)["info"])
+                    assertEquals(changes.containsKey("streams"), dictionary(response).containsKey("streams"))
+                    assertEquals(0, fixture.authorizations.get())
+                    assertEquals(0, fixture.preparations.get())
+                }
+            }
+        }
+        for (mirrorEnabled in listOf(true, false)) {
+            Fixture(mirrorEnabled).use { fixture ->
+                fixture.peer().use { peer ->
+                    peer.fairPlay()
+                    val response = peer.setup(true, removed = setOf("isScreenMirroringSession"))
+                    assertEquals("200", response.path)
+                    assertPlistEquals(ReceiverInfoProtocol.fullInfo(fixture.receiver.displayConfig), dictionary(response)["info"])
+                    assertEquals(0, fixture.authorizations.get())
+                    assertEquals(0, fixture.preparations.get())
+                }
+            }
+        }
+    }
+
+    @Test fun disabledMirrorCapabilityRetainsCombinedInfoForExplicitMirrorIntent() {
+        Fixture(mirrorEnabled = false).use { fixture ->
+            fixture.peer().use { peer ->
+                peer.fairPlay()
+                val response = peer.setup(true)
+                assertEquals("200", response.path)
+                assertPlistEquals(ReceiverInfoProtocol.fullInfo(fixture.receiver.displayConfig), dictionary(response)["info"])
+                assertEquals(0, fixture.authorizations.get())
+                assertEquals(0, fixture.preparations.get())
+            }
+        }
+    }
+
+    @Test fun aCombinedLegacyAudioStreamKeepsItsInfoAndTypedConsent() {
+        Fixture(audioFormats = ReceiverAudioCapabilities.OUTPUT_FORMATS).use { fixture ->
+            fixture.peer().use { peer ->
+                peer.fairPlay()
+                val response = peer.setup(true, mapOf(
+                    "isScreenMirroringSession" to false,
+                    "streams" to listOf(mapOf("type" to 96, "ct" to 1, "sr" to 44100, "ch" to 2, "spf" to 352)),
+                ))
+                assertEquals("200", response.path)
+                val session = dictionary(response)
+                assertEquals(setOf("timingPort", "eventPort", "streams", "info"), session.keys)
+                assertPlistEquals(ReceiverInfoProtocol.fullInfo(fixture.receiver.displayConfig), session["info"])
+                assertEquals(0, (session["eventPort"] as Number).toInt())
+                val audio = (session["streams"] as List<*>).single() as Map<*, *>
+                assertEquals(96, (audio["type"] as Number).toInt())
+                assertTrue((audio["dataPort"] as Number).toInt() in 1..65535)
+                assertEquals(1, fixture.authorizations.get())
+                assertEquals(0, fixture.preparations.get())
+                assertEquals(listOf("audio"), fixture.states.toList())
+            }
+        }
+    }
+
+    @Test fun aPresentedButUnverifiedPairingKeyCannotUseTheUnpairedCompatibilityReply() {
+        Fixture().use { fixture ->
+            fixture.peer().use { peer ->
+                peer.pairLegacy(complete = false)
+                peer.fairPlay()
+                val response = peer.setup(true)
+                assertEquals("403", response.path)
+                assertEquals(0, response.body.size)
+                assertEquals(0, fixture.decryptions.get())
+                assertEquals(0, fixture.authorizations.get())
+                assertEquals(0, fixture.preparations.get())
             }
         }
     }
@@ -136,16 +258,18 @@ class ReceiverCombinedSetupInfoTest {
         }
     }
 
-    private class Fixture : Closeable, ReceiverServer.Listener {
+    private class Fixture(mirrorEnabled: Boolean = true, audioFormats: Long = 0L) : Closeable, ReceiverServer.Listener {
         val identity = AirPlayIdentity.generate()
+        val decryptions = AtomicInteger()
         val preparations = AtomicInteger()
         val authorizations = AtomicInteger()
         val played = AtomicInteger()
         val stopped = AtomicInteger()
         val states = CopyOnWriteArrayList<String>()
-        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity), this,
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity,
+            mirrorEnabled = mirrorEnabled, audioOutputFormats = audioFormats), this,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
-            fairPlayDecrypt = { _, _ -> ByteArray(16) { (it + 1).toByte() } })
+            fairPlayDecrypt = { _, _ -> decryptions.incrementAndGet(); ByteArray(16) { (it + 1).toByte() } })
 
         init { receiver.start() }
         fun peer() = Peer(receiver.port)
@@ -174,12 +298,28 @@ class ReceiverCombinedSetupInfoTest {
             socket.getOutputStream().apply { write(header.toByteArray() + body); flush() }
             return requireNotNull(readReceiverRequest(socket.getInputStream()))
         }
-        fun setup(flag: Any?, changes: Map<String, Any> = emptyMap()): RtspMessage.Request {
+        fun setup(flag: Any?, changes: Map<String, Any> = emptyMap(), removed: Set<String> = emptySet()): RtspMessage.Request {
             val fields = linkedMapOf<String, Any>("eiv" to ByteArray(16), "ekey" to ByteArray(72),
                 "timingPort" to 0, "timingProtocol" to "NTP", "isScreenMirroringSession" to true)
             if (flag != null) fields["combinedGetInfoWithControlSetup"] = flag
             fields.putAll(changes)
+            removed.forEach { fields.remove(it) }
             return request("SETUP", "/session", BplistCodec.encode(fields))
+        }
+        fun pairLegacy(complete: Boolean = true) {
+            val curve = AirPlayCrypto.x25519Generate()
+            val signing = AirPlayCrypto.ed25519Generate()
+            val response = request("POST", "/pair-verify", byteArrayOf(1, 0, 0, 0) + curve.publicKey + signing.publicKey)
+            assertEquals("200", response.path)
+            assertEquals(96, response.body.size)
+            if (!complete) return
+            val serverCurve = response.body.copyOf(32)
+            val secret = AirPlayCrypto.x25519Shared(curve.privateKey, serverCurve)
+            val cipher = aesCtr(AirPlayCrypto.sha512("Pair-Verify-AES-Key".toByteArray(), secret).copyOf(16),
+                AirPlayCrypto.sha512("Pair-Verify-AES-IV".toByteArray(), secret).copyOf(16))
+            cipher.update(response.body.copyOfRange(32, 96))
+            val signature = AirPlayCrypto.ed25519Sign(signing.privateKey, curve.publicKey + serverCurve)
+            assertEquals("200", request("POST", "/pair-verify", ByteArray(4) + cipher.update(signature)).path)
         }
         fun fairPlay() {
             for ((size, step) in listOf(16 to 1, 164 to 3)) {
@@ -195,6 +335,13 @@ class ReceiverCombinedSetupInfoTest {
     }
 
     private companion object {
+        fun timingProbePort(socket: DatagramSocket): Int {
+            val packet = DatagramPacket(ByteArray(32), 32)
+            socket.receive(packet)
+            assertEquals(32, packet.length)
+            assertEquals(210, packet.data[1].toInt() and 0xff)
+            return packet.port
+        }
         fun dictionary(response: RtspMessage.Request) = BplistCodec.decode(response.body) as Map<*, *>
         fun assertPlistEquals(expected: Any?, actual: Any?) {
             when (expected) {
