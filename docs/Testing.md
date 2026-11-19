@@ -7,47 +7,102 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta57-source-preparation"></a>
+### Beta.57
+
+Published **0.2.20-beta.57/code99/browser v129** source
+`179a4953972f1138cef953a9b7f9d975f21b6884` passes **233 distinct fresh receiver/discovery
+JVM/Robolectric cases across 24 suites**, with zero XML failures/errors/skips.
+The root-owned Gradle command exits0 with BUILD SUCCESSFUL; final XML and 52
+selected compiled JVM classes bind the checked source. Browser62/Python27,
+RTC-audio verification, cache and local public-tree checks pass. Final tool-assisted
+source/audio freeze reviews have no blockers. These fresh JVM counts do not claim
+fresh audio JUnit execution; actual audio-code acceptance is separate. Full CI
+remains waived; keep original signing, working audio/identity and endpoint handoff.
+
+The 233 cases are assertion/XML-level passes; the run is **not runtime-exception-free**.
+Two suites contain four uncaught shutdown exception headers: the combined-info
+suite emits one `RejectedExecutionException` from the existing maintenance
+check-then-schedule race, and the TCP-accept suite emits three `Socket is closed`
+headers during shutdown. Independent and control review treat these as
+nonblocking for the response-only change. The unchanged global close path closes
+media and sockets; it is not bypassed. Track maintenance/accept shutdown cleanup
+separately in [Todo](Todo.md#engineering-follow-up). These observations do not
+diagnose the iPhone's missing first-attempt type 110; beta.57 includes no production
+shutdown change.
+
+Real-TCP regressions follow completed public FairPlay → successful minimal initial
+control SETUP → bodyless GET /info → RECORD → type110 on one transport. They cover
+actual profile content, continuing event ownership, the same NTP port/probes,
+one FairPlay key decryption and an actual encrypted mirror frame. The exception
+requires valid encrypted key/IV, no pairing of any kind, explicit mirror intent
+and the `streams` key absent. Paired legacy, AirPlay 2, encrypted NTP, audio,
+other intent and streams-present requests, including an empty list, retain combined
+behavior. Rejected/failed SETUP and optional/false combined-info requests remain
+covered; stream SETUP never adds nested info. Assertions pass with the shutdown
+qualification above.
+
+Retain beta.56 endpoint coverage: discovery/FairPlay/control/type110, same/new TCP,
+pre-read/pipelined data, original peer/socket, twelve-slot admission, replacement/
+close races and retired/unavailable receivers. MFi/CarPlay/audio keep their paths.
+UxPlay's ports-only SETUP and Doubletake's optional-info fallback support the
+compatibility choice without proving an iOS cause or first-use warmup. No early
+borrowing/keyframe or global capability change is justified.
+
+[Signed workflow `44459111940`](https://github.com/uJZk/TiPlay/actions/runs/44459111940)
+attempt1 passes all three jobs. Formal actual artifact acceptance passes exact
+source/attempt/frozen-source/runtime/native/notices binding, MIC24/speech33/
+receiver41 executable contracts and original-certificate v2/API36. Receiver review
+covers 377 DEX blocks/57 selected check groups, not full branch or physical proof.
+The actual APK passes aapt version/package, CRC and 16 KiB checks. Release
+`450887195` was published **2026-11-19 12:51:37 (UTC+8)**. The strict release phase
+passes all three full-byte public assets and two anonymous APIs on every first
+request, zero retries, exit0. Same-source Pages `44461225290` attempt1 is
+completed/success, freshly API-confirmed. Anonymous site checks pass all 226
+files (37,828,528 bytes), twenty routes (18 HTTP200/two expected404), eight languages
+and 21 MIME classes. Release and site validators exit0; every scoped request
+succeeds first attempt, zero retries, combined strict first-request true. Final
+offline aggregate and independent public review pass without blockers or delivery
+qualification. Independent review rehashes three assets and matches all 226 golden
+entries/unique first receipts; it re-reads twelve retained bodies and reviews
+214 files from receipts. It does not independently reread all 226 bodies. [Build](Build.md#beta57-release)
+retains exact hashes, native inventory and delivery phase boundaries; beta.56's
+historical API503 qualification does not apply to beta.57's completed requests.
+
+Physical beta.57 first-attempt/remember acceptance remains **pending**. Capture
+`1795049425130` actually runs beta.56/code98/browser v127: 1,983 records/15.806
+seconds. First FairPlay/control/event/RECORD receives 200 control replies and NTP
+completes 8/8 probes, but no type110 precedes client TEARDOWN after 7.653 seconds.
+Retry reaches type110, remembered-hit and mirror frames: endpoint/persistence
+recovered on this pair, first-attempt startup still failing. Actual outgoing
+receiver bodies are absent; equal 1,126-byte logged lengths cannot prove equal
+content. No global ownership transition precedes retry type110; cache/capability/
+warmup causes remain unproved.
+
 <a id="beta56-source-preparation"></a>
-### Beta.56
+### Beta.56 reference
 
-Published **0.2.20-beta.56/code98/browser v128** corrects the beta.55 fixed-endpoint ordinary
-AirPlay failure. Fresh JVM/Robolectric execution passes **227 distinct cases across
-24 suites**, with zero failures/errors/skips.
-Fifty-two selected fresh compiled JVM classes and seven changed/test source hashes
-bind the checked source. Six key audio/identity/info/common/JNI files remain
-byte-identical to beta.55. Browser62/Python27, RTC/cache and local public-tree
-checks pass. Independent handoff-source final-freeze review passes without blockers.
-Source `94a983186935c84c3d4c2faf2b81df01c74ee3b7` passes signed workflow
-`44289047781` attempt 1's three jobs and formal artifact review: 40 receiver
-definitions/42 call edges, 24 MIC/33 speech definitions, original-certificate v2,
-source/attempt/frozen-source/native/notices. Release `449857203` is published;
+Beta.56/code98/browser v128 source `94a983186935c84c3d4c2faf2b81df01c74ee3b7` has a
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Testing.md#beta56-source-preparation)
+of 227 fresh distinct JVM/Robolectric cases/24 suites, zero failures/errors/skips,
+62 browser/27 Python cases, RTC/cache/local-public-tree checks and source review.
+Its 52 compiled classes/seven source hashes, six unchanged key files, signed run
+`44289047781` attempt 1 and formal source/artifact/native/certificate checks
+belong to that source.
+Release `449857203` was published **2026-11-18 19:06:09 (UTC+8)**; same-source
 Pages `44291624092` attempt 1 succeeds. Three public assets match signed bytes;
-226 files/twenty routes pass every first request with zero site retries. One
-anonymous GitHub API 503 needs a retry to 200: qualified delivery passes, combined
-strict first-request acceptance fails (one total retry; original validator exit1).
-Final two API/tag/source/notes checks pass. This hosting transient does not diagnose
-APK functionality; physical recovery remains pending.
-[Build](Build.md#beta56-release) records identities and qualification. Full CI is waived; retain the same signing certificate, sender-identity
-policy and working audio. Prior beta.55 results are not fresh beta.56 passes.
+226 files/twenty routes pass first request. One separate anonymous GitHub API
+503→200 retry qualifies delivery while combined strict first-request acceptance
+fails (one retry; retained strict validator exit1). The
+[frozen Build record](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Build.md#beta56-release) retains exact hashes.
+The later capture above supplies new physical evidence with browser v127; it
+does not convert historical counts into beta.57 passes.
 
-Required regressions must start at the actual main endpoint and follow ordinary
-discovery into public FairPlay (16→142 and 164→32 bytes), valid initial control
-SETUP and typed-110 authorization/mirror port. Exercise same-connection reuse and
-new TCP connections, pre-read request plus pipelined remainder, original peer and
-socket ownership, twelve-slot admission, close/replacement races and receiver
-unavailability. MFi/CarPlay pairing/control/media must remain separate and active
-CarPlay/audio must survive the handoff. Keep direct ordinary-listener and
-remember/connection-only controls; malformed FairPlay must not receive empty success.
-Do not claim continuity from an info reply followed by unrelated CarPlay pairing,
-or from ordinary tests that bypass the selected fixed endpoint.
-
-The beta.55 raw window contains two 16-byte FairPlay requests on CarPlay7000,
-each answered 200/zero bytes then EOF. Neither reaches ReceiverServer, SETUP,
-identity403 or consent. Beta.55 advertised ordinary info while retaining the
-CarPlay pipeline; this source defect matches the failing stage. The preceding
-BT info/cache transition is outside the window. Recovery is pending after an
-observed failure, not simply untested hardware. See
-[AirPlay](AirPlay.md#mirror-startup-evidence).
+The older beta.55 capture has two 16-byte FairPlay requests on CarPlay7000 answered
+200/zero bytes followed by EOF, before ReceiverServer/SETUP/consent. Its info-only
+bridge was a source pipeline defect. Beta.56's actual full FairPlay and SETUP flow
+now demonstrates endpoint recovery; it does not eliminate the separate remaining
+first-attempt media-SETUP boundary.
 
 <a id="beta55-source-preparation"></a>
 ### Beta.55 reference
@@ -182,146 +237,55 @@ scope and update behavior.
 
 ### Beta.38 reference
 
-Beta.38/code80/browser v113 was published from
-`ab629363e6af9d7ea914fd8808baf84ab5f391fb`. The
-[frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#beta38-reference)
-retains source, artifact/public-page hashes and signed run `41390877469`.
-Its matched beta.37 PID/time/ARM64 Build ID supports the late source-rate-after-stop
-fix; [Robustness](Robustness.md#matched-post-stop-native-crash) retains attribution
-and unmatched-crash limits. Native producer
-`aef6c97a2402f4f5ef4a821a876a11941116d180` and run `41382204134` are distinct from
-the APK source. The four-ABI AAR, eleven focused native tests and fixed-AAR JNI
-permanent-stop/replacement probe passed. Counting-decoder/RTP and control progress
-do not prove decoded pictures or deterministic reproduction of the old crash.
-
-The required Android command reported 4,535 cases plus all lint/build targets;
-unchanged tasks reused results. Its 690 web, 52 Python and separate 27 probe-driver
-checks, signing and Pages verification are historical results, not fresh later-source
-runs. The two producer archives then covered 28 matching symbol pairs with 23
-historical libraries missing symbols and eight lacking Build IDs; they cannot
-symbolize unmatched old binaries. Later inventories retain nineteen historical gaps.
-Physical H.264/HEVC replacement, vehicle continuity, SCO/focus recovery and graphics/
-storage failures remain acceptance work. Use the matching APK/page; software checks
-do not establish vehicle hardware decoding, panel timing or microphone capture.
+Beta.38/code80/browser v113 source `ab629363e6af9d7ea914fd8808baf84ab5f391fb`
+shipped the source-rate post-stop fix. The
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Testing.md#beta38-reference) retains
+the exact rebuilt four-ABI producer, symbols, 11 focused native cases, the fixed-AAR
+JNI permanent-stop/replacement probe, 4,535 Android reports with reused tasks and historical web/
+Python/signing/public checks. Counting-decoder/control progress does not establish
+decoded pictures or deterministic reproduction of every old crash. The
+[matched-crash boundary](Robustness.md#matched-post-stop-native-crash) and remaining
+physical H.264/HEVC, SCO/focus and graphics/storage acceptance remain separate.
 
 ## Previous release source
 
-Beta.37/code79 with browser/cache v112 shipped the 19-item robustness remediation
-from `d038685c623112407b656ab78995bd8bd8facdfd`. Its unchanged native binaries,
-4,535 Android reports, 690 web/52 Python checks, 24 app-JNI symbol pairs and
-independent publication checks are recorded in the
-[frozen beta.37 record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment).
-Those results did not cover the later native source-rate fix.
+The [frozen complete history](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Testing.md#previous-release-source)
+retains beta.37 through beta.24/v96 source-specific counts, runs, waivers and
+measurement limits. These are historical results, never fresh beta.57 checks.
 
-Beta.36/code78, browser v111, was published from `c1ad4b32` with system native
-trace collection and a Bonjour hostname-lookup workaround. Its 86 focused
-Android, 67 focused browser checks and independent signed artifact/public-page
-verification remain recorded in the
-[frozen beta.36 record](https://github.com/uJZk/TiPlay/blob/42db8dcaea38f4038ebee130312a3e5077227793/docs/Build.md#current-browser-deployment).
-Those results do not establish its historical SIGSEGV cause or vehicle startup improvement.
+Beta.37/code79/v112's robustness remediation and 4,535 Android reports predate
+the later native source-rate fix; see its
+[frozen record](https://github.com/uJZk/TiPlay/blob/842574d135492af726ae255ec9463d1408490494/docs/Build.md#current-browser-deployment).
+Beta.36/code78/v111's trace/Bonjour changes do not establish its SIGSEGV cause or
+vehicle startup improvement; its
+[record](https://github.com/uJZk/TiPlay/blob/42db8dcaea38f4038ebee130312a3e5077227793/docs/Build.md#current-browser-deployment)
+retains scoped tests. Beta.35/code77/v110's stopped Android run, waived full CI
+and successful signing/Pages/public checks remain in its
+[record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment).
+Beta.31/code73/v106's [Android/WASM run](https://github.com/uJZk/TiPlay/actions/runs/40801961340)
+and libmedia reproduction do not establish real-car playback, navigation audio,
+trust or HEVC continuity.
 
-Beta.35/code77, browser v110, passed 675 web tests, 76 build/native Python checks,
-nine release-draft checks, two site-deployment checks and public-tree/cache/AAR/audio
-verification. Full Android CI was skipped and the local complete Android run
-stopped at the user's request. Signed packaging, Pages and independent attachment
-and public-page checks succeeded; [the frozen record](https://github.com/uJZk/TiPlay/blob/f1cbd809db6840d51fa834314e545cea11c0138d/docs/Build.md#current-browser-deployment)
-retains build identity and verification scope. These are beta.35 results.
+[Beta.30](Build.md#beta30-release)'s actual AAR replacement control preserves
+original-AU transport and Chromium SDP lifecycle; its HLS diagnostics do not
+resolve the reported device metadata-open failure.
+[Beta.29](Build.md#beta29-release) adds source-silence recovery through the Hub's
+500 ms limiter and two six-second deadlines. Its 2,493 shared/613 browser passes
+are historical. [Beta.28](Build.md#beta28-release)'s 16 Mbps-prior AAR run delivered
+180/180 RTP AUs with unchanged bytes but only 175 counting-decoder callbacks;
+this is not decoded-picture or vehicle proof.
+[Beta.27](Build.md#beta27-release) records native-input backpressure/rate admission;
+its native measurements used a 24 Mbps prior. [Beta.26](Build.md#beta26-release)'s
+JVM tests cannot execute native congestion control or establish smoothness.
+[Beta.25](Build.md#beta25-release)'s first complete Android command passed 4,346
+cases; its repeated validation was stopped and full CI waived.
+[Beta.24](Build.md#beta24-release)'s 4,335 Android/598 web cases and High-selection
+regressions do not load JNI or establish vehicle decoding.
 
-Beta.31/code73, browser v106, adds worker resource-request bridging, native audio
-peer recovery, sender identity compatibility and additional diagnostics. The
-[Android checks](https://github.com/uJZk/TiPlay/actions/runs/40801961340)
-passed for the release source, including browser and WASM checks. The libmedia
-build reproduced the committed assets in WSLC using hash-verified cached WASM
-inputs. Real-car playback, repeated trust, navigation audio and HEVC continuity
-remain physical acceptance work.
-
-Beta.30/code72/browser v105 source, 2,500 shared/617 browser checks and published
-bytes remain in the [frozen verification record](https://github.com/uJZk/TiPlay/blob/68ba158f0b4d0dc7995b36ffaf1e6feac781e07f/docs/Testing.md#previous-release-source)
-and [Build](Build.md#beta30-release). Its actual AAR replacement control verifies
-complete original-AU transport; Chromium verifies SDP lifecycle. The IO-worker HLS
-diagnostics do not resolve the reported device metadata-open failure. Native counting
-decoders and socket fixtures preserve transport/ownership boundaries, without
-establishing vehicle pictures or physical latency.
-
-Beta.29/code71, browser v104, retries keyframe recovery during source silence.
-Four new JVM regressions use the real Hub's 500 ms suppression and verify recovery
-of original High bytes while retaining the two six-second deadlines and terminal
-stop conditions. Actual dual-codec AAR before/after results are described below;
-the 16 Mbps startup value remains unchanged. Source/publication checks are in
-[Build](Build.md#beta29-release), with full Android CI skipped by user instruction.
-The final complete local shared command passed all 2,493 tests using
-`-Pkotlin.incremental=false`; 613 browser tests and public-source/cache/deployment
-checks pass. Socket shutdown verification waits for actual JDK socket-write
-frames, with its original deadlines retained.
-
-Beta.28/code70, browser v103, changes the startup prior to 16 Mbps at the user's
-request. Its source/publication scope is recorded in [Build](Build.md#beta28-release).
-The beta.27 native measurements below used 24 Mbps. A separate actual AAR run of
-the new 16 Mbps prior passed 180/180 RTP receiver AUs, zero packet loss and
-unchanged SHA-256 for 181,238 source bytes (about 0.483 Mbps). The software
-receiver skipped five decode callbacks (175); no picture/render or vehicle
-performance claim follows from this transport count.
-
-Beta.27/code69, browser v102, adds native-input completion backpressure and bounded
-original-video rate admission after beta.26 still suppressed frames. All 2,489
-shared JVM tests and 613 browser tests pass, including 28 targeted video cases;
-the actual AAR replay below
-provides native queue/pacer evidence. Full Android test CI remains skipped at the
-user's request, with signed packaging recorded in [Build](Build.md#beta27-release).
-
-Beta.26/code68, browser v101, passes **2,481 shared JVM tests** and **613 browser
-tests**, with public-tree, cache, release-draft and site-assembly checks. Twenty
-JVM regressions directly cover video passthrough, flow and source adaptation.
-Full Android test CI remains skipped at the user's request for this follow-up;
-the separate signed packaging workflow and physical acceptance are recorded in
-[Build](Build.md#beta26-release). The JVM tests do not execute native congestion
-control or establish vehicle smoothness.
-
-The [beta.25/code67 release](Build.md#beta25-release), browser v100, includes the verified scope of
-613 browser tests. Its first complete local required Android command passed
-4,346 tests and all required Debug lint/build targets. The final repeated Android
-validation was stopped at the user's request; formal CI is explicitly skipped
-for this release. Signed packaging and independent published-asset verification passed and are
-recorded separately in Build. The media checks below describe source and
-desktop behavior, with physical iPhone/Tesla acceptance still pending.
-
-Beta.24/code66 and browser v97 pass 4,335 local Android tests, all required Debug
-lint/build targets, 598 web tests, full CI and independent signed/public checks.
-Fourteen sender-selection regressions cover Baseline-first startup, asynchronous
-High selection, unchanged encoded bytes, IDR recovery, profile/level/mode rejection,
-bounded timeout, retired selector/encoder isolation and callback/release/re-init
-interleavings. These JVM regressions do not load Android JNI or establish vehicle
-decoding. [Build](Build.md#beta24-release) records exact commits, runs, hashes and
-all 217 public files; no physical acceptance is implied.
-
-The retained v96 receive-level coverage exercises bounded H.264 probes, both
-authenticated offers, cancellation, pre-CONFIG frame ownership and safe video-error
-details. At that release, actual Chromium accepted the production helper's local
-SDP, while managed-browser policy produced zero host ICE candidates and blocked
-RTP playback. A subsequent device capture isolated actual encoder identity from
-receive-level admission; v97 addresses that separate selection boundary. The
-current full-page desktop RTP checks below use a dedicated ICE-capable test browser
-without changing managed machine policy. Actual Android JNI switching, iPhone
-source passthrough, native RTP audio, vehicle hardware use and physical continuity
-still require device evidence.
-
-The beta.23/v95 AirPlay baseline exercised encrypted SETUP/info/RECORD, independent
-type-130 retirement, owner-scoped screen replacement/return, URL audio-only
-continuation, late callbacks, photo failures, registry ownership, RAOP refresh and
-three-choice consent. It passed 4,321 Android and 568 browser tests, full CI/WASM
-reproduction and signed/public verification. Those checks do not establish physical
-RAOP/AP2, BLE, trust or vehicle interoperability; [Build](Build.md#beta23-release)
-retains that release's provenance.
-
-The v90 AVPlayer migration baseline verified actual Chromium 151 MP4/HLS Canvas,
-nonzero URL audio, VOD pause/seek/end/replay, live refresh/fresh-edge resume, SDR
-selection, WebVTT language switching and selection/seek. Malformed HLS, nested
-proxy resources/redirects and pending-request cancellation were covered, without
-video elements, CSP violations or retained URL Workers/AudioContexts. Desktop
-video used an explicit software test override, which cannot establish Tesla hardware
-use. Native two-track JNI/DTLS-SRTP evidence matched 80 original packets per track;
-browser end-to-end RTP remained blocked. Beta.21 skipped its full Android suite;
-that historical scope does not qualify the current complete run.
+The v96 production helper's Chromium SDP admission passed while managed UDP policy
+blocked host ICE. Current desktop RTP uses a dedicated ICE-capable browser without
+changing that policy. Android JNI switching, iPhone source passthrough, vehicle
+hardware use and physical continuity still require device evidence.
 
 ### Desktop RTP integration
 
@@ -806,11 +770,13 @@ unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 ## Ordinary AirPlay acceptance
 
 [AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
-protocol limits. For beta.56, verify recovery from the observed beta.55 failure,
-then first-cast consent and actual picture after
-fresh CarPlay, plus remembered approval across reconnect. Changed claims/new keys
-need separate consent. Local BT-info/socket passes do not establish physical retry
-elimination; [source checks](#beta55-source-preparation) have their separate scope. Before the remote migration, the Chromium notification harness
+protocol limits. The latest beta.56/code98/browser v127 capture establishes
+endpoint and remembered-hit recovery on this phone/car pair while first-attempt
+startup still fails. For beta.57, verify the first cast after fresh CarPlay reaches
+type 110, appropriate consent and actual picture, then remembered approval across
+reconnect. Changed claims/new keys need separate consent. Capture the actual APK
+and browser revisions. Source/TCP passes cannot establish physical retry elimination;
+[beta.57 checks](#beta57-source-preparation) remain separate from device acceptance. Before the remote migration, the Chromium notification harness
 passed 48 English/Chinese prompts at 320/800 pixels, covering all three choices,
 audio/mirror copy, layout and readability. Pure-audio fixtures exercise sender
 metadata/artwork, Video.js controls, DACP command delivery and CarPlay hiding;

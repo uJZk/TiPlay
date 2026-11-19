@@ -268,59 +268,85 @@ See [Testing](Testing.md).
 
 ### Ordinary AirPlay discovery and consent
 
-The latest beta.55/code97/v127 user report is a complete ordinary-mirror connection
-failure. Two captured 16-byte `POST /fp-setup` requests enter CarPlay7000, receive
-successful 200/zero-byte bodies and end in EOF. Valid public FairPlay requires
-16→142 and 164→32 byte exchanges. Neither request reaches ReceiverServer, initial
-SETUP, deviceID caching, identity403 or consent. AirPlaySession's missing ordinary
-FairPlay route and empty-success fallback explain this observed failure stage;
-relaxing identity or changing audio cannot repair it.
+The latest user capture `1795049425130` actually runs **beta.56/code98/browser
+v127**, with 1,983 records over 15.806 seconds. Its first ordinary-mirror attempt
+reaches ReceiverServer through the fixed-endpoint handoff and completes public
+FairPlay, initial control SETUP, event setup and RECORD with successful control
+responses; NTP completes 8/8 probes. It sends no type-110 media SETUP before client
+TEARDOWN ends preparation after 7.653 seconds. The retry reaches type 110,
+`remembered-hit` authorization and mirror frames. Beta.55's endpoint and
+remembered-approval regressions are recovered on this phone/car pair; first-attempt
+startup still fails. This is physical evidence with a remaining failure, not
+unknown beta.56 recovery.
 
-Beta.55's info-only bridge publishes ordinary identity/TXT on an endpoint whose
-subsequent processing remains CarPlay. UxPlay instead keeps discovery and the full
-ordinary protocol on one server. This is a source design defect consistent with
-the captured wrong-handler requests. Preceding BT-info/cache selection is outside
-the latest raw window; do not claim its exact transition was captured. Historical
-isolated info/direct-receiver tests and signed-call contracts missed endpoint
-continuity; [frozen beta.55 checks](https://github.com/uJZk/TiPlay/blob/0233d5128e6e610e9f59004152abfe3457174d5b/docs/Testing.md#beta55-source-preparation)
-remain publication/source evidence, not physical success.
+Actual outgoing ReceiverServer response bodies are absent; equal logged 1,126-byte
+lengths cannot establish equal content. Actual BT full-info/TXT agree internally,
+but all actual main-CarPlay/mDNS identities are unavailable for comparison.
+Distinct role profiles alone do not prove a cache collision or invalid capability
+snapshot. No global CarPlay ownership transition precedes retry type 110; neither
+source nor these captures establish a first-use warmup requirement.
 
-Beta.56 implements the full legacy handoff in source. Preserve the original peer,
-accepted socket, pre-read/pipelined bytes, twelve-slot admission and exact receiver
-owner through discovery, FairPlay, initial control SETUP and typed media consent.
-MFi/CarPlay and active audio retain their existing pipeline. Retired/unavailable
-receivers must not return stale info or empty successful handshakes. Do not proxy
-through loopback, invent a port, assume redirects or patch only a 142-byte reply.
-Fresh focused JVM/Robolectric execution passes 227 distinct cases/24 suites with
-zero failures/errors/skips, plus 62 browser/27 Python cases, RTC/cache and local
-public-tree checks. Fifty-two selected compiled JVM classes/seven source hashes
-bind checked source; six key audio/identity/info/common/JNI files remain unchanged
-from beta.55. Independent final handoff-source review passes without blockers.
-Source `94a983186935c84c3d4c2faf2b81df01c74ee3b7` passes signed run `44289047781`
-attempt 1 and formal receiver40/42edges/MIC24/speech33/source/attempt/native/notices
-and original-certificate v2 checks. Release `449857203` is published. Same-source
-Pages `44291624092` attempt 1 succeeds; three public assets match signed bytes,
-226 files/twenty routes pass first request with zero site retries, and final API/
-tag/source/notes checks pass. One GitHub API503→200 retry qualifies delivery;
-combined strict first-request acceptance remains false (one retry; strict validator
-exit1). This transient is not evidence about APK/mirror behavior. Physical recovery
-remains pending; publication does not erase the observed beta.55 failure. Full CI
-remains waived.
+Beta.57/code99/browser v129 makes a compatibility adjustment, not a proven
+root-cause repair. Only successful unpaired legacy-FairPlay initial control SETUP
+with explicit mirror intent and an absent `streams` key omits optional nested
+`info`. Normal bodyless GET /info on the same transport returns the full profile.
+Preserve NTP/event ports and ownership, one FairPlay key decryption and all typed
+media/consent gates. Paired legacy, AirPlay 2, encrypted NTP, audio, other intent
+and every streams-present path retain combined behavior. UxPlay's normal
+ports-only SETUP and Doubletake's optional-info fallback support this bounded
+choice; they do not prove why the iPhone withholds its first type 110.
 
-Keep the strict deviceID convenience-claim policy and verified-key/Client-ID
-priority, successful-initial-SETUP caching and claim-change rejection. The current
-capture never reaches that policy. IP/name/interface macAddress/session UUID must
-not identify persistent senders. No speculative early screen borrowing/consent or
-audio/native/codec/gain change follows from this failure.
+Real-TCP regressions cover FairPlay → minimal SETUP → GET /info → RECORD →
+type110, continuing NTP ports/probes and an actual encrypted mirror frame. Source
+`179a4953972f1138cef953a9b7f9d975f21b6884` passes 233 fresh receiver/discovery cases/24 suites,
+zero XML failures/errors/skips, bound by 52 compiled JVM classes. Four uncaught
+shutdown headers qualify the assertion passes; independent/control review treats
+them as nonblocking for this response-only patch. Keep the separate
+[shutdown cleanup](Todo.md#engineering-follow-up) distinct from the iPhone first
+failure. Browser62/Python27/RTC/cache/public-tree pass; final tool-assisted source/
+audio reviews have no blockers. Full CI remains waived.
 
-Earlier beta.54 evidence contains three first/retry pairs with successful
-FairPlay/control/NTP but media type 110 only on retry. The missing request is a
-boundary, not a proven cause; similar short probes also precede successful retries.
-Only its latest first query has an exact raw empty BT reply. Combined-SETUP response
-bodies are absent, so equal lengths do not prove equal content. Current recovery
-and eventual first-attempt/remember acceptance remain open after an observed
-beta.55 regression, not simply absent hardware feedback. See
-[Testing](Testing.md#beta56-source-preparation) and [AirPlay](AirPlay.md#mirror-startup-evidence).
+Signed run `44459111940` attempt1 passes all three jobs and formal actual artifact
+review: source/attempt/runtime, MIC24/speech33/receiver41, original-certificate v2/
+API36, native/notices, CRC and 16 KiB. Release `450887195` was published
+**2026-11-19 12:51:37 (UTC+8)**. Three public assets match signed bytes and two
+anonymous APIs pass every first request with zero retries. Same-source Pages
+`44461225290` attempt1 succeeds. All 226 site files (37,828,528 bytes), twenty
+routes (18 HTTP200/two expected404), eight languages and 21 MIME classes pass
+first request. Release/site phases exit0, zero retries, combined strict first-request
+true. Final offline aggregate and independent public review pass without
+blockers or delivery qualification. Physical beta.57 first-attempt/remember
+acceptance remains **pending**. Preserve audio, identity, handoff and typed display ownership; do not
+move borrowing/keyframes earlier or change global capabilities. [Build](Build.md#beta57-release)
+retains exact current artifact/native identities.
+
+The [frozen beta.56 verification](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Testing.md#beta56-source-preparation)
+retains 227 distinct JVM/Robolectric cases/24 suites, 62 browser/27 Python cases,
+RTC/cache/local-public-tree checks and final source review. Its
+[frozen publication record](https://github.com/uJZk/TiPlay/blob/86cbff4cc6f55e33789ae6a1ac99ef5ef3587f90/docs/Build.md#beta56-release) retains source
+`94a983186935c84c3d4c2faf2b81df01c74ee3b7`, publication
+**2026-11-18 19:06:09 (UTC+8)**, release `449857203`, signed run `44289047781`
+attempt 1, formal source/attempt/artifact/original-certificate/native/notices
+checks and same-source Pages `44291624092` attempt 1. Three public assets and all
+226 site files/twenty routes match; one anonymous GitHub API 503→200 retry qualifies
+delivery and preserves strict first-request failure (one retry; validator exit1).
+Those are beta.56 results, not beta.57 passes or a forecast of hosting behavior.
+
+Beta.55's earlier capture contains two 16-byte FairPlay requests answered 200/
+zero bytes on CarPlay7000 before EOF, without ordinary SETUP/consent. Its info-only
+bridge was a concrete source pipeline defect. Beta.56 transfers the complete
+classified legacy connection, original peer/socket, pre-read/pipelined data,
+twelve-slot admission and exact owner lifetime while MFi/CarPlay and active audio
+keep their paths. The latest full FairPlay/SETUP flow now demonstrates endpoint
+recovery. Preceding BT-info/cache selection in the older window remains unobserved.
+
+Keep strict deviceID convenience claims, verified-key/Client-ID priority,
+successful-initial-SETUP caching and claim-change rejection. IP, name, interface
+macAddress and session UUID must not identify persistent senders. Earlier beta.54
+first/retry evidence also places the boundary before type 110; absent outgoing
+bodies and similar short probes on successful retries do not establish its cause.
+See [Testing](Testing.md#beta57-source-preparation) and
+[AirPlay](AirPlay.md#mirror-startup-evidence).
 
 ### Diagnostic sufficiency
 
