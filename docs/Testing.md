@@ -69,15 +69,34 @@ entries/unique first receipts; it re-reads twelve retained bodies and reviews
 retains exact hashes, native inventory and delivery phase boundaries; beta.56's
 historical API503 qualification does not apply to beta.57's completed requests.
 
-Physical beta.57 first-attempt/remember acceptance remains **pending**. Capture
-`1795049425130` actually runs beta.56/code98/browser v127: 1,983 records/15.806
-seconds. First FairPlay/control/event/RECORD receives 200 control replies and NTP
-completes 8/8 probes, but no type110 precedes client TEARDOWN after 7.653 seconds.
-Retry reaches type110, remembered-hit and mirror frames: endpoint/persistence
-recovered on this pair, first-attempt startup still failing. Actual outgoing
-receiver bodies are absent; equal 1,126-byte logged lengths cannot prove equal
-content. No global ownership transition precedes retry type110; cache/capability/
-warmup causes remain unproved.
+Physical beta.57 feedback now records an executed intervention with a remaining
+failure. Capture `1795084719353` actually runs beta.57/code99/browser v129,
+2,373 continuous complete raw records/17.807 seconds (10:38:21.513–10:38:39.320 UTC).
+On c2 a 714-byte initial SETUP gets 77 bytes; same-connection bodyless GET /info
+gets 1,075 bytes, then RECORD200/event setup/NTP7/7 succeed. No type110 arrives
+before client TEARDOWN after 6.290 seconds. Retry c3 uses the same fallback,
+then reaches type110 about 11 ms after RECORD, remembered-hit and 247 mirror
+frames. Old APK/page, an unexecuted adjustment or unsupported info fallback do
+not explain this sequence. Actual outgoing receiver info bodies are absent;
+equal logged lengths cannot establish equal content.
+
+Earlier current-process c1 lasts 388.093 seconds without type110, with NTP388/388,
+over seven minutes after the last viewport/audio profile inputs. The per-instance
+accept counter c1→c2→c3 and lifecycle source support a continuing ReceiverServer;
+viewport config copies and BLE/Bonjour refresh do not recreate it. No globally
+unique runtime object token is captured. The 15-second observation logs only and
+does not close the session; more waiting/NTP or a simple receiver warmup is not
+a supported explanation.
+
+All thirteen retained ordinary accepts across three process segments follow
+last reported CarPlay Controller ownership. No AirPlay-without-CarPlay first-
+attempt control is available. The user has already been asked whether standalone
+AirPlay succeeds initially; the answer is pending. It can identify whether active
+CarPlay is required for the symptom, not prove a unique arbitration cause.
+Preserve typed media consent, borrowing and audio/identity contracts. No product
+patch or new release is currently supported by this evidence. [AirPlay](AirPlay.md#mirror-startup-evidence)
+and [Todo](Todo.md#ordinary-airplay) track this boundary separately from the
+unchanged beta.57 source, artifact and public checks above.
 
 <a id="beta56-source-preparation"></a>
 ### Beta.56 reference
@@ -770,13 +789,15 @@ unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 ## Ordinary AirPlay acceptance
 
 [AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
-protocol limits. The latest beta.56/code98/browser v127 capture establishes
-endpoint and remembered-hit recovery on this phone/car pair while first-attempt
-startup still fails. For beta.57, verify the first cast after fresh CarPlay reaches
-type 110, appropriate consent and actual picture, then remembered approval across
-reconnect. Changed claims/new keys need separate consent. Capture the actual APK
-and browser revisions. Source/TCP passes cannot establish physical retry elimination;
-[beta.57 checks](#beta57-source-preparation) remain separate from device acceptance. Before the remote migration, the Chromium notification harness
+protocol limits. The latest beta.57/code99/browser v129 capture physically executes
+the minimal SETUP/bodyless-info fallback yet still needs a retry; remembered-hit
+and 247 mirror frames are observed on that retry. Resolve the already-requested
+standalone-AirPlay first-attempt answer before selecting a new change. Existing
+accepts all follow CarPlay Controller ownership, so they cannot prove a CarPlay
+arbitration cause. Changed claims/new keys still need separate consent; retain
+actual APK/browser revisions and sustained picture/output limits.
+[Beta.57 checks](#beta57-source-preparation) remain separate from physical retry
+elimination. Before the remote migration, the Chromium notification harness
 passed 48 English/Chinese prompts at 320/800 pixels, covering all three choices,
 audio/mirror copy, layout and readability. Pure-audio fixtures exercise sender
 metadata/artwork, Video.js controls, DACP command delivery and CarPlay hiding;

@@ -454,13 +454,24 @@ delivery qualification is recorded. Beta.56's historical
 GitHub API503→200 qualification remains scoped to beta.56; beta.57's completed
 release requests have no retry.
 
-Physical beta.57 first-attempt picture/remember acceptance remains **pending**.
-The latest actual capture is beta.56/code98/browser v127: 1,983 records/15.806
-seconds, first FairPlay/control/event/RECORD succeeds with NTP8/8 but no type 110
-before client TEARDOWN after 7.653 seconds. Retry reaches type 110, remembered-hit
-and mirror frames, establishing endpoint/persistence recovery on that phone/car
-pair. Actual outgoing receiver bodies are absent; equal logged 1,126-byte lengths
-cannot establish equal content or the first-attempt cause.
+The latest physical capture `1795084719353` runs beta.57/code99/browser v129:
+2,373 continuous raw records/17.807 seconds. The 77-byte initial SETUP reply and
+same-connection bodyless GET /info (1,075-byte reply) occur on both c2 and retry
+c3. The first reaches RECORD200/NTP7/7 but no type110 before client TEARDOWN after
+6.290 seconds; retry reaches type110, remembered-hit and 247 mirror frames.
+The published compatibility adjustment is active and fallback works, while the
+first-attempt failure persists. This is observed beta.57 behavior, not missing
+upgrade/page evidence or physical feedback. Actual outgoing info bodies remain
+uncaptured, so equal lengths cannot prove equal content.
+
+An earlier c1 in the same continuing receiver waits 388.093 seconds with
+NTP388/388 and no type110; the last viewport/audio inputs predate acceptance by
+over seven minutes. Simple receiver warmup or more waiting is unsupported. All thirteen
+retained ordinary accepts follow CarPlay Controller ownership; the missing
+standalone-AirPlay answer is pending. No unique cause or new product patch is
+established. [AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
+counterfactual limits. The source/artifact/public passes above remain valid
+historical delivery evidence; they do not certify elimination of first retries.
 
 <a id="beta56-release"></a>
 ### Published beta.56 reference

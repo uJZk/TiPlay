@@ -66,21 +66,32 @@ attempt 1 succeeds. All 226 files (37,828,528 bytes), twenty routes
 (18 HTTP200/two expected404), eight languages and 21 MIME classes pass first
 request; combined strict first-request acceptance is true, zero retries. Final
 offline aggregate and independent public review pass without blockers or delivery
-qualification. Physical beta.57 first-attempt/remember acceptance remains **pending**. Prior
+qualification. Later physical beta.57 evidence confirms that the adjustment runs
+but does not eliminate first-attempt failure; remembered approval and retry frames
+are observed. Prior
 beta.56's API503 qualification remains historical and is not a beta.57 result.
 
-The latest user capture `1795049425130` actually runs **beta.56/code98/browser
-v127**, despite the published v128 site. Its 1,983 records span 15.806 seconds.
-The first attempt reaches the ordinary receiver, completes public FairPlay
-16→142/164→32, initial control SETUP, event setup and RECORD with successful
-control responses; NTP completes 8/8 probes. It sends no type-110 media SETUP
-before client TEARDOWN after 7.653 seconds. The retry reaches type 110,
-`remembered-hit` authorization and mirror frames. This is physical recovery of
-the beta.55 endpoint and remembered-approval regressions on this phone/car pair,
-with first-attempt startup still failing. It is not unknown beta.56 recovery.
-Actual outgoing receiver response bodies are absent: equal logged 1,126-byte
-lengths cannot prove equal content. No global first-use warmup, capability change
-or pre-110 CarPlay ownership transition is established.
+The latest user capture `1795084719353` actually runs **beta.57/code99/browser
+v129**: 2,373 continuous complete raw records over 17.807 seconds,
+10:38:21.513–10:38:39.320 UTC. Connection c2 receives a 77-byte initial SETUP
+reply, issues bodyless GET /info on that same connection (1,075-byte reply), then
+RECORD200 and NTP7/7, but sends no type110 before client TEARDOWN after 6.290
+seconds. Retry c3 follows the same fallback, then sends type110 about 11 ms after
+RECORD, reaches remembered-hit and has 247 mirror frames logged. The beta.57
+intervention executes and the iPhone supports fallback; it does not fix the
+first-attempt symptom. An old APK/page or a still-combined initial SETUP cannot
+explain this capture. Actual outgoing GET /info bodies are absent; equal logged
+lengths do not establish equal content.
+
+The same process's earlier c1 remains without type110 for 388.093 seconds with
+NTP388/388, over seven minutes after the last viewport/audio inputs. Per-instance accept counters
+c1→c2→c3 and lifecycle source support one continuing ReceiverServer; viewport
+config copies and BLE/Bonjour refresh do not restart it. A globally unique runtime
+object token is absent. This rules out a simple receiver warmup/more-wait account.
+All thirteen retained ordinary accepts follow last reported CarPlay Controller
+ownership, without a standalone AirPlay control. The user's already-requested
+answer about first-attempt AirPlay without CarPlay is pending. CarPlay arbitration
+is unproved; no early borrow, audio/identity change or new package is justified.
 
 The beta.57 adjustment only omits optional nested `info` from a successful,
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV,
@@ -118,7 +129,7 @@ receiver, preserving original peer/socket, pre-read/pipelined bytes, twelve-slot
 admission and exact owner lifetime. MFi/CarPlay and active audio retain their paths.
 The earlier beta.55 capture had two empty-success FairPlay replies on CarPlay7000
 before EOF; neither reached ordinary SETUP or consent. Its info-only bridge was
-a source design defect. The latest beta.56 flow reaches the correct handler;
+a source design defect. Beta.56 and the latest beta.57 flow reach the correct handler;
 the earlier preceding BT-info/cache transition remains unobserved.
 
 SETUP `deviceID` remains an unauthenticated convenience claim. Verified pairing
