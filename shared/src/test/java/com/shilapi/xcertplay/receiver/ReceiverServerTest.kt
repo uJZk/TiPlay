@@ -214,6 +214,75 @@ class ReceiverServerTest {
     private fun Socket.status(method: String, path: String, body: ByteArray = ByteArray(0), id: String = "11223344556677889900aabbccddeeff") = send(method, path, body, id).path.toInt()
     private fun connect(port: Int) = Socket(InetAddress.getLoopbackAddress(), port).apply { soTimeout = 5000 }
 
+    @Test fun shutdownBetweenConnectionFinishCheckAndScheduleStillCompletesCleanup() =
+        finishSchedulingRace(receiverShutsDown = true)
+
+    @Test fun connectionFinishDoesNotHideAnUnexpectedSchedulerRejectionWhileTheReceiverIsOpen() =
+        finishSchedulingRace(receiverShutsDown = false)
+
+    private fun finishSchedulingRace(receiverShutsDown: Boolean) {
+        val scheduling = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val schedulerStopped = CountDownLatch(1)
+        val scheduler = object : java.util.concurrent.ScheduledThreadPoolExecutor(1, { task ->
+            Thread(task, "synthetic-maintenance-race").apply { isDaemon = true }
+        }) {
+            override fun schedule(command: Runnable, delay: Long, unit: TimeUnit): java.util.concurrent.ScheduledFuture<*> {
+                scheduling.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+                if (!receiverShutsDown) throw java.util.concurrent.RejectedExecutionException("synthetic-open-rejection")
+                return super.schedule(command, delay, unit)
+            }
+
+            override fun shutdownNow(): MutableList<Runnable> = super.shutdownNow().also { schedulerStopped.countDown() }
+        }
+        val controlThread = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val uncaught = java.util.concurrent.atomic.AtomicReference<Throwable>()
+        val listener = Listener {
+            val current = Thread.currentThread()
+            if (current.name == "tiplay-airplay-control" && controlThread.compareAndSet(null, current))
+                current.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, error -> uncaught.set(error) }
+        }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), listener)
+        val field = ReceiverServer::class.java.getDeclaredField("maintenance").apply { isAccessible = true }
+        (field.get(receiver) as java.util.concurrent.ScheduledThreadPoolExecutor).shutdownNow()
+        field.set(receiver, scheduler)
+        var closing: Thread? = null
+        try {
+            receiver.start()
+            connect(receiver.port).use { control ->
+                assertEquals(200, control.status("POST", "/play",
+                    "Content-Location: https://example.org/movie.mp4\r\n".toByteArray()))
+            }
+            assertTrue(scheduling.await(2, TimeUnit.SECONDS))
+            if (receiverShutsDown) {
+                closing = Thread { receiver.close() }.apply { isDaemon = true; start() }
+                assertTrue(schedulerStopped.await(2, TimeUnit.SECONDS))
+            }
+            release.countDown()
+            val finished = requireNotNull(controlThread.get())
+            finished.join(2000)
+            assertFalse("The original control connection must finish", finished.isAlive)
+            if (receiverShutsDown) {
+                closing?.join(2000)
+                assertFalse("Shutdown must complete after the connection releases ownership", closing?.isAlive == true)
+                assertNull(uncaught.get())
+                assertEquals(1, listener.stopped)
+                val sockets = ReceiverServer::class.java.getDeclaredField("sockets").apply { isAccessible = true }
+                    .get(receiver) as Set<*>
+                assertTrue(sockets.isEmpty())
+            } else {
+                assertTrue(uncaught.get() is java.util.concurrent.RejectedExecutionException)
+                assertEquals("synthetic-open-rejection", uncaught.get()?.message)
+            }
+        } finally {
+            release.countDown()
+            receiver.close()
+            closing?.join(2000)
+            scheduler.shutdownNow()
+        }
+    }
+
     @Test fun reverseWaitsForTypedVideoApprovalBeforeAttachingEvents() {
         val listener = Listener()
         val types = CopyOnWriteArrayList<String>()
@@ -1238,6 +1307,91 @@ class ReceiverServerTest {
     @Test fun unpairedFairPlayWithNtpSupportsMirrorAndAudio() =
         encryptedMirrorProbe(false, audioDrain = true, unpaired = true)
 
+    @Test fun legacyPairingExperimentStillAcceptsUnpairedFairPlayMirroring() =
+        encryptedMirrorProbe(false, unpaired = true, mirrorExperiment = ReceiverMirrorExperiment.LEGACY_PAIRING)
+
+    @Test fun mirrorExperimentSurvivesEveryLiveDisplayAndAudioConfigUpdate() {
+        for (mode in ReceiverMirrorExperiment.entries) {
+            val initial = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+                mirrorExperiment = mode)
+            ReceiverServer(initial, Listener()).use { receiver ->
+                receiver.updateDisplay(30, true)
+                receiver.updateDisplaySize(1184, 880, hevc = true, mirrorEnabled = true)
+                receiver.updateAudioFormats(1L shl 22)
+                val updated = receiver.displayConfig
+                assertEquals(mode, updated.mirrorExperiment)
+                assertEquals(30, updated.fps)
+                assertEquals(1184, updated.width)
+                assertEquals(880, updated.height)
+                assertEquals(1L shl 22, updated.audioOutputFormats)
+                assertTrue(updated.hevcEnabled)
+                assertEquals(mode != ReceiverMirrorExperiment.H264_ONLY, updated.effectiveMirrorHevcEnabled)
+                receiver.updateDisplay(60, false)
+                assertEquals(mode, receiver.displayConfig.mirrorExperiment)
+                assertFalse(receiver.displayConfig.effectiveMirrorHevcEnabled)
+                receiver.updateDisplaySize(1280, 720, hevc = true)
+                assertEquals(mode != ReceiverMirrorExperiment.H264_ONLY, receiver.displayConfig.effectiveMirrorHevcEnabled)
+            }
+        }
+    }
+
+    @Test fun baselineMirrorAcceptsHevcWhenTheBrowserOffersIt() =
+        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.BASELINE, hevc = true, accepted = true)
+
+    @Test fun h264OnlyMirrorAcceptsH264WhenTheBrowserAlsoOffersHevc() =
+        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.H264_ONLY, hevc = false, accepted = true)
+
+    @Test fun h264OnlyMirrorRejectsHevcEvenWhenTheBrowserOffersIt() =
+        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.H264_ONLY, hevc = true, accepted = false)
+
+    private fun mirrorExperimentCodecProbe(mode: ReceiverMirrorExperiment, hevc: Boolean, accepted: Boolean) {
+        val rejected = CountDownLatch(1)
+        val listener = Listener { if (it.contains("reason=HEVC_NOT_OFFERED")) rejected.countDown() }
+        val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
+            hevcEnabled = true, mirrorExperiment = mode), listener,
+            fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> ByteArray(16) })
+        receiver.start()
+        try {
+            connect(receiver.port).use { control ->
+                fun fairPlay(size: Int, sequence: Int) = ByteArray(size).apply {
+                    byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, sequence.toByte(), 0).copyInto(this)
+                    ByteBuffer.wrap(this, 8, 4).putInt(size - 12)
+                }
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(16, 1)))
+                assertEquals(200, control.status("POST", "/fp-setup", fairPlay(164, 3)))
+                assertEquals(200, control.status("SETUP", "/", BplistCodec.encode(mapOf(
+                    "eiv" to ByteArray(16), "ekey" to ByteArray(72), "timingPort" to 0))))
+                val setup = control.send("SETUP", "/", BplistCodec.encode(mapOf("streams" to listOf(
+                    mapOf("type" to 110, "streamConnectionID" to 1234L)))))
+                assertEquals("200", setup.path)
+                val streams = (BplistCodec.decode(setup.body) as Map<*, *>)["streams"] as List<*>
+                val port = ((streams.single() as Map<*, *>)["dataPort"] as Number).toInt()
+                listener.hub.subscribe().use { subscription ->
+                    connect(port).use { data ->
+                        val record = if (hevc) ReceiverSdrFixtures.hvcc() else ReceiverSdrFixtures.avcc()
+                        val header = ByteBuffer.allocate(128).order(ByteOrder.LITTLE_ENDIAN).apply {
+                            putInt(0, record.size); put(4, 1.toByte())
+                            putFloat(56, 720f); putFloat(60, 1280f)
+                        }.array()
+                        data.getOutputStream().apply { write(header); write(record); flush() }
+                        if (accepted) {
+                            assertNotNull(subscription.take(5000))
+                            assertNotNull(listener.hub.info())
+                            val codec = if (hevc) "H265" else "H264"
+                            assertTrue(listener.logs.any { it.contains("mirror stage=CONFIG codec=$codec") })
+                        } else {
+                            assertTrue(rejected.await(2, TimeUnit.SECONDS))
+                            assertTrue(listener.ended.await(2, TimeUnit.SECONDS))
+                            assertNull(listener.hub.info())
+                            assertFalse(listener.logs.any { it.contains("mirror stage=CONFIG codec=H265") })
+                            assertEquals(200, control.status("GET", "/info"))
+                        }
+                    }
+                }
+            }
+        } finally { receiver.close() }
+    }
+
     @Test fun incompleteLegacyPairingCannotFallBackToUnpairedTransportKey() {
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate()), Listener(),
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
@@ -1292,12 +1446,13 @@ class ReceiverServerTest {
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
                                      partialHeader: Boolean = false, failedReplacement: Boolean = false,
-                                     metadataRoundTrip: Boolean = false, unpaired: Boolean = false) {
+                                     metadataRoundTrip: Boolean = false, unpaired: Boolean = false,
+                                     mirrorExperiment: ReceiverMirrorExperiment = ReceiverMirrorExperiment.BASELINE) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity,
-            audioOutputFormats = if (audioDrain) 1L shl 22 else 0L), listener,
+            audioOutputFormats = if (audioDrain) 1L shl 22 else 0L, mirrorExperiment = mirrorExperiment), listener,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> rawKey })
         receiver.start()
         val control = connect(receiver.port)

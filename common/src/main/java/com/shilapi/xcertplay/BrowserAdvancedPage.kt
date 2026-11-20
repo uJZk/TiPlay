@@ -76,6 +76,7 @@ internal class BrowserAdvancedPage(
             AirPlayReceiverSettings.isDisabled(activity), true) {
             AirPlayReceiverSettings.setDisabled(activity, it)
         }
+        AirPlayMirrorExperimentUi.addControls(activity, content)
         spacing.button(content, activity.getString(R.string.settings_forget_airplay_devices)) {
             AirPlayDeviceTrustStore.forgetAll(activity)
             Toast.makeText(activity, R.string.settings_airplay_devices_forgotten, Toast.LENGTH_SHORT).show()

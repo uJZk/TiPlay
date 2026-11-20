@@ -7,8 +7,42 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta58-source-preparation"></a>
+### Beta.58 experimental source acceptance
+
+Implemented **0.2.20-beta.58/code100/browser v130** adds four mutually exclusive
+ordinary AirPlay comparison modes, defaulting to A/current behavior. The
+[trial procedure](AirPlay.md#mirror-startup-experiments) controls starting order and
+separates first-attempt approval, type110 and picture delivery. No mode is a
+confirmed first-attempt repair.
+
+Fresh source checks pass **413 distinct cases/48 suites**: shared **270/29**, bound
+by **64 selected compiled classes**, and common **143/19**, bound by **17 classes**
+using the same new shared JAR. Both XML aggregates have zero failures/errors/skips.
+Coverage includes default wire/profile equivalence, persistence/fallback, ordinary
+H.264 advertisement and actual admission, BLE stop/re-enable, bit27-only declaration,
+ordered receiver reset, rapid changes, stale callbacks, disablement/destruction,
+trust/CarPlay/audio isolation, both Advanced entries and translations.
+
+The shared raw result remains `assertions-passed-with-uncaught-threads`: exactly
+**two** existing main `airplay-control` Socket-closed headers occur in
+`AirPlayTcpAcceptTest`; one has a complete stack and the other only a header.
+Independent review classifies this as a nonblocking existing main-listener shutdown
+race: modes do not close the main listener, and four relevant main sources remain
+byte-identical to beta.57. This is not zero-runtime-exception acceptance. The new
+ordinary finish/schedule-close race has a minimal closed-only catch and two included
+deterministic real-TCP positive/negative regressions; ordinary receiver and common
+checks have **zero uncaught headers**. Keep the old main shutdown task open.
+
+Browser62/Python27, RTC-audio, cache and public-tree checks pass; full CI is waived.
+Manual original-certificate signing, actual APK/source/native/runtime and new-mode
+compiled acceptance, same-source Pages and public-byte delivery are pending. The
+existing receiver41 gate alone does not establish the new mode branch. Preserve
+MIC24/speech33 and provenance checks; do not inherit beta.57 source/run/counts or
+artifact acceptance. [Build](Build.md#beta58-release) tracks the pending delivery.
+
 <a id="beta57-source-preparation"></a>
-### Beta.57
+### Beta.57 reference
 
 Published **0.2.20-beta.57/code99/browser v129** source
 `179a4953972f1138cef953a9b7f9d975f21b6884` passes **233 distinct fresh receiver/discovery
@@ -69,61 +103,19 @@ entries/unique first receipts; it re-reads twelve retained bodies and reviews
 retains exact hashes, native inventory and delivery phase boundaries; beta.56's
 historical API503 qualification does not apply to beta.57's completed requests.
 
-Physical beta.57 feedback now records an executed intervention with a remaining
-failure. Capture `1795084719353` actually runs beta.57/code99/browser v129,
-2,373 continuous complete raw records/17.807 seconds (10:38:21.513–10:38:39.320 UTC).
-On c2 a 714-byte initial SETUP gets 77 bytes; same-connection bodyless GET /info
-gets 1,075 bytes, then RECORD200/event setup/NTP7/7 succeed. No type110 arrives
-before client TEARDOWN after 6.290 seconds. Retry c3 uses the same fallback,
-then reaches type110 about 11 ms after RECORD, remembered-hit and 247 mirror
-frames. Old APK/page, an unexecuted adjustment or unsupported info fallback do
-not explain this sequence. Actual outgoing receiver info bodies are absent;
-equal logged lengths cannot establish equal content.
-
-Earlier current-process c1 lasts 388.093 seconds without type110, with NTP388/388,
-over seven minutes after the last viewport/audio profile inputs. The per-instance
-accept counter c1→c2→c3 and lifecycle source support a continuing ReceiverServer;
-viewport config copies and BLE/Bonjour refresh do not recreate it. No globally
-unique runtime object token is captured. The 15-second observation logs only and
-does not close the session; more waiting/NTP or a simple receiver warmup is not
-a supported explanation.
-
-All thirteen retained ordinary accepts across three process segments follow
-last reported CarPlay Controller ownership. The user reports on 2026-11-20 that
-AirPlay without CarPlay succeeds first attempt; a matched standalone wire
-control is absent. This narrows the context without proving screen arbitration.
-Source review finds no CarPlay screen-owner gate before type110. Historical
-beta.54 first/retry sessions used direct ordinary port38795; 7000 handoff is not
-necessary for the symptom, while the separate earlier BT probe leaves cache
-questions open. An earlier-screen-loan candidate was withdrawn without JVM
-execution, build or publication; its archived tests are not release evidence.
-Preserve typed media consent, borrowing and audio/identity contracts.
-
-Regression review distinguishes beta.6 DataChannel promotion from beta.21 native
-video RTP. The user reports successful first mirroring before WebRTC with CarPlay
-H.265/AirPlay H.264; the last working beta is unknown. Neither migration introduces
-HEVC bit42; the RTP boundary changes no receiver or Android service code. Its
-browser capability probe changes from actual decoder configuration checks to RTP
-MIME presence. Compare effective capability/profile inputs and BT discovery rather
-than assuming a codec conflict or a downstream keyframe cause.
-
-Six real TCP control replays against unchanged compiled beta.57 ReceiverServer
-classes produce matching normalized SETUP/info/RECORD replies for fresh and reused
-server orderings. Four independent Python-cryptography client cases verify legacy
-Ed25519/X25519 pairing, SHA512-derived key and exact synthetic AES-CTR frame output;
-partial-pair downgrade, corrupt proof and unsupported HKP3 are rejected. Public
-FairPlay replies and a known synthetic decrypted key are injected: native FairPlay,
-iOS choice, active CarPlay, hardware decode and vehicle recovery are not verified.
-These external probes are separate from the historical fresh 233-case suite.
-
-Beta.23 added ordinary BLE discovery and moved initial consent/preparation to
-type110; beta.40 disabled mirror
-legacy bit27. Current failed/successful sessions both use unpaired FairPlay, and
-UxPlay clears27 by default at runtime, so the passing forced legacy client does
-not prove a declaration defect or first-attempt fix. No new product patch,
-Gradle run or beta.58 publication follows this review. [AirPlay](AirPlay.md#mirror-startup-evidence)
-and [Todo](Todo.md#ordinary-airplay) retain the open cause separately from
-beta.57 source, artifact and public acceptance.
+Physical beta.57 capture `1795084719353` confirms first-attempt failure despite
+executed minimal initial SETUP/GET-info fallback; retry reaches remembered approval
+and 247 mirror frames. Its continuing receiver also waits 388.093 seconds without
+type110, so more waiting is not a supported explanation. The user reports first
+success without CarPlay and success before WebRTC; matched standalone/old-working
+profiles are absent. Six external TCP control replays and four independent legacy
+crypto cases pass, with injected public FairPlay replies and a synthetic decrypted
+key. They do not reproduce active-CarPlay iOS selection or native key decryption.
+UxPlay clears bit27 at runtime by default, so those probes do not establish a
+pairing-declaration defect. [AirPlay](AirPlay.md#mirror-startup-evidence) retains
+the evidence and migration boundaries. Beta.57 source/artifact/public passes remain
+historical; its four-header shutdown qualification must be reviewed afresh for a
+change that adds receiver restart behavior.
 
 <a id="beta56-source-preparation"></a>
 ### Beta.56 reference

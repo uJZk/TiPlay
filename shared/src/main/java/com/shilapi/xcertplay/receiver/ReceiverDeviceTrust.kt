@@ -126,7 +126,7 @@ class ReceiverDeviceTrust(
     fun authorizeSession(sessionToken: String, publicKey: ByteArray?, deviceName: String,
                          mediaType: String = "unknown", verifiedSessionId: String? = null): Boolean {
         val persistent = fingerprint(publicKey)
-        val (other, decision) = synchronized(this) {
+        val (other, decision, waitingRevision) = synchronized(this) {
             expire()
             val existing = pending?.takeIf { persistent != null && it.verified &&
                 it.decision.persistentFingerprint == persistent && it.fingerprint != "connection:$sessionToken" }
@@ -135,7 +135,8 @@ class ReceiverDeviceTrust(
                 if (existing.waitingConnections.size < MAX_CONNECTION_GRANTS)
                     existing.waitingConnections.add("connection:$sessionToken")
             }
-            existing to if (existing == null) requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId) else null
+            Triple(existing, if (existing == null)
+                requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId) else null, revision)
         }
         if (other != null) {
             try {
@@ -145,7 +146,11 @@ class ReceiverDeviceTrust(
                 return false
             }
         }
-        return await(decision ?: requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId))
+        val currentDecision = synchronized(this) {
+            if (waitingRevision != revision) return false
+            decision ?: requestSession(sessionToken, publicKey, deviceName, mediaType, verifiedSessionId)
+        }
+        return await(currentDecision)
     }
 
     private fun await(decision: Decision): Boolean = when (decision) {
@@ -225,6 +230,16 @@ class ReceiverDeviceTrust(
         pending?.waitingConnections?.remove(fingerprint)
         sessionGrants.entries.removeIf { entry -> entry.value.remove(fingerprint); entry.value.isEmpty() }
         pending?.takeIf { it.fingerprint == fingerprint }?.let(::finish)
+    }
+
+    /** Retire an ordinary receiver generation while retaining browser presence and saved choices. */
+    @Synchronized fun resetSessions() {
+        revision++
+        val retired = pending
+        pending = null
+        retired?.decision?.finished?.countDown()
+        allowedConnections.clear()
+        sessionGrants.clear()
     }
 
     @Synchronized fun close() {

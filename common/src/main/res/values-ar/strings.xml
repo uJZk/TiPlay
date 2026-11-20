@@ -931,4 +931,14 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">قناع iPhone (تجريبي)</string>
 
+    <string name="settings_airplay_mirror_experiment">تجربة مقارنة أول اتصال AirPlay</string>
+    <string name="settings_airplay_mirror_experiment_hint">يؤدي التبديل إلى إنهاء جلسة AirPlay الحالية. بعد جاهزية جهاز الاستقبال، ابدأ انعكاس الشاشة مجددًا على iPhone.</string>
+    <string name="settings_airplay_mirror_experiment_baseline">A · السلوك الحالي (مرجعي)</string>
+    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay باستخدام H.264 فقط</string>
+    <string name="settings_airplay_mirror_experiment_no_ble">C · إيقاف اكتشاف AirPlay عبر Bluetooth</string>
+    <string name="settings_airplay_mirror_experiment_pairing">D · الإعلان عن الاقتران القديم</string>
+    <string name="settings_airplay_mirror_experiment_baseline_description">استخدام سلوك AirPlay الافتراضي كمرجع للمقارنة.</string>
+    <string name="settings_airplay_mirror_experiment_h264_description">الإعلان عن دعم H.264 فقط لانعكاس AirPlay. يظل ترميز فيديو CarPlay كما هو.</string>
+    <string name="settings_airplay_mirror_experiment_no_ble_description">إيقاف إعلان AirPlay عبر Bluetooth مع إبقاء الاكتشاف عبر Wi-Fi. لا تُحذف الأجهزة المخزنة مؤقتًا على iPhone.</string>
+    <string name="settings_airplay_mirror_experiment_pairing_description">الإعلان عن دعم الاقتران القديم. يمكن أن يختار iPhone الاتصال دون اقتران؛ وقد يتطلب مسار اقتران مختلف الموافقة مجددًا.</string>
 </resources>

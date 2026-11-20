@@ -6,7 +6,8 @@ subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
 described here shipped in beta.23/v95 on the beta.22/code64 base;
-current preparation and publication identities are recorded in [Build](Build.md#beta57-release).
+current experiment preparation is recorded in [Build](Build.md#beta58-release).
+The [published beta.57 reference](Build.md#beta57-release) retains its separate identity.
 Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
 a bounded WebRTC decoding-capability probe; it does not change the iPhone's
 encoded stream or establish vehicle hardware decoding. See the
@@ -59,6 +60,44 @@ unattached channels remain staged, for at most 60 seconds; attaching approved
 playback cancels that deadline. After playback ends, the channel enters a grace period
 so the queued stopped event can be delivered. If staging is full, another staged
 channel is closed to make room.
+
+<a id="mirror-startup-experiments"></a>
+## First-mirror comparison modes
+
+The beta.58 preparation adds **AirPlay first-connection experiment** in Android
+**Advanced settings → AirPlay**, also available in the host's Advanced page.
+Select one mode; A is the default and restores the normal configuration.
+
+| Mode | Change from A |
+| --- | --- |
+| A · Current behavior (baseline) | Existing ordinary AirPlay behavior. |
+| B · AirPlay H.264 only | Ordinary mirroring stops offering or accepting HEVC. CarPlay codec selection stays automatic. |
+| C · AirPlay Bluetooth discovery off | Stops the ordinary BLE hint. Bonjour, network playback and the main endpoint's ordinary connection handoff remain available. |
+| D · Advertise legacy pairing | Adds legacy pairing capability bit27 for a mirror-capable receiver. It does not force pairing; the iPhone may still choose unpaired FairPlay. Mirror transient-pairing bits38/48 remain off. |
+
+Changing mode saves immediately, ends current ordinary AirPlay and rebuilds that
+receiver before it is ready again. This applies to returning to A too. It keeps
+the receiver identity, remembered approvals and CarPlay session; it does not
+restart CarPlay to impose another codec. B cannot enable mirroring on a browser
+that supports only HEVC. Switching off AirPlay still takes priority over a mode.
+These are comparison controls, not established repairs.
+
+For each trial, keep the same iPhone, Wi-Fi and car browser, with CarPlay connected.
+Stop mirroring on the iPhone, select the mode, wait for the receiver to be listening,
+then initiate mirroring once. Record whether approval appears and whether a picture
+arrives on that first attempt. If it fails, record the result of a separate second
+attempt; do not count that as first-attempt success. A remembered grant can skip
+the prompt; its absence alone is not a failed trial. Diagnostics associate the
+applied mode and receiver generation with the control/media stages, so type110
+arrival can be distinguished from approval and picture delivery.
+
+Use **A → B → A → C → A → D → A** initially. If a neighboring A trial no longer
+reproduces the failure, the comparison is inconclusive: repeat groups from the same
+CarPlay connection starting sequence. Receiver restart does not reset iOS discovery
+or CarPlay state, and its listener port may change. C does not erase an already
+cached BLE discovery result. D may expose a newly verified sender key requiring
+fresh approval; that is expected identity handling, not lost remembered trust.
+Keep approvals intact during the comparison and return to A when finished.
 
 ## Nearby Bluetooth discovery
 
@@ -182,8 +221,11 @@ restoring that bit is not an established repair. Compare effective browser
 capabilities, ordinary/CarPlay discovery and BT-info interactions across the
 migration boundaries before changing negotiation. A CarPlay listener and second
 profile may exist while connection preparation is enabled, before CarPlay becomes
-active; the standalone user report does not establish their absence. No beta.58 has been built or
-published from these investigations.
+active; the standalone user report does not establish their absence. The user has
+now requested the [controlled mode comparison](#mirror-startup-experiments). Its
+preparation does not establish a first-attempt repair; publication and checks have
+their own records in [Build](Build.md#beta58-release) and
+[Testing](Testing.md#beta58-source-preparation).
 
 Beta.57's shipped exception omits optional nested `info` only after successful
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no

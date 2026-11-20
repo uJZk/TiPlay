@@ -387,6 +387,27 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
+<a id="beta58-release"></a>
+### Beta.58 experimental source acceptance
+
+Implemented **0.2.20-beta.58/code100/browser v130** adds the APK's ordinary-AirPlay
+[first-mirror comparison modes](AirPlay.md#mirror-startup-experiments). A/current
+behavior is the default; B/C/D independently vary ordinary HEVC support, BLE
+advertising or legacy-pairing declaration. No mode is a confirmed repair. Switching
+rebuilds the ordinary receiver while preserving its identity, remembered approvals
+and CarPlay session.
+
+Focused source checks pass shared270/29 suites plus common143/19, totaling
+413 cases/48 suites with zero XML failures/errors/skips. Two existing main-listener
+uncaught Socket-closed headers qualify the shared assertion pass; independent
+review accepts them as nonblocking. Ordinary/common checks have no uncaught headers.
+Browser62/Python27, RTC/cache/public-tree checks pass; [Testing](Testing.md#beta58-source-preparation)
+retains source binding and exact limits. Manual signing, actual APK/source/native
+and new compiled-mode acceptance, same-source Pages and public-byte verification
+remain pending. Full CI is waived; the original signing certificate is required.
+Do not reuse beta.57's source/run/attempt, suite counts, hashes or delivery result
+as beta.58 evidence. The published beta.57 record below stays historical.
+
 <a id="beta57-release"></a>
 ### Published beta.57
 
@@ -471,7 +492,8 @@ retained ordinary accepts follow CarPlay Controller ownership. The user now
 reports independent AirPlay succeeds first attempt, without a matched wire
 capture. No unique screen-resource cause is established: the receiver has no
 pre-type110 CarPlay screen-owner gate. Earlier screen-loan work was withdrawn
-and not built or published; the installed release remains beta.57. [AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
+and not built or published; the latest physical capture uses beta.57.
+[AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
 counterfactual limits. The source/artifact/public passes above remain valid
 historical delivery evidence; they do not certify elimination of first retries.
 

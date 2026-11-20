@@ -618,12 +618,19 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 val wasPreparing = mirrorPreparation === this
                 if (playbackConnection === this && playbackCategory == "video") {
                     val generation = playbackGeneration
-                    if (!closed.get()) maintenance.schedule({ synchronized(ownership) {
-                        val state = listener.playback()
-                        val paused = playbackPaused || (state.ready && state.rate == 0.0)
-                        if (playbackConnection === this && playbackGeneration == generation && !paused)
-                            finishPlayback(PlaybackFinishReason.PLAY_CONNECTION_CLOSE)
-                    } }, 2, TimeUnit.SECONDS)
+                    if (!closed.get()) {
+                        try {
+                            maintenance.schedule({ synchronized(ownership) {
+                                val state = listener.playback()
+                                val paused = playbackPaused || (state.ready && state.rate == 0.0)
+                                if (playbackConnection === this && playbackGeneration == generation && !paused)
+                                    finishPlayback(PlaybackFinishReason.PLAY_CONNECTION_CLOSE)
+                            } }, 2, TimeUnit.SECONDS)
+                        } catch (error: RejectedExecutionException) {
+                            // close() can retire maintenance after the check above.
+                            if (!closed.get()) throw error
+                        }
+                    }
                 }
                 closeMedia()
                 if (owner === this) { owner = null; listener.status("listening") }
@@ -1552,7 +1559,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         val sink = listener.mirrorSink()
                         output = sink
                         val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, sink, clock,
-                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled,
+                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.effectiveMirrorHevcEnabled,
                             requestKeyFrame = { mirrorRecovery.request(token) },
                             frameReady = { mirrorRecovery.frameReady(token) },
                             recoveryClosed = { mirrorRecovery.end(token) }) {

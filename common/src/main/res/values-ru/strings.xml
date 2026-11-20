@@ -882,4 +882,14 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">Маска iPhone (экспериментально)</string>
 
+    <string name="settings_airplay_mirror_experiment">Сравнение первого подключения AirPlay</string>
+    <string name="settings_airplay_mirror_experiment_hint">Переключение завершает текущий сеанс AirPlay. Когда приёмник будет готов, снова запустите повтор экрана на iPhone.</string>
+    <string name="settings_airplay_mirror_experiment_baseline">A · Текущее поведение (базовое)</string>
+    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay только с H.264</string>
+    <string name="settings_airplay_mirror_experiment_no_ble">C · Без обнаружения AirPlay по Bluetooth</string>
+    <string name="settings_airplay_mirror_experiment_pairing">D · Объявлять старое сопряжение</string>
+    <string name="settings_airplay_mirror_experiment_baseline_description">Стандартное поведение AirPlay используется как база для сравнения.</string>
+    <string name="settings_airplay_mirror_experiment_h264_description">Для повтора экрана AirPlay объявляется только H.264. Видеокодек CarPlay не меняется.</string>
+    <string name="settings_airplay_mirror_experiment_no_ble_description">Останавливает Bluetooth-объявление AirPlay, сохраняя обнаружение по Wi-Fi. Данные устройств в кэше iPhone не удаляются.</string>
+    <string name="settings_airplay_mirror_experiment_pairing_description">Объявляет поддержку старого сопряжения. iPhone может выбрать соединение без сопряжения; другой способ сопряжения может потребовать повторного разрешения.</string>
 </resources>

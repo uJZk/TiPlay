@@ -116,6 +116,7 @@ internal enum class SettingsSection {
     DISPLAY_AND_PERFORMANCE,
     EXPERIMENTAL_DISPLAY,
     ADVANCED_MEDIA,
+    AIRPLAY_MIRROR_EXPERIMENTS,
     AMBIENT_LIGHTING,
     CAR_BUTTON,
     AUDIO_ROUTING,
@@ -153,6 +154,7 @@ internal object SettingsInformationArchitecture {
             SettingsSection.CLUSTER_MAP,
             SettingsSection.EXPERIMENTAL_DISPLAY,
             SettingsSection.ADVANCED_MEDIA,
+            SettingsSection.AIRPLAY_MIRROR_EXPERIMENTS,
             SettingsSection.NAVIGATION_WHEEL,
             SettingsSection.AMBIENT_LIGHTING,
         ),
@@ -2074,6 +2076,13 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     markReconnectNeeded()
                 }
             }
+        }
+        if (AirPlayPersistence.isPhoneBrowserMode(this)) filteredSection(content,
+            SettingsSection.AIRPLAY_MIRROR_EXPERIMENTS, getString(R.string.settings_airplay_title),
+            R.drawable.ic_dp_advanced) { card ->
+            AirPlayMirrorExperimentUi.addControls(this, card, addButton = { title, click ->
+                button(title, false, click).also { card.addView(it, matchButton(0, 60)) }
+            })
         }
         // Opt-in controls that can cost sound or video on some head units.
         filteredSection(content, SettingsSection.ADVANCED_MEDIA,

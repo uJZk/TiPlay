@@ -15,6 +15,74 @@ class ReceiverDeviceTrustTest {
     }
     private val key = ByteArray(32) { it.toByte() }
 
+    @Test fun receiverResetRetainsBrowserRememberedChoicesAndExistingRejectionsButRevokesTemporaryGrants() {
+        val store = Memory()
+        val remembered = ByteArray(32) { 10 }
+        val denied = ByteArray(32) { 11 }
+        val cancelled = ByteArray(32) { 12 }
+        store.remember(ReceiverDeviceTrust.fingerprint(remembered)!!)
+        val trust = ReceiverDeviceTrust(store) { 0 }
+        val token = "0123456789abcdef-first"
+        val group = "11223344556677889900aabbccddeeff"
+        trust.browserSeen("browser")
+        val once = trust.requestSession(token, key, "iPhone", "mirror", group) as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", once.id, true, remember = false))
+        val rejection = trust.request(denied, "Denied") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", rejection.id, false))
+        val old = trust.request(cancelled, "Cancelled") as ReceiverDeviceTrust.Decision.Pending
+
+        trust.resetSessions()
+        assertFalse(trust.respond("browser", old.id, true))
+        assertSame(ReceiverDeviceTrust.Decision.Allowed, trust.request(remembered, "Remembered"))
+        assertSame(ReceiverDeviceTrust.Decision.Denied, trust.request(denied, "Denied"))
+        assertTrue(trust.requestSession(token, key, "iPhone", "mirror", group) is ReceiverDeviceTrust.Decision.Pending)
+        trust.resetSessions()
+        assertTrue(trust.requestSession("0123456789abcdef-second", key, "iPhone", "mirror", group) is ReceiverDeviceTrust.Decision.Pending)
+        trust.resetSessions()
+        assertTrue(trust.request(cancelled, "Cancelled") is ReceiverDeviceTrust.Decision.Pending)
+        assertEquals(setOf(ReceiverDeviceTrust.fingerprint(remembered)), store.keys)
+    }
+
+    @Test fun receiverResetWakesBothWaitingConnectionsWithoutCreatingAnOldGenerationPrompt() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        trust.browserSeen("browser")
+        val first = "0123456789abcdef-first"
+        val second = "0123456789abcdef-second"
+        val group = "11223344556677889900aabbccddeeff"
+        val old = trust.requestSession(first, key, "iPhone", "mirror", group) as ReceiverDeviceTrust.Decision.Pending
+        val results = listOf(AtomicBoolean(true), AtomicBoolean(true))
+        val finished = CountDownLatch(2)
+        val threads = listOf(first, second).mapIndexed { index, token ->
+            Thread {
+                results[index].set(trust.authorizeSession(token, key, "iPhone", "mirror", group))
+                finished.countDown()
+            }.also { it.start() }
+        }
+        try {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+            while (threads.any { it.state != Thread.State.TIMED_WAITING } && System.nanoTime() < deadline) Thread.yield()
+            assertTrue(threads.all { it.state == Thread.State.TIMED_WAITING })
+            trust.resetSessions()
+            assertTrue(finished.await(1, TimeUnit.SECONDS))
+            assertTrue(results.none { it.get() })
+            assertNull(trust.prompt("browser"))
+            assertFalse(trust.respond("browser", old.id, true))
+            assertTrue(trust.requestSession("0123456789abcdef-new", key, "iPhone", "mirror", group) is ReceiverDeviceTrust.Decision.Pending)
+        } finally {
+            trust.close()
+            threads.forEach { it.join(1000) }
+        }
+    }
+
+    @Test fun receiverResetDoesNotClearAnExistingUnverifiedRejectionCooldown() {
+        val trust = ReceiverDeviceTrust(Memory()) { 0 }
+        trust.browserSeen("browser")
+        val rejected = trust.requestOnce("0123456789abcdef-first", "iPhone") as ReceiverDeviceTrust.Decision.Pending
+        assertTrue(trust.respond("browser", rejected.id, false))
+        trust.resetSessions()
+        assertSame(ReceiverDeviceTrust.Decision.Denied, trust.requestOnce("0123456789abcdef-second", "iPhone"))
+    }
+
     @Test fun allowOnceCoversOnlyLiveConnectionsInTheSameVerifiedSession() {
         val store = Memory()
         val trust = ReceiverDeviceTrust(store) { 0 }

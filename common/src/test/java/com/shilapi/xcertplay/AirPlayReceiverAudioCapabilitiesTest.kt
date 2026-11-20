@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.os.Looper
 import com.shilapi.xcertplay.receiver.ReceiverConfig
+import com.shilapi.xcertplay.receiver.ReceiverMirrorExperiment
 import com.shilapi.xcertplay.receiver.ReceiverServer
 import com.shilapi.xcertplay.web.BrowserAudioCapabilities
 import com.shilapi.xcertplay.web.BrowserLinkServer
@@ -63,8 +64,8 @@ class AirPlayReceiverAudioCapabilitiesTest {
         val worker = AirPlayReceiverService::class.java.getDeclaredField("worker").apply { isAccessible = true }
             .get(instance) as ExecutorService
         fun drain() { worker.submit {}.get(5, TimeUnit.SECONDS) }
-        fun identity() = AirPlayReceiverService::class.java.getDeclaredMethod("identity")
-            .apply { isAccessible = true }.invoke(instance) as ReceiverConfig
+        fun identity() = AirPlayReceiverService::class.java.getDeclaredMethod("identity", ReceiverMirrorExperiment::class.java)
+            .apply { isAccessible = true }.invoke(instance, AirPlayMirrorExperimentSettings.get(app)) as ReceiverConfig
         drain()
         val config = identity()
         assertEquals(first, config.audioOutputFormats)

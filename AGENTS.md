@@ -46,6 +46,24 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
+APK-selectable AirPlay comparison modes are implemented for
+**beta.58/code100/browser v130**. Source acceptance is separate from the published
+beta.57 evidence below. Use A/current behavior by default; B limits ordinary
+mirroring to H.264, C stops only ordinary BLE advertising, and D reoffers legacy
+pairing bit27 without forcing pairing. Keep these modes mutually exclusive and
+inside Android Advanced settings. Mode changes end/rebuild ordinary AirPlay with
+stable identity/trust, old-generation fencing and CarPlay/audio isolation. No early
+screen loan or keyframe is part of the experiment. [AirPlay](docs/AirPlay.md#mirror-startup-experiments)
+defines the controlled procedure and cache/order limits. Fresh shared270/29 suites
+and common143/19 suites total413 cases/48 suites with zero XML failures/errors/
+skips. Two existing main-listener Socket-closed uncaught headers qualify the shared
+assertion pass; independent review accepts them as nonblocking for these modes.
+Common and ordinary receiver tests have no uncaught headers. Browser62/Python27,
+RTC/cache/public-tree checks pass. [Testing](docs/Testing.md#beta58-source-preparation)
+retains compiled-source binding and shutdown scope. Original-certificate manual
+signing, actual artifacts, new compiled-mode acceptance, same-source Pages and
+public delivery are pending; no physical fix is claimed. Full CI remains waived.
+
 Published [beta.57/code99/browser v129](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.57)
 contains the scoped ordinary-mirror compatibility adjustment. Resume at
 [Build](docs/Build.md#beta57-release), [Testing](docs/Testing.md#beta57-source-preparation),
@@ -116,7 +134,9 @@ iPhone's first-attempt cause. Paired legacy, AirPlay 2, encrypted NTP, audio,
 other intent and every streams-present path retain combined-info behavior.
 Keep the NTP/event transport, one FairPlay key decryption, typed media consent,
 screen ownership and existing endpoint handoff. Do not borrow the screen early,
-send an early keyframe request or change audio, identity or capabilities.
+send an early keyframe request or change audio or identity. Baseline capabilities
+remain unchanged; only the user-selected comparison modes may vary the declared
+codec/pairing capabilities or ordinary BLE hint.
 Required real-TCP regressions follow FairPlay → minimal control SETUP →
 GET /info → RECORD → type 110, preserve the NTP port/probes and deliver an actual
 encrypted frame. Fresh assertions pass, qualified by four uncaught shutdown

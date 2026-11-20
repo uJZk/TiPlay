@@ -984,4 +984,14 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">iPhoneのマスク（実験的機能）</string>
 
+    <string name="settings_airplay_mirror_experiment">AirPlay 初回接続の比較実験</string>
+    <string name="settings_airplay_mirror_experiment_hint">切り替えると現在の AirPlay 接続が終了します。受信側の準備ができたら、iPhone でミラーリングを開始し直してください。</string>
+    <string name="settings_airplay_mirror_experiment_baseline">A · 現在の動作（基準）</string>
+    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay は H.264 のみ</string>
+    <string name="settings_airplay_mirror_experiment_no_ble">C · AirPlay の Bluetooth 検出を停止</string>
+    <string name="settings_airplay_mirror_experiment_pairing">D · 従来のペアリング対応を通知</string>
+    <string name="settings_airplay_mirror_experiment_baseline_description">標準の AirPlay 動作を比較の基準にします。</string>
+    <string name="settings_airplay_mirror_experiment_h264_description">AirPlay ミラーリングでは H.264 対応のみを通知します。CarPlay の映像コーデックは変わりません。</string>
+    <string name="settings_airplay_mirror_experiment_no_ble_description">AirPlay の Bluetooth 広告を停止し、Wi-Fi での検出は維持します。iPhone に保存された機器情報は消去しません。</string>
+    <string name="settings_airplay_mirror_experiment_pairing_description">従来のペアリングへの対応を通知します。iPhone は未ペアリングの接続も選べます。接続方式が変わると、再承認が必要な場合があります。</string>
 </resources>
