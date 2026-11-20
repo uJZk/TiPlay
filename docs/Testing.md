@@ -97,10 +97,33 @@ beta.54 first/retry sessions used direct ordinary port38795; 7000 handoff is not
 necessary for the symptom, while the separate earlier BT probe leaves cache
 questions open. An earlier-screen-loan candidate was withdrawn without JVM
 execution, build or publication; its archived tests are not release evidence.
-Preserve typed media consent, borrowing and audio/identity contracts. No product
-patch or new release is currently supported by this evidence. [AirPlay](AirPlay.md#mirror-startup-evidence)
-and [Todo](Todo.md#ordinary-airplay) track this boundary separately from the
-unchanged beta.57 source, artifact and public checks above.
+Preserve typed media consent, borrowing and audio/identity contracts.
+
+Regression review distinguishes beta.6 DataChannel promotion from beta.21 native
+video RTP. The user reports successful first mirroring before WebRTC with CarPlay
+H.265/AirPlay H.264; the last working beta is unknown. Neither migration introduces
+HEVC bit42; the RTP boundary changes no receiver or Android service code. Its
+browser capability probe changes from actual decoder configuration checks to RTP
+MIME presence. Compare effective capability/profile inputs and BT discovery rather
+than assuming a codec conflict or a downstream keyframe cause.
+
+Six real TCP control replays against unchanged compiled beta.57 ReceiverServer
+classes produce matching normalized SETUP/info/RECORD replies for fresh and reused
+server orderings. Four independent Python-cryptography client cases verify legacy
+Ed25519/X25519 pairing, SHA512-derived key and exact synthetic AES-CTR frame output;
+partial-pair downgrade, corrupt proof and unsupported HKP3 are rejected. Public
+FairPlay replies and a known synthetic decrypted key are injected: native FairPlay,
+iOS choice, active CarPlay, hardware decode and vehicle recovery are not verified.
+These external probes are separate from the historical fresh 233-case suite.
+
+Beta.23 added ordinary BLE discovery and moved initial consent/preparation to
+type110; beta.40 disabled mirror
+legacy bit27. Current failed/successful sessions both use unpaired FairPlay, and
+UxPlay clears27 by default at runtime, so the passing forced legacy client does
+not prove a declaration defect or first-attempt fix. No new product patch,
+Gradle run or beta.58 publication follows this review. [AirPlay](AirPlay.md#mirror-startup-evidence)
+and [Todo](Todo.md#ordinary-airplay) retain the open cause separately from
+beta.57 source, artifact and public acceptance.
 
 <a id="beta56-source-preparation"></a>
 ### Beta.56 reference

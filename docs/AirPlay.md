@@ -155,6 +155,36 @@ has a separate BT probe, leaving discovery-cache hypotheses unproved rather than
 fully excluded. No new product fix is established. Preserve typed consent, screen ownership, original media,
 working audio, identity and fixed-endpoint handoff; no early borrowing/keyframes.
 
+The user also reports that first-attempt mirroring worked before the WebRTC
+migration, with CarPlay H.265 and AirPlay H.264; the last working beta is unknown.
+This is a useful regression clue, not a matched wire comparison. History separates
+DataChannel promotion in beta.6 from native video RTP in beta.21. Neither boundary
+changes the ordinary capability model; the RTP boundary changes no receiver or
+Android service code. Browser probing does change, from actual decoder
+configuration checks to RTP codec MIME presence, which can affect the profile
+advertised before type110. HEVC bit42 already existed before WebRTC, so mixed
+codecs or that feature's introduction do not establish the cause.
+
+Effective declarations cannot be inferred from received codecs alone. All four
+reviewed versions first send geometry without video capabilities, then supplement
+it after asynchronous probes. A running CarPlay connection can retain its H.265
+snapshot while the ordinary receiver updates independently. This timing pattern
+predates migration; no old-device profile or timing capture establishes a change.
+
+Later changes added ordinary BLE discovery and moved initial consent/preparation
+to type110 in beta.23, then disabled
+mirror-profile legacy pairing bit27 in beta.40. Both observed first/retry sessions
+use unpaired FairPlay successfully. Independent legacy pairing and synthetic-frame
+interoperability pass, but do not prove iOS protocol selection. Maintained
+[UxPlay](https://github.com/FDH2/UxPlay/blob/48f5ce47c9ef694afccfac907c9e8828329657fe/uxplay.cpp)
+explicitly clears bit27 by default at runtime despite its header macro; merely
+restoring that bit is not an established repair. Compare effective browser
+capabilities, ordinary/CarPlay discovery and BT-info interactions across the
+migration boundaries before changing negotiation. A CarPlay listener and second
+profile may exist while connection preparation is enabled, before CarPlay becomes
+active; the standalone user report does not establish their absence. No beta.58 has been built or
+published from these investigations.
+
 Beta.57's shipped exception omits optional nested `info` only after successful
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no
 pairing of any kind, explicit mirror intent and `streams` absent. Bodyless GET

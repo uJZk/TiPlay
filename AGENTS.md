@@ -98,6 +98,14 @@ permission prompt is downstream of absent type110, not proof of an ownership
 cause. The proposed earlier screen loan was withdrawn without a build or
 release. Preserve audio/identity and require causal evidence for a new fix.
 
+The user also reports pre-WebRTC first-attempt success with CarPlay H.265/AirPlay
+H.264, without a known beta. Compare both beta.6 DataChannel and beta.21 native-RTP
+boundaries. Six external control replays and four independent legacy-crypto cases
+pass; they do not reproduce active-CarPlay iOS selection. UxPlay clears legacy
+bit27 by default at runtime, so its header macro is not evidence to restore that
+declaration. [AirPlay](docs/AirPlay.md#mirror-startup-evidence) retains the effective
+capability and discovery evidence limits; no new product fix is established.
+
 The beta.57 adjustment only omits optional nested `info` from a successful,
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV,
 no pairing of any kind, explicit mirror intent and the `streams` key absent.
