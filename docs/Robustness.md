@@ -289,10 +289,13 @@ start cannot explain the sequence. The earlier c1 has Standard TXT, not the
 later raw request/body coverage.
 
 All thirteen retained ordinary accepts follow last reported CarPlay Controller
-ownership. No standalone first-attempt control is captured. The user's answer to
-the already-asked AirPlay-without-CarPlay question is pending; that contrast may
-identify a necessary context, not a unique arbitration cause. No current evidence
-justifies another product patch, optional-response guess or new release.
+ownership. The user reports first-attempt success without CarPlay; no matched
+standalone capture is available. That contrast identifies a relevant context,
+not a unique arbitration cause. The receiver's pre-type110 control does not gate
+on CarPlay screen ownership. Missing permission UI follows missing type110; it
+does not demonstrate a resource block. The proposed earlier-screen-loan candidate
+was withdrawn without a build or release. No current evidence establishes a new
+product fix.
 
 Preserve beta.57's scoped successful unpaired legacy-FairPlay exception: valid
 encrypted key/IV, no pairing of any kind, explicit mirror intent and absent

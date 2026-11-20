@@ -89,9 +89,14 @@ c1→c2→c3 and lifecycle source support one continuing ReceiverServer; viewpor
 config copies and BLE/Bonjour refresh do not restart it. A globally unique runtime
 object token is absent. This rules out a simple receiver warmup/more-wait account.
 All thirteen retained ordinary accepts follow last reported CarPlay Controller
-ownership, without a standalone AirPlay control. The user's already-requested
-answer about first-attempt AirPlay without CarPlay is pending. CarPlay arbitration
-is unproved; no early borrow, audio/identity change or new package is justified.
+ownership. On 2026-11-20 the user reports that independent AirPlay without
+CarPlay succeeds on its first attempt; no matched standalone wire capture is
+available. This narrows the context without proving screen-resource causation.
+The current pre-type110 control path does not gate on CarPlay screen ownership;
+borrowing controls local display after the media request arrives. An absent
+permission prompt is downstream of absent type110, not proof of an ownership
+cause. The proposed earlier screen loan was withdrawn without a build or
+release. Preserve audio/identity and require causal evidence for a new fix.
 
 The beta.57 adjustment only omits optional nested `info` from a successful,
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV,

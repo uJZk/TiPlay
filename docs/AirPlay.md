@@ -141,11 +141,18 @@ viewport/discovery worker transition as a cause.
 All **thirteen** ordinary accepts retained across three Standard-log process
 segments follow last reported **CarPlay Controller** ownership. That is context,
 not direct iOS resource inspection or proof of CarPlay arbitration. There is no
-standalone-AirPlay first-attempt control. The user has already been asked whether
-AirPlay succeeds initially without connecting CarPlay; the answer is **pending**.
-It can distinguish whether the symptom requires active CarPlay, without alone
-proving a unique protocol/resource cause. No product patch or new package is
-currently justified. Preserve typed consent, screen ownership, original media,
+matched standalone-AirPlay wire control. On 2026-11-20 the user reports that
+AirPlay without CarPlay succeeds on its first attempt. This supports a combined-
+context problem, without proving a screen-resource cause. Current receiver
+FP/control SETUP/info/RECORD has no CarPlay screen-owner gate: the ordinary
+receiver's media-connection owner is a separate concept. Screen borrowing follows
+type110 and controls local display. The absent first permission prompt follows
+the absent typed request; it cannot establish the upstream cause. The proposed
+earlier screen loan was withdrawn, archived outside Git and never built or
+published. Historical beta.54 first/retry traffic both used the direct ordinary
+port 38795, so 7000 handoff is not necessary for the symptom. That capture also
+has a separate BT probe, leaving discovery-cache hypotheses unproved rather than
+fully excluded. No new product fix is established. Preserve typed consent, screen ownership, original media,
 working audio, identity and fixed-endpoint handoff; no early borrowing/keyframes.
 
 Beta.57's shipped exception omits optional nested `info` only after successful

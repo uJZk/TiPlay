@@ -89,10 +89,14 @@ does not close the session; more waiting/NTP or a simple receiver warmup is not
 a supported explanation.
 
 All thirteen retained ordinary accepts across three process segments follow
-last reported CarPlay Controller ownership. No AirPlay-without-CarPlay first-
-attempt control is available. The user has already been asked whether standalone
-AirPlay succeeds initially; the answer is pending. It can identify whether active
-CarPlay is required for the symptom, not prove a unique arbitration cause.
+last reported CarPlay Controller ownership. The user reports on 2026-11-20 that
+AirPlay without CarPlay succeeds first attempt; a matched standalone wire
+control is absent. This narrows the context without proving screen arbitration.
+Source review finds no CarPlay screen-owner gate before type110. Historical
+beta.54 first/retry sessions used direct ordinary port38795; 7000 handoff is not
+necessary for the symptom, while the separate earlier BT probe leaves cache
+questions open. An earlier-screen-loan candidate was withdrawn without JVM
+execution, build or publication; its archived tests are not release evidence.
 Preserve typed media consent, borrowing and audio/identity contracts. No product
 patch or new release is currently supported by this evidence. [AirPlay](AirPlay.md#mirror-startup-evidence)
 and [Todo](Todo.md#ordinary-airplay) track this boundary separately from the
@@ -791,10 +795,11 @@ unperformed checks in [Todo](Todo.md#browser-and-carplay-audio).
 [AirPlay](AirPlay.md) records RAOP/AirPlay 2 wire coverage, BLE lifecycle checks and
 protocol limits. The latest beta.57/code99/browser v129 capture physically executes
 the minimal SETUP/bodyless-info fallback yet still needs a retry; remembered-hit
-and 247 mirror frames are observed on that retry. Resolve the already-requested
-standalone-AirPlay first-attempt answer before selecting a new change. Existing
-accepts all follow CarPlay Controller ownership, so they cannot prove a CarPlay
-arbitration cause. Changed claims/new keys still need separate consent; retain
+and 247 mirror frames are observed on that retry. The user reports first-attempt
+success without CarPlay. Existing wire captures all follow CarPlay Controller
+ownership; that contrast does not prove a resource cause. Keep permission-prompt
+absence separate from why the sender never requests type110. The proposed
+earlier screen loan was withdrawn and never built or published. Changed claims/new keys still need separate consent; retain
 actual APK/browser revisions and sustained picture/output limits.
 [Beta.57 checks](#beta57-source-preparation) remain separate from physical retry
 elimination. Before the remote migration, the Chromium notification harness

@@ -467,9 +467,11 @@ uncaptured, so equal lengths cannot prove equal content.
 An earlier c1 in the same continuing receiver waits 388.093 seconds with
 NTP388/388 and no type110; the last viewport/audio inputs predate acceptance by
 over seven minutes. Simple receiver warmup or more waiting is unsupported. All thirteen
-retained ordinary accepts follow CarPlay Controller ownership; the missing
-standalone-AirPlay answer is pending. No unique cause or new product patch is
-established. [AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
+retained ordinary accepts follow CarPlay Controller ownership. The user now
+reports independent AirPlay succeeds first attempt, without a matched wire
+capture. No unique screen-resource cause is established: the receiver has no
+pre-type110 CarPlay screen-owner gate. Earlier screen-loan work was withdrawn
+and not built or published; the installed release remains beta.57. [AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
 counterfactual limits. The source/artifact/public passes above remain valid
 historical delivery evidence; they do not certify elimination of first retries.
 
