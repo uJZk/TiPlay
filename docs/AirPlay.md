@@ -6,7 +6,7 @@ subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
 described here shipped in beta.23/v95 on the beta.22/code64 base;
-current experiment preparation is recorded in [Build](Build.md#beta58-release).
+current experiment publication is recorded in [Build](Build.md#beta58-release).
 The [published beta.57 reference](Build.md#beta57-release) retains its separate identity.
 Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
 a bounded WebRTC decoding-capability probe; it does not change the iPhone's
@@ -64,7 +64,7 @@ channel is closed to make room.
 <a id="mirror-startup-experiments"></a>
 ## First-mirror comparison modes
 
-The beta.58 preparation adds **AirPlay first-connection experiment** in Android
+Beta.58 adds **AirPlay first-connection experiment** in Android
 **Advanced settings → AirPlay**, also available in the host's Advanced page.
 Select one mode; A is the default and restores the normal configuration.
 
@@ -98,10 +98,14 @@ or CarPlay state, and its listener port may change. C does not erase an already
 cached BLE discovery result. D may expose a newly verified sender key requiring
 fresh approval; that is expected identity handling, not lost remembered trust.
 Keep approvals intact during the comparison and return to A when finished.
+If A already has no HEVC or no active BLE advertising, B or C changes no effective
+condition. The applied-profile diagnostics distinguish policy from actual radio
+state. An HEVC-only browser cannot mirror under B; that result does not identify
+the original first-attempt cause.
 
 ## Nearby Bluetooth discovery
 
-When Android supports BLE advertising and the Nearby devices permission is granted,
+By default, when Android supports BLE advertising and Nearby devices permission is granted,
 the receiver advertises an Apple Continuity AirPlay-target hint (manufacturer `0x004C`,
 message `0x09`) with its IPv4 address and configuration seed. The sender does not have
 to join the receiver's network before receiving the BLE hint. Bluetooth discovery does
@@ -223,7 +227,7 @@ migration boundaries before changing negotiation. A CarPlay listener and second
 profile may exist while connection preparation is enabled, before CarPlay becomes
 active; the standalone user report does not establish their absence. The user has
 now requested the [controlled mode comparison](#mirror-startup-experiments). Its
-preparation does not establish a first-attempt repair; publication and checks have
+controls do not establish a first-attempt repair; publication and checks have
 their own records in [Build](Build.md#beta58-release) and
 [Testing](Testing.md#beta58-source-preparation).
 

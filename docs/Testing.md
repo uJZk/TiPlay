@@ -8,10 +8,11 @@ recorded source, not interchangeable coverage counts for later engines.
 ## Current release source
 
 <a id="beta58-source-preparation"></a>
-### Beta.58 experimental source acceptance
+### Published beta.58 experimental modes
 
-Implemented **0.2.20-beta.58/code100/browser v130** adds four mutually exclusive
-ordinary AirPlay comparison modes, defaulting to A/current behavior. The
+Published **0.2.20-beta.58/code100/browser v130** source
+`fec67c3530c8ba9237acf6acdb07afb7ebff1e08` adds four ordinary AirPlay comparison
+modes, defaulting to A/current behavior. The
 [trial procedure](AirPlay.md#mirror-startup-experiments) controls starting order and
 separates first-attempt approval, type110 and picture delivery. No mode is a
 confirmed first-attempt repair.
@@ -35,87 +36,57 @@ deterministic real-TCP positive/negative regressions; ordinary receiver and comm
 checks have **zero uncaught headers**. Keep the old main shutdown task open.
 
 Browser62/Python27, RTC-audio, cache and public-tree checks pass; full CI is waived.
-Manual original-certificate signing, actual APK/source/native/runtime and new-mode
-compiled acceptance, same-source Pages and public-byte delivery are pending. The
-existing receiver41 gate alone does not establish the new mode branch. Preserve
-MIC24/speech33 and provenance checks; do not inherit beta.57 source/run/counts or
-artifact acceptance. [Build](Build.md#beta58-release) tracks the pending delivery.
+Manual signed run `44664150597` attempt 1 passes all three jobs. Actual signed
+APK/source/attempt/native/runtime checks pass, including MIC24/speech33/receiver41
+and the new **mode29 executable definitions plus 80 resource values/eight locales**.
+Independent review reexecutes signature, definition/resource binding and artifact
+checks; the prior receiver41 gate alone is not the new-mode proof. Original single
+certificate, v2/API36, version/package, CRC and 16 KiB alignment pass. Native evidence
+covers 51 libraries/32 matching symbol pairs with 19 historical symbol gaps, not full
+symbol coverage. [Build](Build.md#beta58-release) retains hashes and exact scope.
+
+Release `452217328` was published **2026-11-20 11:24:25 (UTC+8)**. Three complete
+public assets and two anonymous APIs pass every first request with zero retries.
+Same-source Pages `44667649812` attempt 1 succeeds. All 226 site files
+(37,828,528 bytes) finally match expected bytes, hashes and MIME, across227
+file-request receipts: `vendor/captions/README.md` receives HTTP503 then200 on its
+only retry. Twenty routes (18 HTTP200/two expected404) pass first request; the
+final inventory covers eight languages/21 MIME classes. **Strict first-request acceptance is false, with
+one retry**; the original Pages-phase exit1 and first-request report remain intact.
+This is a new beta.58 site README qualification, separate from beta.56's historical
+API503. Independent qualified public review accepts product delivery with this exact non-runtime README hosting qualification. It rehashes three full release assets and rereads twelve retained site bodies; 214 files have receipt-only review. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false` remain separate.
+
+Source, signed-code and public delivery checks do not establish iPhone first-use
+selection, hardware playback or elimination of the first retry; the controlled
+vehicle comparison remains open.
 
 <a id="beta57-source-preparation"></a>
 ### Beta.57 reference
 
-Published **0.2.20-beta.57/code99/browser v129** source
-`179a4953972f1138cef953a9b7f9d975f21b6884` passes **233 distinct fresh receiver/discovery
-JVM/Robolectric cases across 24 suites**, with zero XML failures/errors/skips.
-The root-owned Gradle command exits0 with BUILD SUCCESSFUL; final XML and 52
-selected compiled JVM classes bind the checked source. Browser62/Python27,
-RTC-audio verification, cache and local public-tree checks pass. Final tool-assisted
-source/audio freeze reviews have no blockers. These fresh JVM counts do not claim
-fresh audio JUnit execution; actual audio-code acceptance is separate. Full CI
-remains waived; keep original signing, working audio/identity and endpoint handoff.
+Published **beta.57/code99/browser v129** source
+`179a4953972f1138cef953a9b7f9d975f21b6884` has a
+[frozen verification record](https://github.com/uJZk/TiPlay/blob/8e9791c868ea513eedf572175aefb7175f775433/docs/Testing.md#beta57-source-preparation):
+233 fresh cases/24 suites, zero XML failures/errors/skips and 52 selected compiled
+classes. Its assertion pass is qualified by **four uncaught shutdown headers**:
+one maintenance `RejectedExecutionException` and three main Socket-closed headers.
+Independent/control review treated them as nonblocking for that response-only
+patch. This is historical scope, not beta.58 runtime acceptance.
 
-The 233 cases are assertion/XML-level passes; the run is **not runtime-exception-free**.
-Two suites contain four uncaught shutdown exception headers: the combined-info
-suite emits one `RejectedExecutionException` from the existing maintenance
-check-then-schedule race, and the TCP-accept suite emits three `Socket is closed`
-headers during shutdown. Independent and control review treat these as
-nonblocking for the response-only change. The unchanged global close path closes
-media and sockets; it is not bypassed. Track maintenance/accept shutdown cleanup
-separately in [Todo](Todo.md#engineering-follow-up). These observations do not
-diagnose the iPhone's missing first-attempt type 110; beta.57 includes no production
-shutdown change.
+Its real-TCP cases cover public FairPlay → minimal initial mirror-control SETUP →
+bodyless GET/info → RECORD → type110 on one transport, continuing NTP/event ownership,
+one key decryption and an actual encrypted frame. Paired legacy/AirPlay2/encrypted
+NTP/audio/other intent and all streams-present paths retain combined replies.
+Browser62/Python27/RTC/cache/public-tree checks passed. Signed run `44459111940`
+attempt 1, release `450887195` on **2026-11-19 12:51:37 (UTC+8)** and same-source
+Pages `44461225290` passed their actual-artifact and strict public-first-request
+checks. See [Build](Build.md#beta57-release) for immutable delivery provenance.
 
-Real-TCP regressions follow completed public FairPlay → successful minimal initial
-control SETUP → bodyless GET /info → RECORD → type110 on one transport. They cover
-actual profile content, continuing event ownership, the same NTP port/probes,
-one FairPlay key decryption and an actual encrypted mirror frame. The exception
-requires valid encrypted key/IV, no pairing of any kind, explicit mirror intent
-and the `streams` key absent. Paired legacy, AirPlay 2, encrypted NTP, audio,
-other intent and streams-present requests, including an empty list, retain combined
-behavior. Rejected/failed SETUP and optional/false combined-info requests remain
-covered; stream SETUP never adds nested info. Assertions pass with the shutdown
-qualification above.
-
-Retain beta.56 endpoint coverage: discovery/FairPlay/control/type110, same/new TCP,
-pre-read/pipelined data, original peer/socket, twelve-slot admission, replacement/
-close races and retired/unavailable receivers. MFi/CarPlay/audio keep their paths.
-UxPlay's ports-only SETUP and Doubletake's optional-info fallback support the
-compatibility choice without proving an iOS cause or first-use warmup. No early
-borrowing/keyframe or global capability change is justified.
-
-[Signed workflow `44459111940`](https://github.com/uJZk/TiPlay/actions/runs/44459111940)
-attempt1 passes all three jobs. Formal actual artifact acceptance passes exact
-source/attempt/frozen-source/runtime/native/notices binding, MIC24/speech33/
-receiver41 executable contracts and original-certificate v2/API36. Receiver review
-covers 377 DEX blocks/57 selected check groups, not full branch or physical proof.
-The actual APK passes aapt version/package, CRC and 16 KiB checks. Release
-`450887195` was published **2026-11-19 12:51:37 (UTC+8)**. The strict release phase
-passes all three full-byte public assets and two anonymous APIs on every first
-request, zero retries, exit0. Same-source Pages `44461225290` attempt1 is
-completed/success, freshly API-confirmed. Anonymous site checks pass all 226
-files (37,828,528 bytes), twenty routes (18 HTTP200/two expected404), eight languages
-and 21 MIME classes. Release and site validators exit0; every scoped request
-succeeds first attempt, zero retries, combined strict first-request true. Final
-offline aggregate and independent public review pass without blockers or delivery
-qualification. Independent review rehashes three assets and matches all 226 golden
-entries/unique first receipts; it re-reads twelve retained bodies and reviews
-214 files from receipts. It does not independently reread all 226 bodies. [Build](Build.md#beta57-release)
-retains exact hashes, native inventory and delivery phase boundaries; beta.56's
-historical API503 qualification does not apply to beta.57's completed requests.
-
-Physical beta.57 capture `1795084719353` confirms first-attempt failure despite
-executed minimal initial SETUP/GET-info fallback; retry reaches remembered approval
-and 247 mirror frames. Its continuing receiver also waits 388.093 seconds without
-type110, so more waiting is not a supported explanation. The user reports first
-success without CarPlay and success before WebRTC; matched standalone/old-working
-profiles are absent. Six external TCP control replays and four independent legacy
-crypto cases pass, with injected public FairPlay replies and a synthetic decrypted
-key. They do not reproduce active-CarPlay iOS selection or native key decryption.
-UxPlay clears bit27 at runtime by default, so those probes do not establish a
-pairing-declaration defect. [AirPlay](AirPlay.md#mirror-startup-evidence) retains
-the evidence and migration boundaries. Beta.57 source/artifact/public passes remain
-historical; its four-header shutdown qualification must be reviewed afresh for a
-change that adds receiver restart behavior.
+The physical beta.57 capture still fails before first type110; retry reaches
+remembered approval and247 mirror frames. Its continuing receiver also waits
+388.093 seconds without type110. Six external control replays and four independent
+legacy crypto cases use injected public FairPlay replies/synthetic decrypted key;
+they do not reproduce active-CarPlay iOS selection or native key decryption.
+[AirPlay](AirPlay.md#mirror-startup-evidence) keeps that open-cause evidence.
 
 <a id="beta56-source-preparation"></a>
 ### Beta.56 reference

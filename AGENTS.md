@@ -46,48 +46,43 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-APK-selectable AirPlay comparison modes are implemented for
-**beta.58/code100/browser v130**. Source acceptance is separate from the published
-beta.57 evidence below. Use A/current behavior by default; B limits ordinary
-mirroring to H.264, C stops only ordinary BLE advertising, and D reoffers legacy
-pairing bit27 without forcing pairing. Keep these modes mutually exclusive and
-inside Android Advanced settings. Mode changes end/rebuild ordinary AirPlay with
-stable identity/trust, old-generation fencing and CarPlay/audio isolation. No early
-screen loan or keyframe is part of the experiment. [AirPlay](docs/AirPlay.md#mirror-startup-experiments)
-defines the controlled procedure and cache/order limits. Fresh shared270/29 suites
-and common143/19 suites total413 cases/48 suites with zero XML failures/errors/
-skips. Two existing main-listener Socket-closed uncaught headers qualify the shared
-assertion pass; independent review accepts them as nonblocking for these modes.
-Common and ordinary receiver tests have no uncaught headers. Browser62/Python27,
-RTC/cache/public-tree checks pass. [Testing](docs/Testing.md#beta58-source-preparation)
-retains compiled-source binding and shutdown scope. Original-certificate manual
-signing, actual artifacts, new compiled-mode acceptance, same-source Pages and
-public delivery are pending; no physical fix is claimed. Full CI remains waived.
+Published [beta.58/code100/browser v130](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.58)
+from source `fec67c3530c8ba9237acf6acdb07afb7ebff1e08` adds APK-selectable AirPlay
+comparison modes: A/current behavior by default, B/ordinary H.264 only,
+C/ordinary BLE off, D/legacy-pairing declaration without forced pairing. Android
+Advanced settings keeps them mutually exclusive. Mode changes rebuild ordinary
+AirPlay with stable identity/trust and old-generation fencing; CarPlay/audio stay
+independent. No early screen loan or keyframe is added.
+[AirPlay](docs/AirPlay.md#mirror-startup-experiments) defines controlled trials and
+cache/order limits; physical first-attempt benefits remain unverified.
 
-Published [beta.57/code99/browser v129](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.57)
-contains the scoped ordinary-mirror compatibility adjustment. Resume at
-[Build](docs/Build.md#beta57-release), [Testing](docs/Testing.md#beta57-source-preparation),
-[AirPlay](docs/AirPlay.md#mirror-startup-evidence) and [Todo](docs/Todo.md#ordinary-airplay).
-Source `179a4953972f1138cef953a9b7f9d975f21b6884` passes 233 distinct fresh receiver/discovery
-JVM/Robolectric cases/24 suites with zero XML failures/errors/skips, bound by 52
-selected compiled classes. Four uncaught shutdown headers qualify these assertion
-passes; independent/control review treats them as nonblocking for the response-only
-patch. Browser62/Python27, RTC-audio, cache and local public-tree checks pass;
-final tool-assisted source/audio freeze reviews have no blockers. Full CI remains waived.
+Fresh shared270/29 suites and common143/19 total413 cases/48 suites with zero XML
+failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main
+Socket-closed headers qualify the shared assertion pass, independently nonblocking;
+ordinary/common have no uncaught headers. Browser62/Python27/RTC/cache/public-tree
+checks pass. [Testing](docs/Testing.md#beta58-source-preparation) retains exact scope.
+Full CI remains waived.
 
-Release `450887195` was published **2026-11-19 12:51:37 (UTC+8)**. Manual signed
-run `44459111940` attempt 1 passes all three jobs; formal actual APK/source/attempt,
-MIC24/speech33/receiver41, native/notices and original-certificate v2/API36 review
-passes. Three anonymous public assets match signed bytes and both API requests
-pass every first request with zero retries. Same-source Pages `44461225290`
-attempt 1 succeeds. All 226 files (37,828,528 bytes), twenty routes
-(18 HTTP200/two expected404), eight languages and 21 MIME classes pass first
-request; combined strict first-request acceptance is true, zero retries. Final
-offline aggregate and independent public review pass without blockers or delivery
-qualification. Later physical beta.57 evidence confirms that the adjustment runs
-but does not eliminate first-attempt failure; remembered approval and retry frames
-are observed. Prior
-beta.56's API503 qualification remains historical and is not a beta.57 result.
+Release `452217328` was published **2026-11-20 11:24:25 (UTC+8)**. Manual signed run
+`44664150597` attempt 1 passes all three jobs. Actual APK/source/attempt,
+MIC24/speech33/receiver41/mode29 plus 80 localized resource values, native/notices,
+original-certificate v2/API36/CRC/16KiB acceptance and independent review pass.
+Three full-byte public assets and two anonymous APIs pass first request/zero
+retries. Same-source Pages `44667649812` attempt 1 succeeds and all 226 site files
+finally match bytes/hash/MIME, with 227 file requests: one vendor caption README
+HTTP503→200 retry. All twenty routes pass first request; eight languages/21 MIME
+classes pass. Combined strict first-request acceptance remains false, one retry;
+the original exit1/report are retained. [Build](docs/Build.md#beta58-release) retains exact
+hashes and JNI coverage; keep source/delivery acceptance separate from the A/B/C/D
+vehicle comparison.
+
+Published beta.57/code99/browser v129 remains a
+[frozen historical reference](https://github.com/uJZk/TiPlay/blob/8e9791c868ea513eedf572175aefb7175f775433/docs/Build.md#beta57-release):
+source `179a4953972f1138cef953a9b7f9d975f21b6884`, 233 cases/24 suites and 52 compiled
+classes, qualified by four uncaught shutdown headers; release `450887195`, signed
+run `44459111940` and Pages `44461225290` pass scoped delivery checks. Its physical
+first-attempt failure persists despite remembered approval and retry frames.
+Those beta.57 counts, runtime qualification and hashes are not beta.58 evidence.
 
 The latest user capture `1795084719353` actually runs **beta.57/code99/browser
 v129**: 2,373 continuous complete raw records over 17.807 seconds,

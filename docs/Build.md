@@ -388,114 +388,99 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta58-release"></a>
-### Beta.58 experimental source acceptance
+### Published beta.58 experimental modes
 
-Implemented **0.2.20-beta.58/code100/browser v130** adds the APK's ordinary-AirPlay
-[first-mirror comparison modes](AirPlay.md#mirror-startup-experiments). A/current
-behavior is the default; B/C/D independently vary ordinary HEVC support, BLE
-advertising or legacy-pairing declaration. No mode is a confirmed repair. Switching
-rebuilds the ordinary receiver while preserving its identity, remembered approvals
-and CarPlay session.
+[Beta.58/code100/browser v130](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.58)
+was published **2026-11-20 11:24:25 (UTC+8)**, release `452217328`, from
+`fec67c3530c8ba9237acf6acdb07afb7ebff1e08`. The APK adds the ordinary-AirPlay
+[A/B/C/D comparison modes](AirPlay.md#mirror-startup-experiments), default A/current
+behavior. Switching ends/rebuilds ordinary AirPlay with identity/trust retained and
+CarPlay/audio isolated. No mode is a confirmed first-attempt repair.
 
-Focused source checks pass shared270/29 suites plus common143/19, totaling
-413 cases/48 suites with zero XML failures/errors/skips. Two existing main-listener
-uncaught Socket-closed headers qualify the shared assertion pass; independent
-review accepts them as nonblocking. Ordinary/common checks have no uncaught headers.
-Browser62/Python27, RTC/cache/public-tree checks pass; [Testing](Testing.md#beta58-source-preparation)
-retains source binding and exact limits. Manual signing, actual APK/source/native
-and new compiled-mode acceptance, same-source Pages and public-byte verification
-remain pending. Full CI is waived; the original signing certificate is required.
-Do not reuse beta.57's source/run/attempt, suite counts, hashes or delivery result
-as beta.58 evidence. The published beta.57 record below stays historical.
+Fresh shared270/29 suites plus common143/19 total413 cases/48 suites with zero XML
+failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main
+Socket-closed headers qualify the shared pass; independent review accepts them as
+nonblocking for these modes. Ordinary/common have no uncaught headers.
+Browser62/Python27/RTC/cache/public-tree checks pass. Full CI remains waived;
+[Testing](Testing.md#beta58-source-preparation) retains exact limits.
 
-<a id="beta57-release"></a>
-### Published beta.57
+[Signed run `44664150597`](https://github.com/uJZk/TiPlay/actions/runs/44664150597)
+attempt 1 passes release `136049256435`, symbols `136052599825` and draft
+`136052695074`. Actual artifact review passes12 groups and source/attempt/runtime
+binding, MIC24/speech33/receiver41 and **mode29 executable definitions plus 80
+localized resource values**. Independent review reexecutes actual APK contracts
+and resource/UI binding; metadata alias rebinding changes no source, APK or SDK
+bytes. Formal artifact report SHA-256:
+`08dedc70ee95031b2be4e04325b7eafa17ea2ad8bae8661f1d4f6c4aa61058c4`;
+independent report:
+`db7e28ffc82c7f4e95bc77612d4d30ede9b7d4f5f85b291e6ec1f5f2e71d6eb4`.
 
-[Beta.57/code99/browser v129](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.57)
-was published **2026-11-19 12:51:37 (UTC+8)**, release `450887195`, from
-`179a4953972f1138cef953a9b7f9d975f21b6884`. It omits optional nested `info` only from a successful
-unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no
-pairing of any kind, explicit mirror intent and the `streams` key absent. Normal
-bodyless GET /info on the same transport returns the profile. Paired legacy,
-AirPlay 2, encrypted NTP, audio, other intent and every streams-present path retain
-combined behavior. This is a compatibility adjustment, not a proven iPhone
-first-attempt cause. Preserve NTP/event/key ownership, typed consent, endpoint
-handoff, identity and audio; no early borrowing/keyframe or global capability change.
-
-Fresh source checks pass 233 distinct receiver/discovery JVM/Robolectric cases/
-24 suites with zero XML failures/errors/skips; 52 selected compiled JVM classes
-bind the checked source. Four uncaught shutdown headers qualify these assertion
-passes; independent/control review accepts them as nonblocking for this
-response-only patch. [Testing](Testing.md#beta57-source-preparation) records the
-qualification and separate cleanup. Browser62/Python27, RTC-audio, cache and local
-public-tree checks pass; final tool-assisted source/audio freeze reviews have no
-blockers. Full CI remains waived.
-
-[Signed run `44459111940`](https://github.com/uJZk/TiPlay/actions/runs/44459111940)
-attempt 1, created at 04:33:14 UTC, passes all three jobs: release `135341299674`,
-symbols `135343615488` and draft `135343775169`. Formal actual signed-artifact
-review passes (report SHA-256
-`de52982ff2f5adab9d1778d7f76e265a9c46770cc25ef33669bbdce7dcf027ea`). Exact
-source/attempt/frozen-source/runtime containers and actual compiled MIC24,
-speech33 and receiver41 contracts pass. Receiver inspection covers 377 DEX code
-blocks and 57 selected check groups; it is not full branch or physical proof.
-API36 verifies valid v2 and the single original certificate
+API36 verifies valid v2 and one original signer with certificate
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Package `com.ujzk.tiplay`, code99/v129, min28/target37, nondebug, CRC and 16 KiB
-checks pass. Four RTC-audio JNI ABIs remain byte-identical to beta.56/.55;
-sixteen packaged notices match.
-
-Private JNI draft `450886965` retains 24 current symbol entries plus 27 prebuilt
-metadata records. All 51 packaged libraries are indexed: 43 Build IDs/eight
-confirmed no-ID, 32 matching symbol pairs (24 current/eight producer), with
-nineteen historical symbol gaps. It does not contain symbols for all libraries.
+Package `com.ujzk.tiplay`, code100, min28/target37, nondebug, CRC and 16 KiB checks pass.
+Private JNI draft `452217179` stays private:51 packaged libraries have43 Build IDs/
+eight confirmed no-ID,32 matching symbol pairs (24 current/eight producer) and19
+historical symbol gaps. Sixteen notices match; not every library has symbols.
 
 | Published artifact | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `TiPlay-0.2.20-beta.57.apk` | 114,664,300 | `8140cbe0ad689e858635bc6cecbb84edc5d7eb638519aec1fb83313a903c43cf` |
-| `TiPlay-0.2.20-beta.57-source.zip` | 70,443,409 | `1817564f97beb7841fde4d97dde241e10a100581e3734e8b2c03617fde4c0ea7` |
-| `SHA256SUMS.txt` | 191 | `0597854114d40592fae44da056b8f82f7ef55a78de03065c3bf074a46fcdc22e` |
+| `TiPlay-0.2.20-beta.58.apk` | 114,693,340 | `9c38a11d04e8ba7ae527daf688f54e5db919496c5e32ab9287f03579de75f7a7` |
+| `TiPlay-0.2.20-beta.58-source.zip` | 70,469,590 | `00389922e22be38f5049e5890bc6b5ef667d97eef99774daa95c97e684485c6c` |
+| `SHA256SUMS.txt` | 191 | `f0cf1e8b0526ce24107bb5730832c1ad022581cb09459fdb82435a8d59f66516` |
 
-The strict anonymous release phase passes: all three assets match signed bytes,
-and both API requests pass every first request with zero retries (validator exit0).
-Same-source Pages `44461225290` attempt 1 is completed/success, freshly API-verified.
-Anonymous site verification passes all 226 files (37,828,528 bytes), twenty
-routes (18 HTTP200/two expected404), eight languages and 21 MIME classes. Release
-and site phases exit0, every scoped request succeeds first attempt, zero retries:
-combined strict first-request acceptance is true. Final independent offline
-public review passes without blockers. It rehashes all three public assets and
-matches 226 golden entries to 226 unique first-request receipts; it re-reads twelve
-retained bodies, while 214 files have receipt-only review. This is not an
-independent reread of every site body. Independent report SHA-256 is
-`273c67200d61ac6e4da7945d57dbe0ebb3bb4425645498e66054e28531d2b131`; final
-aggregate `Public-verification.json` SHA-256 is
-`4948796ee545b2daab436241d29d06ff5a76f36c17840f8f79a9a7217b942cd3`.
-`ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=true`; no new
-delivery qualification is recorded. Beta.56's historical
-GitHub API503→200 qualification remains scoped to beta.56; beta.57's completed
-release requests have no retry.
+All three full-byte anonymous assets match signed bytes, and both anonymous APIs
+pass every first request with zero retries.
+Same-source Pages [run `44667649812`](https://github.com/uJZk/TiPlay/actions/runs/44667649812)
+attempt 1 succeeds. All 226 site files (37,828,528 bytes) finally match expected
+bytes, hashes and MIME. There are227 file-request receipts because
+`vendor/captions/README.md` receives HTTP503 then200 on its sole retry. Twenty
+routes (18 HTTP200/two expected404), eight languages and21 MIME classes pass;
+routes pass every first request. **Combined strict first-request acceptance stays
+false, one retry**; original Pages-phase exit1/report are retained. This new site
+README event is scoped separately from beta.56's API503; its cause is not established. Independent qualified public review accepts product delivery with this exact non-runtime README hosting qualification. It rehashes three full release assets and rereads twelve retained site bodies; 214 files have receipt-only review. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false` remain separate.
 
-The latest physical capture `1795084719353` runs beta.57/code99/browser v129:
-2,373 continuous raw records/17.807 seconds. The 77-byte initial SETUP reply and
-same-connection bodyless GET /info (1,075-byte reply) occur on both c2 and retry
-c3. The first reaches RECORD200/NTP7/7 but no type110 before client TEARDOWN after
-6.290 seconds; retry reaches type110, remembered-hit and 247 mirror frames.
-The published compatibility adjustment is active and fallback works, while the
-first-attempt failure persists. This is observed beta.57 behavior, not missing
-upgrade/page evidence or physical feedback. Actual outgoing info bodies remain
-uncaptured, so equal lengths cannot prove equal content.
+These checks establish the scoped source, artifact and delivery identities;
+first-attempt benefit remains a separate vehicle comparison. Public qualification
+report SHA-256:
+`fa1cc6a1559a8c7e93c87893d0229518b37596b9622434a21f206e28325c2016`;
+independent public report:
+`0aa87a17ad888d1ba1c3227af1ff1aa3edee49bdfdfd7a672a9f63017a7bc72d`.
+The new offline qualified aggregate accepts product delivery and retains
+`AllRequestsFirstAttemptPassed=false`. Public-verification report SHA256:
+`f0f0793a65bc3fa1c8bebe29e9aa66c8390c7c81c05d38da37f33aa8fdc19f85`;
+final record SHA256:
+`fcd705e738f835edfdde7d826d0d84ff7c421b6d129bf194db229ebb9c05ffb0`.
+The original strict verifier remains failed for this recorded single retry.
 
-An earlier c1 in the same continuing receiver waits 388.093 seconds with
-NTP388/388 and no type110; the last viewport/audio inputs predate acceptance by
-over seven minutes. Simple receiver warmup or more waiting is unsupported. All thirteen
-retained ordinary accepts follow CarPlay Controller ownership. The user now
-reports independent AirPlay succeeds first attempt, without a matched wire
-capture. No unique screen-resource cause is established: the receiver has no
-pre-type110 CarPlay screen-owner gate. Earlier screen-loan work was withdrawn
-and not built or published; the latest physical capture uses beta.57.
-[AirPlay](AirPlay.md#mirror-startup-evidence) retains lifecycle and
-counterfactual limits. The source/artifact/public passes above remain valid
-historical delivery evidence; they do not certify elimination of first retries.
+<a id="beta57-release"></a>
+### Published beta.57 reference
+
+[Beta.57/code99/browser v129](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.57)
+was published **2026-11-19 12:51:37 (UTC+8)**, release `450887195`, from
+`179a4953972f1138cef953a9b7f9d975f21b6884`. Its
+[frozen publication record](https://github.com/uJZk/TiPlay/blob/8e9791c868ea513eedf572175aefb7175f775433/docs/Build.md#beta57-release)
+retains exact APK/source/checksum hashes, signing run `44459111940` attempt 1,
+private JNI draft `450886965`, original-certificate/native/notices/MIC24/speech33/
+receiver41 acceptance and same-source Pages `44461225290`. Three full-byte assets,
+two anonymous APIs and226 site files/twenty routes passed every first request,
+zero retries, with final independent public review. Its native inventory has51
+libraries/32 matching symbol pairs and19 historical gaps.
+
+Source checks passed 233 cases/24 suites with zero XML failures/errors/skips and 52
+selected compiled classes, qualified by four uncaught shutdown headers accepted
+nonblocking for the response-only change. Browser62/Python27/RTC/cache/public-tree
+passed. [Testing](Testing.md#beta57-source-preparation) preserves the qualification.
+These are beta.57 results, not fresh beta.58 checks.
+
+Beta.57 omits optional nested info only from successful unpaired FairPlay mirror
+control SETUP with valid encrypted key/IV, no pairing and `streams` absent; normal
+GET/info returns the profile. Other paths retain combined behavior. The actual
+beta.57 capture confirms that fallback executes but still has no first type110;
+retry reaches remembered approval and247 mirror frames. Earlier c1 waits388.093
+seconds without type110. [AirPlay](AirPlay.md#mirror-startup-evidence) retains the
+standalone-user control, discovery and iOS-causation limits. Earlier screen-loan
+work was withdrawn without build/publication. No beta.57 delivery check proved a
+physical first-attempt repair.
 
 <a id="beta56-release"></a>
 ### Published beta.56 reference
