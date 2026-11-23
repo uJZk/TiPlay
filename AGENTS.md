@@ -54,7 +54,18 @@ Advanced settings keeps them mutually exclusive. Mode changes rebuild ordinary
 AirPlay with stable identity/trust and old-generation fencing; CarPlay/audio stay
 independent. No early screen loan or keyframe is added.
 [AirPlay](docs/AirPlay.md#mirror-startup-experiments) defines controlled trials and
-cache/order limits; physical first-attempt benefits remain unverified.
+cache/order limits. On 2026-11-23 the user reports A/B/C behave alike and D cannot
+connect; no mode improves the reported first attempt. No beta.58 wire capture is
+available, so do not assume the effective profiles or D's failed handshake stage.
+Startup review finds no first-close action that arms a shared ready/grant or
+releases CarPlay for retry. Ports bind before SETUP200. The beta.23 preparation
+move remains a historical sequencing difference, not a proved cause or authority
+to restore early borrowing. This read-only review supplies no new product fix.
+A separate external active-main TCP fixture passes one case with zero failures
+or uncaught headers: two ordinary control-only handoffs preserve eight main-state
+snapshots, three event probes and three synthetic frame deliveries. It does not
+run Android service orchestration, browser WebRTC, iOS selection or main NTP, and
+does not change the published beta.58 counts or establish physical causation.
 
 Fresh shared270/29 suites and common143/19 total413 cases/48 suites with zero XML
 failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main

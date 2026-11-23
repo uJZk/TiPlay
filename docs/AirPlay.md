@@ -82,7 +82,17 @@ restart CarPlay to impose another codec. B cannot enable mirroring on a browser
 that supports only HEVC. Switching off AirPlay still takes priority over a mode.
 These are comparison controls, not established repairs.
 
-For each trial, keep the same iPhone, Wi-Fi and car browser, with CarPlay connected.
+On 2026-11-23 the user reports **A/B/C behave alike; D cannot connect**. None
+improves the reported first-attempt symptom. There is no accompanying beta.58
+wire capture, so these results do not prove effective profile equality or D's
+failure stage. D restores only bit27, not the old complete pairing profile or
+startup sequence. The server supports raw classic pairing but not PIN pairing or
+persistent HAP; their selection remains unobserved. Do not expand pairing support
+as a presumed repair for this startup issue. Return to A for normal use.
+
+The retained trial procedure below defines the comparison; the reported D failure
+does not require repeating that mode. Keep the same iPhone, Wi-Fi and car browser,
+with CarPlay connected.
 Stop mirroring on the iPhone, select the mode, wait for the receiver to be listening,
 then initiate mirroring once. Record whether approval appears and whether a picture
 arrives on that first attempt. If it fails, record the result of a separate second
@@ -225,11 +235,36 @@ restoring that bit is not an established repair. Compare effective browser
 capabilities, ordinary/CarPlay discovery and BT-info interactions across the
 migration boundaries before changing negotiation. A CarPlay listener and second
 profile may exist while connection preparation is enabled, before CarPlay becomes
-active; the standalone user report does not establish their absence. The user has
-now requested the [controlled mode comparison](#mirror-startup-experiments). Its
-controls do not establish a first-attempt repair; publication and checks have
+active; the standalone user report does not establish their absence. The
+[controlled mode comparison](#mirror-startup-experiments) records the unsuccessful
+user-reported outcome. Publication and checks have
 their own records in [Build](Build.md#beta58-release) and
 [Testing](Testing.md#beta58-source-preparation).
+
+Startup review finds no first-attempt cleanup that arms a shared ready flag,
+approval or CarPlay release for the retry. NTP/event ports bind before SETUP200;
+the failed attempt already connects its event socket and exchanges timing. The
+successful retry sends type110 before the second timing reply required for initial
+receiver synchronization; waiting for that synchronization is not a prerequisite
+in this observed successful path. An ordinary retry does not recreate the
+service/browser session or trigger a new viewport probe. Browser start lacks a
+listening barrier, but active CarPlay and
+the 388-second failed control session do not support cold startup delay as the
+cause. Initial consent/preparation moved to type110 in beta.23; this is a real
+sequencing difference, without evidence that iOS requires that earlier preparation
+before sending type110.
+Pending control connections also read mutable receiver configuration rather than
+a frozen profile; this predates WebRTC and no observed cross-request change has
+been established. Neither finding is a confirmed repair.
+
+A separate external TCP fixture keeps an authenticated synthetic main session
+active while two ordinary control-only connections use its production handoff.
+One case passes with zero failures or uncaught thread headers: eight main-state
+snapshots stay unchanged, three encrypted event probes and three synthetic frame
+deliveries succeed, and six ordinary parsed/reconstructed replies match after
+dynamic ports/derived length are normalized. This exercises shared protocol and
+media-engine code, not Android service orchestration, browser WebRTC, iOS selection
+or main NTP. It does not prove the field replies were equal or locate the cause.
 
 Beta.57's shipped exception omits optional nested `info` only after successful
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no

@@ -14,8 +14,12 @@ Published **0.2.20-beta.58/code100/browser v130** source
 `fec67c3530c8ba9237acf6acdb07afb7ebff1e08` adds four ordinary AirPlay comparison
 modes, defaulting to A/current behavior. The
 [trial procedure](AirPlay.md#mirror-startup-experiments) controls starting order and
-separates first-attempt approval, type110 and picture delivery. No mode is a
-confirmed first-attempt repair.
+separates first-attempt approval, type110 and picture delivery. On 2026-11-23 the
+user reports A/B/C unchanged and D unable to connect. No new wire capture
+identifies the effective profiles or D's failure stage. No mode is a confirmed
+first-attempt repair. Read-only startup review finds no first-close action that
+arms retry-only readiness or authorization; the beta.23 preparation move remains
+a sequencing difference without causal proof. This adds no APK or device pass.
 
 Fresh source checks pass **413 distinct cases/48 suites**: shared **270/29**, bound
 by **64 selected compiled classes**, and common **143/19**, bound by **17 classes**
@@ -57,8 +61,20 @@ This is a new beta.58 site README qualification, separate from beta.56's histori
 API503. Independent qualified public review accepts product delivery with this exact non-runtime README hosting qualification. It rehashes three full release assets and rereads twelve retained site bodies; 214 files have receipt-only review. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false` remain separate.
 
 Source, signed-code and public delivery checks do not establish iPhone first-use
-selection, hardware playback or elimination of the first retry; the controlled
-vehicle comparison remains open.
+selection, hardware playback or elimination of the first retry. The reported
+comparison has not found a repair; startup causation remains open.
+
+The 2026-11-23 investigation separately runs one **external** active-main TCP case,
+with zero failures/errors/skips or uncaught thread headers, bound to twelve compiled
+classes. A fresh already-paired synthetic controller completes real pair-verify,
+encrypted control/event and media-engine transport; two ordinary control-only
+connections take the production handoff. Eight snapshots preserve main state;
+three event probes and three synthetic frame deliveries succeed. Six ordinary
+parsed/reconstructed replies match after allocated ports/derived length normalization.
+This uses public FairPlay replies and a synthetic ordinary key, not native FairPlay
+decryption or MFi certificate authentication. It omits Android service orchestration,
+browser WebRTC, iOS decisions and main NTP. Source and final execution receive
+independent review. This case is not shipped or added to beta.58's 413-case count.
 
 <a id="beta57-source-preparation"></a>
 ### Beta.57 reference
