@@ -12,7 +12,7 @@
 ## Beta.59 修复状态
 
 四项问题的源码修复与健康回归已完成，A/B/C/D 实验入口和实现已撤除。
-签名候选、发布与公开下载状态统一记录在 [Build](Build.md#beta59-release)，
+原签名 beta.59 已发布；实际 APK 与同源网页的验收和公开下载记录见 [Build](Build.md#beta59-release)，
 定向验证统计见 [Testing](Testing.md#beta59-source-preparation)。下文保留基线审计的
 触发条件、坏状态见证和固定源码链接，不代表当前修复版本仍有这些已修问题。
 

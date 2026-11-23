@@ -4,7 +4,7 @@ TiPlay supports Android phone + car browser only. These checks remain open; auto
 
 ## Engineering follow-up
 
-- [x] Remove A/B/C/D settings, preference reader, 80 localized values and mode-only lifecycle in beta.59; restore automatic baseline behavior without clearing identity/trust. Actual signed APK removal verification remains a publication gate.
+- [x] Remove A/B/C/D settings, preference reader, 80 localized values and mode-only lifecycle in beta.59; restore automatic baseline behavior without clearing identity/trust. Actual original-signed beta.59 DEX, resource and source removal checks passed; published bytes are recorded in [Build](Build.md#beta59-release).
 - [x] Handle the ordinary receiver's finish/schedule shutdown race without hiding rejection while the receiver remains open. Both deterministic real-TCP regressions pass in beta.58; media and sockets still close.
 - [x] Guard main control initialization against close-before-start in beta.59: configure/getStreams now run inside existing cleanup, two deterministic regressions pass, and final shared/common checks have zero uncaught headers. Historical beta.58 shutdown qualification remains frozen.
 - [x] Complete the [startup architecture audit](AirPlay-startup-audit.md): architect plus four sub-audits, three external JVM witnesses and one production-outbox Node witness, with independent execution reviews. Four independent findings are confirmed within their controlled scopes; the physical first-retry cause remains open; subsequent beta.59 source remediations are tracked below.

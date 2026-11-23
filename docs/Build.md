@@ -388,22 +388,47 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta59-release"></a>
-### Beta.59 signed-candidate preparation
+### Beta.59 release
 
-**0.2.20-beta.59/code101/browser v131** removes the withdrawn AirPlay comparison
-options and implements [four architecture fixes](AirPlay-startup-audit.md#remediation).
-[Focused source acceptance](Testing.md#beta59-source-preparation) is 589 JVM cases
-across59 suites, 98 browser and27 Python cases, with zero final failures/errors/
-skips or JVM uncaught headers. This does not certify the physical first-retry cause.
+Published [0.2.20-beta.59/code101/browser v131](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.59) removes
+the withdrawn A/B/C/D settings and implements the [four architecture
+fixes](AirPlay-startup-audit.md#remediation). Existing device identity/trust and
+working Bluetooth microphone, Siri and navigation routing are preserved.
 
-The manual original-signing workflow will provide Release lint/build, exact
-source/archive binding, runtime identity and durable native-symbol inputs. The
-expected existing certificate remains
+Source is [`d7277c2d`](https://github.com/uJZk/TiPlay/commit/d7277c2ddea29b1056e2759a8a514e13b55e070a);
+[manual original-signing run 45154847336](https://github.com/uJZk/TiPlay/actions/runs/45154847336)
+attempt 1 passed Release lint/build and all three release jobs. Product release
+ID is `455268123`; its source ZIP matches the exact committed Git archive.
+Full CI was waived. [Focused checks](Testing.md#beta59-source-preparation) passed
+589 JVM cases/59 suites, 98 browser and 27 Python cases, with zero final JVM
+failures/errors/skips or uncaught thread headers.
+
+Actual APK checks passed the 12 base groups, original certificate/v2 verification
+on API28/33/37 (min28/target37), retained MIC24/speech33/shared-receiver43 selected
+definitions and code checks, baseline native route, 16 license assets, original
+Actions/durable native-symbol identity and exact signing run/attempt binding.
+The independent startup supplemental checks current AA1/AA2/AA3 definitions,
+fields and selected calls; it is static evidence, not a dynamic lock/lifetime
+proof. A/B/C/D types, references, fields/actions, resource keys and source entry
+points are absent from the signed APK/source. The same removal checker rejects
+the actual old beta.58 APK for its retired types and resources with version
+checks bypassed. Native inventory retains 51 libraries/32 matching symbol pairs;
+19 inherited libraries remain outside available debug-symbol coverage.
+
+Original certificate SHA-256:
 `abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Actual signature/API/package/CRC/16KiB, retained MIC/speech/receiver behavior,
-removed-mode DEX/resource/source checks, workflow-attempt identity and public
-download/site verification remain required before publication. Full CI is waived.
-This section records source preparation, not a published beta.59 or accepted APK.
+APK is 114,697,068 bytes, SHA-256:
+`fc0c9dc2387670780342b18a69806f28f1546e1d27254f7bfc47e1bcb5e622e3`.
+
+[Pages run 45160628160](https://github.com/uJZk/TiPlay/actions/runs/45160628160) deployed
+the same source. Fresh anonymous public checks matched all three release assets,
+226 site files (37,831,824 bytes),
+all 20 routes and eight download languages. All first-request
+checks passed without retries. Private native-symbol drafts remain private.
+
+Four independent defects are fixed and verified within the stated software
+scope. The physical CarPlay → first AirPlay attempt/retry result is still open;
+signature, source and public-byte checks do not establish that causal repair.
 
 <a id="beta58-release"></a>
 ### Published beta.58 reference

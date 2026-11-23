@@ -39,12 +39,22 @@ waived; signed release lint/build and actual artifact/publication acceptance are
 separate [Build](Build.md#beta59-release) gates.
 
 Initial failed page-extraction fixture, Python runner setup, stale generated-page
-check and removal-validator SDK text decoding are retained outside Git with their
-corrections. The first 374-case shared run predates the build-completion barrier
+check, removal-validator SDK text decoding and publication locale-input setup
+failure are retained outside Git with their corrections. The locale-input fix used
+exact committed bytes and required no repeat HTTP requests. The first 374-case shared run predates the build-completion barrier
 and is not final acceptance. The four audit bad-state witnesses also remain
 historical; their passing assertions did not mean the product was healthy.
 Neither these source checks nor a later signature pass prove the original
 first-attempt mirror problem is fixed on the vehicle.
+
+The published candidate is source `d7277c2ddea29b1056e2759a8a514e13b55e070a` with signed run
+`45154847336`/attempt1 and same-source Pages `45160628160`. Actual signature,
+archive/runtime/native identity, retained MIC24/speech33/shared-receiver43,
+removed-mode DEX/resource/source checks and selected startup presence/calls pass;
+the latter is static evidence and does not replace the healthy JVM cases. Three
+anonymous release assets, 226 site files, 20 routes and eight download
+languages match on first request. Full delivery hashes and scope are in
+[Build](Build.md#beta59-release); no physical first-attempt result is claimed.
 
 <a id="beta58-source-preparation"></a>
 ### Beta.58 reference

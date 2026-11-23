@@ -46,7 +46,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Beta.59 source preparation targets **0.2.20-beta.59/code101/browser v131**.
+Published beta.59 is **0.2.20-beta.59/code101/browser v131**.
 The user withdrew A/B/C/D: their UI, enum, preference reader, resource keys and
 mode-only restart lifecycle are removed. Old saved B/C/D values are ignored;
 automatic browser capabilities, normal BLE discovery, identity and trust remain.
@@ -66,8 +66,13 @@ Python **27** cases, RTC-audio, cache and public-tree checks pass. Full CI remai
 waived. [Testing](docs/Testing.md#beta59-source-preparation) retains scope and initial
 runner/fixture/generated-page failures separately. Source and execution reviews
 must remain bound to this version; no historical 413-case or shutdown qualifier
-is a beta.59 pass. [Build](docs/Build.md#beta59-release) tracks original-certificate
-signed-candidate and publication acceptance; those remain pending at source freeze.
+is a beta.59 pass. [Build](docs/Build.md#beta59-release) records original-signature
+APK acceptance, release `455268123`, signed run `45154847336`/attempt1
+and same-source Pages `45160628160` for `d7277c2ddea29b1056e2759a8a514e13b55e070a`. Actual MIC24/speech33/shared
+receiver43, removed-mode DEX/resources and static startup presence/selected calls
+pass. Three public assets, 226 site files, 20 routes and eight
+download languages match, all on first request. Physical first-attempt recovery
+remains unverified; private symbol drafts remain private.
 
 Published beta.58/code100/browser v130 remains a
 [frozen historical reference](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/Build.md#beta58-release):
