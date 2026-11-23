@@ -241,7 +241,7 @@ user-reported outcome. Publication and checks have
 their own records in [Build](Build.md#beta58-release) and
 [Testing](Testing.md#beta58-source-preparation).
 
-Startup review finds no first-attempt cleanup that arms a shared ready flag,
+Startup review finds no ordinary control-connection cleanup that arms a shared ready flag,
 approval or CarPlay release for the retry. NTP/event ports bind before SETUP200;
 the failed attempt already connects its event socket and exchanges timing. The
 successful retry sends type110 before the second timing reply required for initial
@@ -265,6 +265,12 @@ deliveries succeed, and six ordinary parsed/reconstructed replies match after
 dynamic ports/derived length are normalized. This exercises shared protocol and
 media-engine code, not Android service orchestration, browser WebRTC, iOS selection
 or main NTP. It does not prove the field replies were equal or locate the cause.
+
+The [startup architecture audit](AirPlay-startup-audit.md) extends this review to
+Android service replacement, Controller/VPN lock order, browser callback lifetime
+and first-presentation message delivery. Four independent risks have controlled
+witnesses and documented counterevidence. Product code remains unchanged; these
+findings do not establish the physical first-attempt cause.
 
 Beta.57's shipped exception omits optional nested `info` only after successful
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no

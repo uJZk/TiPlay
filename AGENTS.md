@@ -57,7 +57,7 @@ independent. No early screen loan or keyframe is added.
 cache/order limits. On 2026-11-23 the user reports A/B/C behave alike and D cannot
 connect; no mode improves the reported first attempt. No beta.58 wire capture is
 available, so do not assume the effective profiles or D's failed handshake stage.
-Startup review finds no first-close action that arms a shared ready/grant or
+Startup review finds no ordinary control-close action that arms a shared ready/grant or
 releases CarPlay for retry. Ports bind before SETUP200. The beta.23 preparation
 move remains a historical sequencing difference, not a proved cause or authority
 to restore early borrowing. This read-only review supplies no new product fix.
@@ -66,6 +66,10 @@ or uncaught headers: two ordinary control-only handoffs preserve eight main-stat
 snapshots, three event probes and three synthetic frame deliveries. It does not
 run Android service orchestration, browser WebRTC, iOS selection or main NTP, and
 does not change the published beta.58 counts or establish physical causation.
+The [startup architecture audit](docs/AirPlay-startup-audit.md) extends coverage
+to Android service replacement, Controller/VPN locks and browser source lifetime.
+Four independent risks have controlled witnesses; the physical first-retry cause
+remains open. Keep these findings separate from a claimed mirror repair.
 
 Fresh shared270/29 suites and common143/19 total413 cases/48 suites with zero XML
 failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main

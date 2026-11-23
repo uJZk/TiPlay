@@ -17,7 +17,7 @@ modes, defaulting to A/current behavior. The
 separates first-attempt approval, type110 and picture delivery. On 2026-11-23 the
 user reports A/B/C unchanged and D unable to connect. No new wire capture
 identifies the effective profiles or D's failure stage. No mode is a confirmed
-first-attempt repair. Read-only startup review finds no first-close action that
+first-attempt repair. Read-only startup review finds no ordinary control-close action that
 arms retry-only readiness or authorization; the beta.23 preparation move remains
 a sequencing difference without causal proof. This adds no APK or device pass.
 
@@ -75,6 +75,18 @@ This uses public FairPlay replies and a synthetic ordinary key, not native FairP
 decryption or MFi certificate authentication. It omits Android service orchestration,
 browser WebRTC, iOS decisions and main NTP. Source and final execution receive
 independent review. This case is not shipped or added to beta.58's 413-case count.
+
+The separate [architecture audit](AirPlay-startup-audit.md) of source
+`9bc5dfbe033e60196662fb4d5a78ffb57a439ca2` executes three external JVM cases,
+each with zero final failures/errors/skips and uncaught thread headers, bound to
+14 selected compiled classes, plus one Node case importing the production outbox.
+These witnesses assert bad lifecycle states or opposite production lock edges;
+they are not healthy regression or physical-repair passes. Each execution receives
+independent review. The retirement fixture's initial default-status precondition
+failure is retained separately; its corrected final execution does not weaken
+the target assertions. The report records exact scope and limitations. No product
+or repository-test source changes, full CI, APK or addition to the 413-case total
+follow from this audit.
 
 <a id="beta57-source-preparation"></a>
 ### Beta.57 reference
