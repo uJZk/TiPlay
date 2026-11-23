@@ -14,7 +14,6 @@ internal object BrowserAdvancedSettings {
         SettingsSection.ADVANCED_MEDIA, SettingsSection.CAR_BUTTON, SettingsSection.AUDIO_ROUTING,
         SettingsSection.LOCATION, SettingsSection.CLUSTER_MAP, SettingsSection.BYD_NAVIGATION,
         SettingsSection.PERMISSIONS_AND_HELP, SettingsSection.DIAGNOSTICS,
-        SettingsSection.AIRPLAY_MIRROR_EXPERIMENTS,
     )
 
     fun build(

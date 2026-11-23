@@ -649,9 +649,6 @@ class AirPlaySession(
         )
 
     private fun runControl() {
-        com.shilapi.xcertplay.network.TcpLiveness.configure(socket) { debugLog(it) }
-        val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
-        val output = BufferedOutputStream(RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream()))
         var accumulated = ByteArray(0)
         val buffer = ByteArray(READ_CHUNK_BYTES)
         var closeReason = "session closed"
@@ -659,6 +656,10 @@ class AirPlaySession(
         var carPlayProtocolSelected = false
         var receiverDiscovery: ReceiverDiscoveryInfo.Discovery? = null
         try {
+            if (closed.get()) return
+            com.shilapi.xcertplay.network.TcpLiveness.configure(socket) { debugLog(it) }
+            val input = BufferedInputStream(RawTraffic.input("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/in", socket.getInputStream()))
+            val output = BufferedOutputStream(RawTraffic.output("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/out", socket.getOutputStream()))
             while (!closed.get()) {
                 val count = input.read(buffer)
                 if (count < 0) {

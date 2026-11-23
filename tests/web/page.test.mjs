@@ -58,6 +58,7 @@ test('a media terminal records its current reason before cleanup and cannot retr
   const run = new Function('events', 'failLog', `
     let streamId = 9, terminalDiagnosticId = null, live = true;
     let lastError = Object.assign(new Error('prior connection'), { reason: 'ice-failed' });
+    const outbox = { setPresentationSource: value => { if (value !== null) throw Error('expected retirement'); events.push('retire-proof'); } };
     const faultDiagnostics = { reset: () => events.push('fault-reset') };
     const videoAbort = { abort: () => events.push('abort') }, rtcMedia = { close: () => events.push('close') };
     const sink = { stop: () => events.push('sink-stop') }, releaseTouches = () => {};
@@ -69,7 +70,7 @@ test('a media terminal records its current reason before cleanup and cannot retr
     return lastError.reason;
   `);
   assert.equal(run(events), 'timeout');
-  assert.deepEqual(events, ['fault-reset', ['diagnostic', 'timeout'], 'abort', 'close', 'sink-stop', 'retry']);
+  assert.deepEqual(events, ['retire-proof', 'fault-reset', ['diagnostic', 'timeout'], 'abort', 'close', 'sink-stop', 'retry']);
   const failed = [];
   assert.equal(run(failed, true), 'timeout');
   assert.deepEqual(failed, events, 'a failed diagnostic cannot bypass any cleanup or create a second retry');
@@ -140,7 +141,7 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
     const postControl = () => {}, applyStatus = () => {}, controlFailed = () => {}, slots = { contacts: () => [] };
     const createControlOutbox = options => {
       if (!authenticated || options.maxInFlight !== 8) throw new Error('control started before authenticated RTC');
-      events.push(['outbox']); return { heartbeat: () => events.push(['control-heartbeat']) };
+    events.push(['outbox']); return { heartbeat: () => events.push(['control-heartbeat']), setPresentationSource() {} };
     };
     ${connect}
     const pending = connectVideo();
@@ -159,7 +160,7 @@ test('decoder setup precedes pairing and the first authenticated clock reaches v
     assert.deepEqual(value, [name, { offset: 10, rtt: 2, at: 100 }]);
     assert.ok(events.indexOf(value) > index('authenticated') && events.indexOf(value) < index('open'));
   }
-  assert.ok(index('outbox') > index('authenticated') && index('control-heartbeat') > index('outbox'));
+  assert.ok(index('outbox') > index('authenticated') && index('outbox') < index('open') && index('control-heartbeat') > index('outbox'));
   assert.deepEqual(events.find(([type]) => type === 'audio-attach')[1], { app: 'TiPlay', protocol: 1, audio: true, transport: 'webrtc-datachannel-v1' });
 });
 
@@ -214,7 +215,7 @@ test('a failed phone capability request retries before pairing and the next atte
     const stop = reason => { throw Error('Unexpected stop: ' + reason); }, scheduleRetry = () => retries++;
     const createClockEstimator = () => ({ observe: () => null });
     const postControl = noop, applyStatus = noop, controlFailed = noop, slots = { contacts: () => [] };
-    const createControlOutbox = () => ({ heartbeat: noop }), backoffDelay = () => 1000;
+    const createControlOutbox = () => ({ heartbeat: noop, setPresentationSource: noop }), backoffDelay = () => 1000;
     ${connect}
     return { connectVideo, retries: () => retries, error: () => lastError, close: () => rtcMedia?.close() };
   `)(phoneSupportsRtcVideo, abortable, options => createRtcMediaTransport({ ...options, PeerConnection: Peer,
@@ -451,10 +452,10 @@ test('only foreground AirPlay faults replace the current phase and active output
 test('a new producer epoch waits for its own decoded event while an identical config preserves readiness', () => {
   const source = /function onVideoMessage\([^\n]*\) \{[\s\S]*?\n\}/.exec(read('app.js'))[0];
   const fixture = new Function(`
-    const active = true, streamId = 1; let config = { epoch: 7, mode: 'carplay' }, live = true;
+    const active = true, streamId = 1, currentVideoGeneration = 1; let config = { epoch: 7, mode: 'carplay' }, live = true;
     let videoStats = { decodedFps: 30 }, unsupported = null, mediaTiming;
     const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
-    const outbox = { push() {} }, keepScreenOn = () => {}, render = () => {}, updateReceiverNotice = () => {};
+    const outbox = { push() {}, setPresentationSource() {}, presented() {} }, keepScreenOn = () => {}, render = () => {}, updateReceiverNotice = () => {};
     ${source}
     return { receive(value) { onVideoMessage({ id: 1, ...value }); return { live, config, videoStats }; } };
   `)();
@@ -664,7 +665,7 @@ test('a failed connection attempt cancels its unresolved SRP exchange before sch
   const run = new Function('abortable', `
     let streamId = 0, rtcMedia = null, retryTimer, retryCountdownTimer, videoAbort, live, phase, lastError, lastViewport;
     let videoError = null, videoRestart = null, currentVideoGeneration = 1;
-    let rtcProgress, resourceToken, controlClock;
+    let rtcProgress, resourceToken, controlClock, outbox = null;
     const faultDiagnostics = { reset() {} };
     const session = 'owner', link = { code: '1234' }, controlWaiters = new Set();
     let aborted = false, retries = 0, exchangeCalled = false;

@@ -1307,48 +1307,45 @@ class ReceiverServerTest {
     @Test fun unpairedFairPlayWithNtpSupportsMirrorAndAudio() =
         encryptedMirrorProbe(false, audioDrain = true, unpaired = true)
 
-    @Test fun legacyPairingExperimentStillAcceptsUnpairedFairPlayMirroring() =
-        encryptedMirrorProbe(false, unpaired = true, mirrorExperiment = ReceiverMirrorExperiment.LEGACY_PAIRING)
-
-    @Test fun mirrorExperimentSurvivesEveryLiveDisplayAndAudioConfigUpdate() {
-        for (mode in ReceiverMirrorExperiment.entries) {
-            val initial = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
-                mirrorExperiment = mode)
-            ReceiverServer(initial, Listener()).use { receiver ->
-                receiver.updateDisplay(30, true)
-                receiver.updateDisplaySize(1184, 880, hevc = true, mirrorEnabled = true)
-                receiver.updateAudioFormats(1L shl 22)
-                val updated = receiver.displayConfig
-                assertEquals(mode, updated.mirrorExperiment)
-                assertEquals(30, updated.fps)
-                assertEquals(1184, updated.width)
-                assertEquals(880, updated.height)
-                assertEquals(1L shl 22, updated.audioOutputFormats)
-                assertTrue(updated.hevcEnabled)
-                assertEquals(mode != ReceiverMirrorExperiment.H264_ONLY, updated.effectiveMirrorHevcEnabled)
-                receiver.updateDisplay(60, false)
-                assertEquals(mode, receiver.displayConfig.mirrorExperiment)
-                assertFalse(receiver.displayConfig.effectiveMirrorHevcEnabled)
-                receiver.updateDisplaySize(1280, 720, hevc = true)
-                assertEquals(mode != ReceiverMirrorExperiment.H264_ONLY, receiver.displayConfig.effectiveMirrorHevcEnabled)
-            }
+    @Test fun liveDisplayAndAudioUpdatesRetainReceiverCapabilities() {
+        val initial = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        ReceiverServer(initial, Listener()).use { receiver ->
+            receiver.updateDisplay(30, true)
+            receiver.updateDisplaySize(1184, 880, hevc = true, mirrorEnabled = true)
+            receiver.updateAudioFormats(1L shl 22)
+            val updated = receiver.displayConfig
+            assertEquals(30, updated.fps)
+            assertEquals(1184, updated.width)
+            assertEquals(880, updated.height)
+            assertEquals(1L shl 22, updated.audioOutputFormats)
+            assertTrue(updated.hevcEnabled)
+            assertTrue(updated.features and (1L shl 42) != 0L)
+            receiver.updateDisplay(60, false)
+            assertFalse(receiver.displayConfig.hevcEnabled)
+            assertEquals(0L, receiver.displayConfig.features and (1L shl 42))
+            receiver.updateDisplaySize(1280, 720, hevc = true)
+            assertTrue(receiver.displayConfig.hevcEnabled)
+            assertEquals(1L shl 22, receiver.displayConfig.audioOutputFormats)
         }
     }
 
-    @Test fun baselineMirrorAcceptsHevcWhenTheBrowserOffersIt() =
-        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.BASELINE, hevc = true, accepted = true)
+    @Test fun mirrorAcceptsHevcWhenTheBrowserOffersIt() =
+        mirrorCodecProbe(offeredHevc = true, hevc = true, accepted = true)
 
-    @Test fun h264OnlyMirrorAcceptsH264WhenTheBrowserAlsoOffersHevc() =
-        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.H264_ONLY, hevc = false, accepted = true)
+    @Test fun mirrorAcceptsH264WhenTheBrowserAlsoOffersHevc() =
+        mirrorCodecProbe(offeredHevc = true, hevc = false, accepted = true)
 
-    @Test fun h264OnlyMirrorRejectsHevcEvenWhenTheBrowserOffersIt() =
-        mirrorExperimentCodecProbe(ReceiverMirrorExperiment.H264_ONLY, hevc = true, accepted = false)
+    @Test fun mirrorRejectsHevcWhenTheBrowserOnlyOffersH264() =
+        mirrorCodecProbe(offeredHevc = false, hevc = true, accepted = false)
 
-    private fun mirrorExperimentCodecProbe(mode: ReceiverMirrorExperiment, hevc: Boolean, accepted: Boolean) {
+    @Test fun mirrorAcceptsH264WhenTheBrowserOnlyOffersH264() =
+        mirrorCodecProbe(offeredHevc = false, hevc = false, accepted = true)
+
+    private fun mirrorCodecProbe(offeredHevc: Boolean, hevc: Boolean, accepted: Boolean) {
         val rejected = CountDownLatch(1)
         val listener = Listener { if (it.contains("reason=HEVC_NOT_OFFERED")) rejected.countDown() }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(),
-            hevcEnabled = true, mirrorExperiment = mode), listener,
+            hevcEnabled = offeredHevc), listener,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> ByteArray(16) })
         receiver.start()
         try {
@@ -1446,13 +1443,12 @@ class ReceiverServerTest {
     private fun encryptedMirrorProbe(teardown: Boolean, dataEofRecovery: Boolean = false, audioDrain: Boolean = false,
                                      sleepResume: Boolean = false, dataSocketResume: Boolean = false,
                                      partialHeader: Boolean = false, failedReplacement: Boolean = false,
-                                     metadataRoundTrip: Boolean = false, unpaired: Boolean = false,
-                                     mirrorExperiment: ReceiverMirrorExperiment = ReceiverMirrorExperiment.BASELINE) {
+                                     metadataRoundTrip: Boolean = false, unpaired: Boolean = false) {
         val identity = AirPlayIdentity.generate()
         val listener = Listener()
         val rawKey = ByteArray(16) { (it + 1).toByte() }
         val receiver = ReceiverServer(ReceiverConfig("TiPlay", "02:11:22:33:44:55", identity,
-            audioOutputFormats = if (audioDrain) 1L shl 22 else 0L, mirrorExperiment = mirrorExperiment), listener,
+            audioOutputFormats = if (audioDrain) 1L shl 22 else 0L), listener,
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) }, fairPlayDecrypt = { _, _ -> rawKey })
         receiver.start()
         val control = connect(receiver.port)

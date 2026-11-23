@@ -46,50 +46,37 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Published [beta.58/code100/browser v130](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.58)
-from source `fec67c3530c8ba9237acf6acdb07afb7ebff1e08` adds APK-selectable AirPlay
-comparison modes: A/current behavior by default, B/ordinary H.264 only,
-C/ordinary BLE off, D/legacy-pairing declaration without forced pairing. Android
-Advanced settings keeps them mutually exclusive. Mode changes rebuild ordinary
-AirPlay with stable identity/trust and old-generation fencing; CarPlay/audio stay
-independent. No early screen loan or keyframe is added.
-[AirPlay](docs/AirPlay.md#mirror-startup-experiments) defines controlled trials and
-cache/order limits. On 2026-11-23 the user reports A/B/C behave alike and D cannot
-connect; no mode improves the reported first attempt. No beta.58 wire capture is
-available, so do not assume the effective profiles or D's failed handshake stage.
-Startup review finds no ordinary control-close action that arms a shared ready/grant or
-releases CarPlay for retry. Ports bind before SETUP200. The beta.23 preparation
-move remains a historical sequencing difference, not a proved cause or authority
-to restore early borrowing. This read-only review supplies no new product fix.
-A separate external active-main TCP fixture passes one case with zero failures
-or uncaught headers: two ordinary control-only handoffs preserve eight main-state
-snapshots, three event probes and three synthetic frame deliveries. It does not
-run Android service orchestration, browser WebRTC, iOS selection or main NTP, and
-does not change the published beta.58 counts or establish physical causation.
-The [startup architecture audit](docs/AirPlay-startup-audit.md) extends coverage
-to Android service replacement, Controller/VPN locks and browser source lifetime.
-Four independent risks have controlled witnesses; the physical first-retry cause
-remains open. Keep these findings separate from a claimed mirror repair.
+Beta.59 source preparation targets **0.2.20-beta.59/code101/browser v131**.
+The user withdrew A/B/C/D: their UI, enum, preference reader, resource keys and
+mode-only restart lifecycle are removed. Old saved B/C/D values are ignored;
+automatic browser capabilities, normal BLE discovery, identity and trust remain.
+The four [architecture findings](docs/AirPlay-startup-audit.md) now have source fixes:
+process-owned receiver lease/state publication; server/page/host callback fencing;
+VPN resource retirement and callbacks outside shared locks, with an in-flight
+build-completion barrier; and one bounded reliable current-source presentation
+proof independent of touch and audio-evidence capacity. Closed-before-start main
+control initialization is also guarded. Do not call these fixes proof that the
+physical first AirPlay attempt no longer needs retry.
 
-Fresh shared270/29 suites and common143/19 total413 cases/48 suites with zero XML
-failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main
-Socket-closed headers qualify the shared assertion pass, independently nonblocking;
-ordinary/common have no uncaught headers. Browser62/Python27/RTC/cache/public-tree
-checks pass. [Testing](docs/Testing.md#beta58-source-preparation) retains exact scope.
-Full CI remains waived.
+Fresh shared **376/34 suites** and common **213/25** total **589 cases/59 suites**,
+with zero failures/errors/skips or uncaught headers in stdout and XML. Selected
+compiled evidence covers **132/93 classes**, including the two callback gate
+classes; common uses the exact shared runtime JAR. Browser **98** and packaging/site
+Python **27** cases, RTC-audio, cache and public-tree checks pass. Full CI remains
+waived. [Testing](docs/Testing.md#beta59-source-preparation) retains scope and initial
+runner/fixture/generated-page failures separately. Source and execution reviews
+must remain bound to this version; no historical 413-case or shutdown qualifier
+is a beta.59 pass. [Build](docs/Build.md#beta59-release) tracks original-certificate
+signed-candidate and publication acceptance; those remain pending at source freeze.
 
-Release `452217328` was published **2026-11-20 11:24:25 (UTC+8)**. Manual signed run
-`44664150597` attempt 1 passes all three jobs. Actual APK/source/attempt,
-MIC24/speech33/receiver41/mode29 plus 80 localized resource values, native/notices,
-original-certificate v2/API36/CRC/16KiB acceptance and independent review pass.
-Three full-byte public assets and two anonymous APIs pass first request/zero
-retries. Same-source Pages `44667649812` attempt 1 succeeds and all 226 site files
-finally match bytes/hash/MIME, with 227 file requests: one vendor caption README
-HTTP503→200 retry. All twenty routes pass first request; eight languages/21 MIME
-classes pass. Combined strict first-request acceptance remains false, one retry;
-the original exit1/report are retained. [Build](docs/Build.md#beta58-release) retains exact
-hashes and JNI coverage; keep source/delivery acceptance separate from the A/B/C/D
-vehicle comparison.
+Published beta.58/code100/browser v130 remains a
+[frozen historical reference](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/Build.md#beta58-release):
+source `fec67c3530c8ba9237acf6acdb07afb7ebff1e08`, release `452217328`, signed run
+`44664150597` and Pages `44667649812`. Its 413/48 source assertions were qualified
+by two main Socket-closed headers. Public assets passed first request; one vendor
+README HTTP503→200 retry qualified site delivery. Those artifacts and qualifications
+are historical. The user reports A/B/C unchanged and D unable to connect; the
+experiment did not establish a repair and is removed in beta.59.
 
 Published beta.57/code99/browser v129 remains a
 [frozen historical reference](https://github.com/uJZk/TiPlay/blob/8e9791c868ea513eedf572175aefb7175f775433/docs/Build.md#beta57-release):
@@ -144,9 +131,8 @@ iPhone's first-attempt cause. Paired legacy, AirPlay 2, encrypted NTP, audio,
 other intent and every streams-present path retain combined-info behavior.
 Keep the NTP/event transport, one FairPlay key decryption, typed media consent,
 screen ownership and existing endpoint handoff. Do not borrow the screen early,
-send an early keyframe request or change audio or identity. Baseline capabilities
-remain unchanged; only the user-selected comparison modes may vary the declared
-codec/pairing capabilities or ordinary BLE hint.
+send an early keyframe request or change audio or identity. Baseline capabilities remain automatic. The beta.58 comparison overrides were
+removed in beta.59; preserve browser-reported capabilities and normal BLE discovery.
 Required real-TCP regressions follow FairPlay → minimal control SETUP →
 GET /info → RECORD → type 110, preserve the NTP port/probes and deliver an actual
 encrypted frame. Fresh assertions pass, qualified by four uncaught shutdown

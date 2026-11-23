@@ -3,7 +3,6 @@ package com.shilapi.xcertplay
 import android.os.Looper
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.receiver.ReceiverConfig
-import com.shilapi.xcertplay.receiver.ReceiverMirrorExperiment
 import com.shilapi.xcertplay.receiver.ReceiverMirrorAudioFormat
 import com.shilapi.xcertplay.web.WebAudioHub
 import com.shilapi.xcertplay.web.WebMediaSink
@@ -31,15 +30,11 @@ class AirPlayMirrorPictureContinuityTest {
         val service = controller.get()
         val worker = field(service, "worker") as ExecutorService
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
-        // Establish a real active lifecycle token without opening unrelated discovery/network resources.
-        val lifecycle = AirPlayMirrorReceiverLifecycle({ ReceiverMirrorExperiment.BASELINE }, { it() },
-            { _, done -> done() }, { _, _ -> })
-        lifecycle.reconcile()
-        field(service, "receiverLifecycle", lifecycle)
-        val open = AirPlayReceiverService::class.java.getDeclaredMethod("openMirrorSink", ReceiverConfig::class.java, Long::class.javaPrimitiveType)
+        // onCreate owns a live Service authority without opening discovery/network resources.
+        val open = AirPlayReceiverService::class.java.getDeclaredMethod("openMirrorSink", ReceiverConfig::class.java)
             .apply { isAccessible = true }
         try {
-            test(service) { open.invoke(service, config, lifecycle.generation) as WebMediaSink }
+            test(service) { open.invoke(service, config) as WebMediaSink }
         } finally {
             controller.destroy()
             shadowOf(Looper.getMainLooper()).idle()

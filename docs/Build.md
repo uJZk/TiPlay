@@ -387,70 +387,42 @@ by [Pages run 41817076243](https://github.com/uJZk/TiPlay/actions/runs/418170762
 It introduced page-load update checks and automatic reload after complete installation.
 Git history retains the full earlier validation records.
 
+<a id="beta59-release"></a>
+### Beta.59 signed-candidate preparation
+
+**0.2.20-beta.59/code101/browser v131** removes the withdrawn AirPlay comparison
+options and implements [four architecture fixes](AirPlay-startup-audit.md#remediation).
+[Focused source acceptance](Testing.md#beta59-source-preparation) is 589 JVM cases
+across59 suites, 98 browser and27 Python cases, with zero final failures/errors/
+skips or JVM uncaught headers. This does not certify the physical first-retry cause.
+
+The manual original-signing workflow will provide Release lint/build, exact
+source/archive binding, runtime identity and durable native-symbol inputs. The
+expected existing certificate remains
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
+Actual signature/API/package/CRC/16KiB, retained MIC/speech/receiver behavior,
+removed-mode DEX/resource/source checks, workflow-attempt identity and public
+download/site verification remain required before publication. Full CI is waived.
+This section records source preparation, not a published beta.59 or accepted APK.
+
 <a id="beta58-release"></a>
-### Published beta.58 experimental modes
+### Published beta.58 reference
 
 [Beta.58/code100/browser v130](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.58)
-was published **2026-11-20 11:24:25 (UTC+8)**, release `452217328`, from
-`fec67c3530c8ba9237acf6acdb07afb7ebff1e08`. The APK adds the ordinary-AirPlay
-[A/B/C/D comparison modes](AirPlay.md#mirror-startup-experiments), default A/current
-behavior. Switching ends/rebuilds ordinary AirPlay with identity/trust retained and
-CarPlay/audio isolated. No mode is a confirmed first-attempt repair.
+was published **2026-11-20 11:24:25 (UTC+8)** as `452217328`, from
+`fec67c3530c8ba9237acf6acdb07afb7ebff1e08`. Its
+[frozen complete record](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/Build.md#beta58-release)
+retains signed run `44664150597` attempt1, private JNI draft `452217179`, original
+certificate, native/notices/MIC24/speech33/receiver41/mode29 and80 resource checks,
+and all artifact hashes. The modes are withdrawn in beta.59.
 
-Fresh shared270/29 suites plus common143/19 total413 cases/48 suites with zero XML
-failures/errors/skips, bound by 64/17 selected compiled classes. Two existing main
-Socket-closed headers qualify the shared pass; independent review accepts them as
-nonblocking for these modes. Ordinary/common have no uncaught headers.
-Browser62/Python27/RTC/cache/public-tree checks pass. Full CI remains waived;
-[Testing](Testing.md#beta58-source-preparation) retains exact limits.
-
-[Signed run `44664150597`](https://github.com/uJZk/TiPlay/actions/runs/44664150597)
-attempt 1 passes release `136049256435`, symbols `136052599825` and draft
-`136052695074`. Actual artifact review passes12 groups and source/attempt/runtime
-binding, MIC24/speech33/receiver41 and **mode29 executable definitions plus 80
-localized resource values**. Independent review reexecutes actual APK contracts
-and resource/UI binding; metadata alias rebinding changes no source, APK or SDK
-bytes. Formal artifact report SHA-256:
-`08dedc70ee95031b2be4e04325b7eafa17ea2ad8bae8661f1d4f6c4aa61058c4`;
-independent report:
-`db7e28ffc82c7f4e95bc77612d4d30ede9b7d4f5f85b291e6ec1f5f2e71d6eb4`.
-
-API36 verifies valid v2 and one original signer with certificate
-`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
-Package `com.ujzk.tiplay`, code100, min28/target37, nondebug, CRC and 16 KiB checks pass.
-Private JNI draft `452217179` stays private:51 packaged libraries have43 Build IDs/
-eight confirmed no-ID,32 matching symbol pairs (24 current/eight producer) and19
-historical symbol gaps. Sixteen notices match; not every library has symbols.
-
-| Published artifact | Bytes | SHA-256 |
-| --- | ---: | --- |
-| `TiPlay-0.2.20-beta.58.apk` | 114,693,340 | `9c38a11d04e8ba7ae527daf688f54e5db919496c5e32ab9287f03579de75f7a7` |
-| `TiPlay-0.2.20-beta.58-source.zip` | 70,469,590 | `00389922e22be38f5049e5890bc6b5ef667d97eef99774daa95c97e684485c6c` |
-| `SHA256SUMS.txt` | 191 | `f0cf1e8b0526ce24107bb5730832c1ad022581cb09459fdb82435a8d59f66516` |
-
-All three full-byte anonymous assets match signed bytes, and both anonymous APIs
-pass every first request with zero retries.
-Same-source Pages [run `44667649812`](https://github.com/uJZk/TiPlay/actions/runs/44667649812)
-attempt 1 succeeds. All 226 site files (37,828,528 bytes) finally match expected
-bytes, hashes and MIME. There are227 file-request receipts because
-`vendor/captions/README.md` receives HTTP503 then200 on its sole retry. Twenty
-routes (18 HTTP200/two expected404), eight languages and21 MIME classes pass;
-routes pass every first request. **Combined strict first-request acceptance stays
-false, one retry**; original Pages-phase exit1/report are retained. This new site
-README event is scoped separately from beta.56's API503; its cause is not established. Independent qualified public review accepts product delivery with this exact non-runtime README hosting qualification. It rehashes three full release assets and rereads twelve retained site bodies; 214 files have receipt-only review. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false` remain separate.
-
-These checks establish the scoped source, artifact and delivery identities;
-first-attempt benefit remains a separate vehicle comparison. Public qualification
-report SHA-256:
-`fa1cc6a1559a8c7e93c87893d0229518b37596b9622434a21f206e28325c2016`;
-independent public report:
-`0aa87a17ad888d1ba1c3227af1ff1aa3edee49bdfdfd7a672a9f63017a7bc72d`.
-The new offline qualified aggregate accepts product delivery and retains
-`AllRequestsFirstAttemptPassed=false`. Public-verification report SHA256:
-`f0f0793a65bc3fa1c8bebe29e9aa66c8390c7c81c05d38da37f33aa8fdc19f85`;
-final record SHA256:
-`fcd705e738f835edfdde7d826d0d84ff7c421b6d129bf194db229ebb9c05ffb0`.
-The original strict verifier remains failed for this recorded single retry.
+The 114,693,340-byte APK has SHA256
+`9c38a11d04e8ba7ae527daf688f54e5db919496c5e32ab9287f03579de75f7a7`.
+Three complete public assets/two APIs passed every first request. Same-source
+Pages `44667649812` finally matched226 files/37,828,528 bytes, with a single vendor
+README HTTP503→200 retry. Strict first-request acceptance stayed false; independent
+qualified product delivery stayed true. The frozen record preserves this precise
+qualification and its reports; it is not a beta.59 delivery result.
 
 <a id="beta57-release"></a>
 ### Published beta.57 reference

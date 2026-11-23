@@ -7,86 +7,60 @@ recorded source, not interchangeable coverage counts for later engines.
 
 ## Current release source
 
+<a id="beta59-source-preparation"></a>
+### Beta.59 maintenance source
+
+**0.2.20-beta.59/code101/browser v131** removes A/B/C/D and implements the four
+[startup architecture remediations](AirPlay-startup-audit.md#remediation).
+Fresh focused checks total **589 distinct JVM cases/59 suites**: shared **376/34**,
+common **213/25**, with zero failures/errors/skips and zero uncaught thread headers
+in both Gradle stdout and XML. Selected production bytecode covers **132/93
+classes**; the common selection includes `BrowserCallbackSources` and its Source
+class, and binds the same shared runtime JAR as the shared run. The earlier
+91-class common receipt remains historical; adding these two retained classes
+required no test rerun or source change.
+
+The healthy regressions preserve successor broker/direct200 and current state
+after two actual Service lifecycle overlaps; serialize registration/retirement;
+reject retired source/page/host work, including same-object host reuse; end real
+Controller/Service contention without reverse held monitors; preserve successor
+attachment during reentrant cleanup; and make canceled listener builds wait
+for prior local resource cleanup. Two closed-before-start regressions accompany
+the guarded main control initialization. Socket-backed fixtures and API28/33
+shadows do not certify physical VPN, NCM, MFi or iPhone allocation behavior.
+
+Browser **98** focused cases include eleven presentation-proof regressions plus
+the existing link/page/touch/native-audio checks. They cover overflow, failed RPC
+heartbeat retry, stale ACK/failure, reused source values, delayed peer replacement,
+sync sink-open success/failure and protected audio-evidence capacity. Packaging and
+generated-site Python **27**, RTC-audio four-ABI provenance, cache and public-tree
+checks pass. Eight download editions are regenerated for beta.59. Full CI remains
+waived; signed release lint/build and actual artifact/publication acceptance are
+separate [Build](Build.md#beta59-release) gates.
+
+Initial failed page-extraction fixture, Python runner setup, stale generated-page
+check and removal-validator SDK text decoding are retained outside Git with their
+corrections. The first 374-case shared run predates the build-completion barrier
+and is not final acceptance. The four audit bad-state witnesses also remain
+historical; their passing assertions did not mean the product was healthy.
+Neither these source checks nor a later signature pass prove the original
+first-attempt mirror problem is fixed on the vehicle.
+
 <a id="beta58-source-preparation"></a>
-### Published beta.58 experimental modes
+### Beta.58 reference
 
-Published **0.2.20-beta.58/code100/browser v130** source
-`fec67c3530c8ba9237acf6acdb07afb7ebff1e08` adds four ordinary AirPlay comparison
-modes, defaulting to A/current behavior. The
-[trial procedure](AirPlay.md#mirror-startup-experiments) controls starting order and
-separates first-attempt approval, type110 and picture delivery. On 2026-11-23 the
-user reports A/B/C unchanged and D unable to connect. No new wire capture
-identifies the effective profiles or D's failure stage. No mode is a confirmed
-first-attempt repair. Read-only startup review finds no ordinary control-close action that
-arms retry-only readiness or authorization; the beta.23 preparation move remains
-a sequencing difference without causal proof. This adds no APK or device pass.
+Published beta.58/code100/browser v130 source
+`fec67c3530c8ba9237acf6acdb07afb7ebff1e08` has a
+[frozen source/delivery record](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/Testing.md#beta58-source-preparation).
+Its 413 cases/48 suites and 64/17 selected classes, two nonblocking main shutdown
+headers, original-signed run `44664150597`, release `452217328` and same-source
+Pages `44667649812` belong to beta.58. All three public assets passed first request;
+one vendor README site retry qualified delivery. A/B/C produced no reported
+improvement and D could not connect. The modes are withdrawn in beta.59.
 
-Fresh source checks pass **413 distinct cases/48 suites**: shared **270/29**, bound
-by **64 selected compiled classes**, and common **143/19**, bound by **17 classes**
-using the same new shared JAR. Both XML aggregates have zero failures/errors/skips.
-Coverage includes default wire/profile equivalence, persistence/fallback, ordinary
-H.264 advertisement and actual admission, BLE stop/re-enable, bit27-only declaration,
-ordered receiver reset, rapid changes, stale callbacks, disablement/destruction,
-trust/CarPlay/audio isolation, both Advanced entries and translations.
-
-The shared raw result remains `assertions-passed-with-uncaught-threads`: exactly
-**two** existing main `airplay-control` Socket-closed headers occur in
-`AirPlayTcpAcceptTest`; one has a complete stack and the other only a header.
-Independent review classifies this as a nonblocking existing main-listener shutdown
-race: modes do not close the main listener, and four relevant main sources remain
-byte-identical to beta.57. This is not zero-runtime-exception acceptance. The new
-ordinary finish/schedule-close race has a minimal closed-only catch and two included
-deterministic real-TCP positive/negative regressions; ordinary receiver and common
-checks have **zero uncaught headers**. Keep the old main shutdown task open.
-
-Browser62/Python27, RTC-audio, cache and public-tree checks pass; full CI is waived.
-Manual signed run `44664150597` attempt 1 passes all three jobs. Actual signed
-APK/source/attempt/native/runtime checks pass, including MIC24/speech33/receiver41
-and the new **mode29 executable definitions plus 80 resource values/eight locales**.
-Independent review reexecutes signature, definition/resource binding and artifact
-checks; the prior receiver41 gate alone is not the new-mode proof. Original single
-certificate, v2/API36, version/package, CRC and 16 KiB alignment pass. Native evidence
-covers 51 libraries/32 matching symbol pairs with 19 historical symbol gaps, not full
-symbol coverage. [Build](Build.md#beta58-release) retains hashes and exact scope.
-
-Release `452217328` was published **2026-11-20 11:24:25 (UTC+8)**. Three complete
-public assets and two anonymous APIs pass every first request with zero retries.
-Same-source Pages `44667649812` attempt 1 succeeds. All 226 site files
-(37,828,528 bytes) finally match expected bytes, hashes and MIME, across227
-file-request receipts: `vendor/captions/README.md` receives HTTP503 then200 on its
-only retry. Twenty routes (18 HTTP200/two expected404) pass first request; the
-final inventory covers eight languages/21 MIME classes. **Strict first-request acceptance is false, with
-one retry**; the original Pages-phase exit1 and first-request report remain intact.
-This is a new beta.58 site README qualification, separate from beta.56's historical
-API503. Independent qualified public review accepts product delivery with this exact non-runtime README hosting qualification. It rehashes three full release assets and rereads twelve retained site bodies; 214 files have receipt-only review. `ProductDeliveryAccepted=true` and `AllRequestsFirstAttemptPassed=false` remain separate.
-
-Source, signed-code and public delivery checks do not establish iPhone first-use
-selection, hardware playback or elimination of the first retry. The reported
-comparison has not found a repair; startup causation remains open.
-
-The 2026-11-23 investigation separately runs one **external** active-main TCP case,
-with zero failures/errors/skips or uncaught thread headers, bound to twelve compiled
-classes. A fresh already-paired synthetic controller completes real pair-verify,
-encrypted control/event and media-engine transport; two ordinary control-only
-connections take the production handoff. Eight snapshots preserve main state;
-three event probes and three synthetic frame deliveries succeed. Six ordinary
-parsed/reconstructed replies match after allocated ports/derived length normalization.
-This uses public FairPlay replies and a synthetic ordinary key, not native FairPlay
-decryption or MFi certificate authentication. It omits Android service orchestration,
-browser WebRTC, iOS decisions and main NTP. Source and final execution receive
-independent review. This case is not shipped or added to beta.58's 413-case count.
-
-The separate [architecture audit](AirPlay-startup-audit.md) of source
-`9bc5dfbe033e60196662fb4d5a78ffb57a439ca2` executes three external JVM cases,
-each with zero final failures/errors/skips and uncaught thread headers, bound to
-14 selected compiled classes, plus one Node case importing the production outbox.
-These witnesses assert bad lifecycle states or opposite production lock edges;
-they are not healthy regression or physical-repair passes. Each execution receives
-independent review. The retirement fixture's initial default-status precondition
-failure is retained separately; its corrected final execution does not weaken
-the target assertions. The report records exact scope and limitations. No product
-or repository-test source changes, full CI, APK or addition to the 413-case total
-follow from this audit.
+The separate pre-fix protocol replay and three JVM/one Node architecture witnesses
+retain their exact scopes in the [audit](AirPlay-startup-audit.md); their counts
+are not added to either release's source acceptance.
 
 <a id="beta57-source-preparation"></a>
 ### Beta.57 reference

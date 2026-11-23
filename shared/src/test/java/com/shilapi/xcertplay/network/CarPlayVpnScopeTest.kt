@@ -9,13 +9,17 @@ import android.os.ParcelFileDescriptor
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
+import com.shilapi.xcertplay.airplay.AirPlayListenerIdentity
 import com.shilapi.xcertplay.airplay.AirPlayMediaHandler
 import com.shilapi.xcertplay.airplay.AirPlaySessionListener
 import com.shilapi.xcertplay.airplay.PairingStore
 import com.shilapi.xcertplay.transport.NcmUsbBridge
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -92,6 +96,87 @@ class CarPlayVpnScopeTest {
         }
     }
 
+    @Test fun everySuccessorWaitsForCancelledNativeBuildCleanupBeforeReusingItsPort() {
+        val establishing = CountDownLatch(1)
+        val releaseEstablish = CountDownLatch(1)
+        val closingLocal = CountDownLatch(1)
+        val releaseLocalClose = CountDownLatch(1)
+        val localServer = object : ServerSocket(0, 8, InetAddress.getLoopbackAddress()) {
+            override fun close() {
+                closingLocal.countDown()
+                assertTrue(releaseLocalClose.await(3, TimeUnit.SECONDS))
+                super.close()
+            }
+        }
+        val preferredPort = localServer.localPort
+        VpnScopeBoundary.beforeEstablish = {
+            establishing.countDown()
+            assertTrue(releaseEstablish.await(3, TimeUnit.SECONDS))
+        }
+        withService { service ->
+            val failure = AtomicReference<Throwable?>()
+            val oldResult = AtomicReference<CarPlayVpnService.AttachResult>()
+            val supersededResult = AtomicReference<CarPlayVpnService.AttachResult>()
+            val currentResult = AtomicReference<CarPlayVpnService.AttachResult>()
+            val threads = mutableListOf<Thread>()
+            fun start(name: String, action: () -> Unit): Thread = Thread({
+                try { action() } catch (error: Throwable) { failure.compareAndSet(null, error) }
+            }, name).apply { isDaemon = true; threads += this; start() }
+            try {
+                start("test-old-native-build") { oldResult.set(attachWired(service)) }
+                assertTrue(establishing.await(2, TimeUnit.SECONDS))
+                // Model an unpublished partial resource at the real Android establishment seam.
+                // The normal shadow returns null, so no real TUN/native bridge is created. A real
+                // bound socket with a controlled close exposes the cleanup/publication ordering.
+                val build: Any = ReflectionHelpers.getField(service, "buildingResources")
+                ReflectionHelpers.setField(build, "servers", listOf(localServer))
+                val second = start("test-superseded-build") {
+                    supersededResult.set(attachWireless(service, AirPlayListenerIdentity(2), preferredPort))
+                }
+                awaitBuildCleanupWait(second)
+                val third = start("test-current-build") {
+                    currentResult.set(attachWireless(service, AirPlayListenerIdentity(3), preferredPort))
+                }
+                awaitBuildCleanupWait(third)
+                releaseEstablish.countDown()
+                assertTrue(closingLocal.await(2, TimeUnit.SECONDS))
+                // Native creation has now released startupLock, but local cleanup has not ended.
+                // Both generations must still wait on the same old build, rather than one
+                // generation losing the coordinator and binding/falling back around the other.
+                awaitBuildCleanupWait(second)
+                awaitBuildCleanupWait(third)
+                assertFalse(service.isAttached())
+                assertNull(service.boundPort())
+                releaseLocalClose.countDown()
+                threads.forEach { it.join(2_000); assertFalse(it.isAlive) }
+                failure.get()?.let { throw AssertionError("attachment ordering failed", it) }
+                assertTrue(oldResult.get() is CarPlayVpnService.AttachResult.Failed)
+                assertTrue(supersededResult.get() is CarPlayVpnService.AttachResult.Failed)
+                assertEquals(CarPlayVpnService.AttachResult.Started, currentResult.get())
+                assertEquals(preferredPort, service.boundPort())
+                assertNull(service.lastAttachFailure)
+                assertNull(ReflectionHelpers.getField<Any?>(service, "buildingResources"))
+            } finally {
+                releaseEstablish.countDown()
+                releaseLocalClose.countDown()
+                threads.forEach { it.join(2_000) }
+                localServer.close()
+                VpnScopeBoundary.beforeEstablish = null
+            }
+        }
+    }
+
+    private fun awaitBuildCleanupWait(thread: Thread) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (System.nanoTime() < deadline) {
+            if (thread.state == Thread.State.WAITING && thread.stackTrace.any {
+                it.className.endsWith("CarPlayVpnService\$StartingResources") && it.methodName == "awaitCompletion"
+            }) return
+            Thread.yield()
+        }
+        throw AssertionError("${thread.name} did not wait for preceding native build cleanup")
+    }
+
     private fun withService(check: (CarPlayVpnService) -> Unit) {
         val controller = Robolectric.buildService(CarPlayVpnService::class.java).create()
         try { check(controller.get()) } finally { controller.destroy() }
@@ -101,9 +186,10 @@ class CarPlayVpnScopeTest {
         service.attach(ncm(), "fe80::1234", ByteArray(6), config, identity, PairingStore(), null,
             object : AirPlaySessionListener {}, object : AirPlayMediaHandler {})
 
-    private fun attachWireless(service: CarPlayVpnService): CarPlayVpnService.AttachResult =
-        service.attachWireless(InetAddress.getLoopbackAddress(), config, identity, PairingStore(), null,
-            object : AirPlaySessionListener {}, object : AirPlayMediaHandler {})
+    private fun attachWireless(service: CarPlayVpnService, owner: AirPlayListenerIdentity? = null,
+        preferredPort: Int = config.port): CarPlayVpnService.AttachResult =
+        service.attachWireless(InetAddress.getLoopbackAddress(), config.copy(port = preferredPort), identity, PairingStore(), null,
+            object : AirPlaySessionListener {}, object : AirPlayMediaHandler {}, listenerIdentity = owner)
 
     private fun assertReleased(service: CarPlayVpnService) {
         assertFalse(service.isAttached())
@@ -136,11 +222,13 @@ object VpnScopeBoundary {
     val calls = mutableListOf<String>()
     var allowFailure: Exception? = null
     var establishFailure: Exception? = null
+    @Volatile var beforeEstablish: (() -> Unit)? = null
 
     fun reset() {
         calls.clear()
         allowFailure = null
         establishFailure = null
+        beforeEstablish = null
     }
 }
 
@@ -162,6 +250,7 @@ class VpnScopeBuilderShadow {
 
     @Implementation fun establish(): ParcelFileDescriptor? {
         VpnScopeBoundary.calls += "establish"
+        VpnScopeBoundary.beforeEstablish?.invoke()
         VpnScopeBoundary.establishFailure?.let { throw it }
         return null
     }

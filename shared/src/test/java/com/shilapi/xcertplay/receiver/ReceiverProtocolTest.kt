@@ -52,6 +52,8 @@ class ReceiverProtocolTest {
 
     @Test fun discoveryAndInfoAgreeWithoutClaimingCarPlayRemoteVolumeOrDrm() {
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate(), audioOutputFormats = 0x3fffffcL)
+        assertEquals(0x407fe293L, config.features)
+        assertEquals(0x400407fe293L, config.copy(hevcEnabled = true).features)
         assertEquals(config.features, config.info()["features"])
         assertEquals(config.deviceId, config.serverInfo()["deviceid"])
         assertEquals("1.0", config.serverInfo()["protovers"])

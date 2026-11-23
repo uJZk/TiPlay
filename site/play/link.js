@@ -385,7 +385,11 @@ export function createTouchSlots(max = 2) {
  * events that nothing newer replaced, and when it carried touches, the current contacts (an empty list lifts a
  * finger whose up edge was lost). `heartbeat()` should run every 400 ms; it re-sends held contacts.
  *
- * `send(q, events)` performs the authenticated request and resolves with the status JSON; it must time out on its own.
+ * The current video source has one separate first-presentation slot. It survives input overflow and retries on
+ * heartbeat until acknowledged; changing source retires it without consuming input or diagnostic evidence slots.
+ * `send(q, events, prepareEvents)` performs the authenticated request and resolves with status JSON. If it waits
+ * for a replacement transport, call `prepareEvents()` immediately before sending to exclude a retired proof.
+ * The authenticated request must time out on its own.
  */
 export function createControlOutbox({
   send, heldContacts = () => [], onStatus = () => {}, onError = () => {},
@@ -396,18 +400,45 @@ export function createControlOutbox({
   const rtt = new Samples(64);
   let seq = 0, inFlightCount = 0, lastStatusSeq = 0, eventVersion = 0, heartbeatDue = false, closed = false, touchLost = false;
   let posts = 0, failures = 0, overflows = 0, audioFaultDropped = 0;
+  let presentationSource = null, presentationProof = null, presentationDelivered = false;
   const audioFaultPrefix = 'evidence:audio-fault:';
   const retainedAudioFaults = () => [...versions.keys()].filter(key => key.startsWith(audioFaultPrefix)).length;
+  const samePresentation = (left, right) => left != null && right != null &&
+    left.id === right.id && left.generation === right.generation && left.epoch === right.epoch;
+  const currentProof = entry => !closed && presentationProof === entry && presentationSource === entry.source;
+
+  function setPresentationSource(source) {
+    if (closed) return false;
+    if (source != null && ![source.id, source.generation, source.epoch].every(value => Number.isSafeInteger(value) && value > 0)) {
+      presentationSource = presentationProof = null; presentationDelivered = false;
+      return false;
+    }
+    if (samePresentation(source, presentationSource)) return true;
+    presentationSource = source == null ? null : { id: source.id, generation: source.generation, epoch: source.epoch };
+    presentationProof = null;
+    presentationDelivered = false;
+    return true;
+  }
+
+  function presented(source) {
+    if (closed || !samePresentation(source, presentationSource) || presentationDelivered || presentationProof != null) return false;
+    presentationProof = { kind: 'presentation', source: presentationSource,
+      event: { k: 'dec', ep: presentationSource.epoch }, state: 'queued' };
+    flush();
+    return true;
+  }
 
   function releaseVersions(batch) {
     for (const entry of batch) {
+      if (entry.kind === 'presentation') continue;
       if (versions.get(entry.key) === entry.version && !retry.has(entry.key) && !evidence.has(entry.key) &&
           !queue.some(queued => queued.key === entry.key)) versions.delete(entry.key);
     }
   }
 
   function flush() {
-    if (closed || inFlightCount >= maxInFlight || (!queue.length && !evidence.size && !heartbeatDue)) return;
+    const proof = presentationProof?.state === 'queued' ? presentationProof : null;
+    if (closed || inFlightCount >= maxInFlight || (!queue.length && !evidence.size && !proof && !heartbeatDue)) return;
     // One audio failure per batch keeps the existing input/detail budget bounded.
     // Four generations may remain protected across queued, retry and in-flight work.
     const protectedBatch = [];
@@ -424,17 +455,21 @@ export function createControlOutbox({
       if (hasAudioFault && ['st', 'audio-diag', 'video-diag'].includes(entry.event.k)) queue.push(entry);
       else ordinary.push(entry);
     }
-    const batch = [...protectedBatch, ...ordinary], events = batch.map(entry => entry.kind === 'audio-fault'
+    if (proof) proof.state = 'inflight';
+    const batch = [...protectedBatch, ...(proof ? [proof] : []), ...ordinary];
+    const events = batch.map(entry => entry.kind === 'audio-fault'
       ? { ...entry.event, v: { ...entry.event.v, 'audio.nativeAudio.failureReportAgeMs':
         Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, now() - entry.createdAt)) } } : entry.event);
+    const prepareEvents = () => events.filter((_, index) => batch[index].kind !== 'presentation' || currentProof(batch[index]));
     const q = ++seq, started = now();
     heartbeatDue = false;
     inFlightCount++;
     posts++;
-    Promise.resolve().then(() => { if (!closed) return send(q, events); }).then(status => {
+    Promise.resolve().then(() => { if (!closed) return send(q, prepareEvents(), prepareEvents); }).then(status => {
       if (closed) return;
       inFlightCount--;
       rtt.add(now() - started);
+      if (proof && currentProof(proof)) { presentationProof = null; presentationDelivered = true; }
       releaseVersions(batch);
       if (q > lastStatusSeq) { lastStatusSeq = q; onStatus(status); }
       flush();
@@ -444,6 +479,10 @@ export function createControlOutbox({
       failures++;
       // The phone may not have seen these; an event queued meanwhile already replaces one of the same `k`.
       for (const entry of batch) {
+        if (entry.kind === 'presentation') {
+          if (currentProof(entry)) entry.state = 'retry';
+          continue;
+        }
         if (versions.get(entry.key) !== entry.version) continue;
         if (evidence.has(entry.key) || queue.some(queued => queued.key === entry.key)) continue;
         if (['latest', 'fault', 'terminal', 'audio-fault'].includes(entry.kind)) retry.set(entry.key, entry);
@@ -456,7 +495,8 @@ export function createControlOutbox({
   }
 
   function push(event, kind = 'edge') {
-    if (closed) return false;
+    // First-presentation proof must carry an accepted source; ordinary telemetry may be discarded.
+    if (closed || event.k === 'dec') return false;
     const audioFault = kind === 'audio-fault';
     const protectedEvidence = kind === 'fault' || kind === 'terminal' || audioFault;
     if (protectedEvidence && event.k !== 'st') return false;
@@ -500,8 +540,9 @@ export function createControlOutbox({
   }
 
   return {
-    push,
+    push, setPresentationSource, presented,
     heartbeat() {
+      if (presentationProof?.state === 'retry') presentationProof.state = 'queued';
       const ordinary = [];
       for (const entry of retry.values()) {
         if (entry.kind === 'fault' || entry.kind === 'terminal' || entry.kind === 'audio-fault') evidence.set(entry.key, entry);
@@ -516,9 +557,12 @@ export function createControlOutbox({
     close() {
       closed = true;
       queue.length = 0; evidence.clear(); retry.clear(); versions.clear();
+      presentationSource = presentationProof = null; presentationDelivered = false;
     },
     stats: () => ({
-      seq, inFlight: inFlightCount > 0, inFlightCount, pending: queue.length + evidence.size, posts, failures, overflows,
+      seq, inFlight: inFlightCount > 0, inFlightCount,
+      pending: queue.length + evidence.size + (presentationProof?.state === 'queued' ? 1 : 0), posts, failures, overflows,
+      presentationRetained: presentationProof == null ? 0 : 1,
       audioFaultRetained: retainedAudioFaults(), audioFaultDropped,
       rttMsP50: rtt.percentile(50), rttMsP95: rtt.percentile(95),
     }),

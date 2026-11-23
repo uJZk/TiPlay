@@ -34,6 +34,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -143,6 +144,7 @@ internal object TeslaBrowserLink {
     private val random by lazy { SecureRandom() }
     private val requested = AtomicBoolean(false)
     private val host = AtomicReference<Host?>(null)
+    private var hostAttachmentToken = Any() // guarded by callbackSources; never reused
     private val listeners = CopyOnWriteArraySet<(State) -> Unit>()
     private val viewportListeners = CopyOnWriteArraySet<(BrowserViewport?) -> Unit>()
     // Both maps and their display transitions share one monitor; retirement detaches the pair
@@ -318,7 +320,9 @@ internal object TeslaBrowserLink {
     private val statsLock = Any()
 
     // Worker thread only.
-    private var server: Server? = null
+    private data class Serving(val server: Server, val source: BrowserCallbackSources.Source)
+    private var server: Serving? = null
+    private val callbackSources = BrowserCallbackSources()
     private var retry: ScheduledFuture<*>? = null
     private var failures = 0
 
@@ -331,6 +335,7 @@ internal object TeslaBrowserLink {
     @Volatile private var viewport: BrowserViewport? = null
     @Volatile private var viewportLoaded = false
     private var viewportSession: String? = null // guarded by this; audio support belongs to this live page
+    private var viewportPageToken = Any() // guarded by this; never reused when a page/source ends
     private var lastStatsLog: Long? = null
     private var lastStatsCounters = emptyMap<String, Long>() // guarded by statsLock
 
@@ -382,12 +387,20 @@ internal object TeslaBrowserLink {
     }
 
     fun attachHost(host: Host) {
-        this.host.set(host)
-        main.post { if (this.host.get() === host) host.onBrowserTheme(BrowserAppearance.night) }
+        callbackSources.serialized {
+            val attachment = Any().also { hostAttachmentToken = it }
+            this.host.set(host)
+            main.post { callbackSources.serialized {
+                if (this.host.get() === host && hostAttachmentToken === attachment)
+                    host.onBrowserTheme(BrowserAppearance.night)
+            } }
+        }
     }
 
     fun detachHost(host: Host) {
-        this.host.compareAndSet(host, null)
+        callbackSources.serialized {
+            if (this.host.compareAndSet(host, null)) hostAttachmentToken = Any()
+        }
     }
 
     /**
@@ -471,6 +484,11 @@ internal object TeslaBrowserLink {
             }
         }
         return viewport
+    }
+
+    /** One ordinary-receiver profile input; audio belongs to this same live page. */
+    internal fun receiverViewportSnapshot(context: Context): BrowserViewport? = synchronized(this) {
+        lastViewport(context)?.copy(audioCapabilities = carPlayReadiness.liveViewport()?.audioCapabilities)
     }
 
     /** Ordinary AirPlay saves resize requests for its next session, independently of CarPlay reconnects. */
@@ -590,95 +608,115 @@ internal object TeslaBrowserLink {
         for ((label, key) in STATS_FIELDS) append(' ').append(label).append('=').append(statValue(stats[key]))
     }
 
-    private val callbacks = object : BrowserLinkServer.Callbacks {
-        override fun browserLocationEnabled(): Boolean = app?.let {
-            !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(it)
-        } == true
-        override fun code(): String? = code
-        override fun status(): BrowserLinkStatus = this@TeslaBrowserLink.status()
-        override fun onTouch(contacts: List<AirPlayContact>): Boolean =
-            if (carPlayDisplayPaused) false else CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
-        override fun onBrowserSeen(session: String) = synchronized(this@TeslaBrowserLink) {
-            carPlayReadiness.seen(session)
-            if (viewportSession != session) {
-                viewportSession = session
-                clearViewportAudio()
-            }
+    private fun callbacks(source: BrowserCallbackSources.Source) = object : BrowserLinkServer.Callbacks {
+        override fun browserLocationEnabled(): Boolean = callbackSources.call(source, false) {
+            app?.let { !com.shilapi.xcertplay.location.BrowserLocationSettings.disabled(it) } == true
         }
-        override fun onBrowserGone(session: String) {
+        override fun code(): String? = callbackSources.call(source, null) { code }
+        override fun status(): BrowserLinkStatus = callbackSources.call(source,
+            BrowserLinkStatus(BrowserLinkStatus.State.IDLE)) { this@TeslaBrowserLink.status() }
+        override fun onTouch(contacts: List<AirPlayContact>): Boolean = callbackSources.call(source, false) {
+            if (carPlayDisplayPaused) false else CarPlayBackgroundSession.snapshot()?.controller?.sendTouch(contacts) ?: false
+        }
+        override fun onBrowserSeen(session: String) = callbackSources.run(source) {
             synchronized(this@TeslaBrowserLink) {
-                carPlayReadiness.gone(session)
-                if (viewportSession == session) {
-                    viewportSession = null
-                    clearViewportAudio()
+                carPlayReadiness.seen(session)
+                if (viewportSession != session) {
+                    viewportSession = session
+                    viewportPageToken = Any()
+                    clearViewportCapabilities()
                 }
             }
-            main.post { host.get()?.onBrowserGone() }
         }
-        override fun onViewport(viewport: BrowserViewport) = viewportChanged(viewport)
-        override fun onFit() {
-            if (airPlayActive) return
-            main.post {
-                val screen = host.get()
+        override fun onBrowserGone(session: String) = callbackSources.run(source) {
+            val ended = synchronized(this@TeslaBrowserLink) {
+                if (viewportSession == session) {
+                    carPlayReadiness.gone(session)
+                    viewportSession = null
+                    viewportPageToken = Any()
+                    clearViewportCapabilities()
+                    true
+                } else false
+            }
+            if (ended) postForSource(source) { it?.onBrowserGone() }
+        }
+        override fun onViewport(viewport: BrowserViewport) = callbackSources.run(source) { viewportChanged(source, viewport) }
+        override fun onFit() = callbackSources.run(source) {
+            if (!airPlayActive) postForSource(source) {
+                val screen = it
                 if (screen == null) log("Browser link: the browser asked to fit, but no CarPlay screen is open")
                 else screen.onBrowserFit()
             }
         }
-        override fun onKey(name: String) {
-            if (carPlayDisplayPaused) return
-            val controller = CarPlayBackgroundSession.snapshot()?.controller ?: return
+        override fun onKey(name: String) = callbackSources.run(source) {
+            if (carPlayDisplayPaused) return@run
+            val controller = CarPlayBackgroundSession.snapshot()?.controller ?: return@run
             when (name) {
                 "home" -> controller.sendKnob(AirPlayKnobState(home = true))
                 "back" -> controller.sendKnob(AirPlayKnobState(back = true))
                 "siri" -> controller.requestSiri()
             }
         }
-        override fun onBrowserStats(stats: Map<String, Any?>) {
-            val reportedNight = stats["themeDark"] as? Boolean
-            if (reportedNight != null) main.post {
-                // Cache and deliver in the same order, even with concurrent browser requests.
-                BrowserAppearance.update(mapOf("themeDark" to reportedNight))
-                val screen = host.get()
-                if (screen != null) screen.onBrowserTheme(reportedNight)
-                else CarPlayBackgroundSession.snapshot()?.controller
-                    ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
-            }
-            transportDiagnostics.report(stats, DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
-            nativeAudioFailureDiagnostics.report(stats)
-            val now = clock()
-            val anomalies: Map<String, Long>
-            synchronized(statsLock) {
-                val last = lastStatsLog
-                if (last != null && now - last < STATS_LOG_INTERVAL_MILLIS) return
-                lastStatsLog = now
-                val counters = mapOf(
-                    "dropped" to counter(stats["video.droppedFrames"] ?: stats["video.dropped"]),
-                    "errors" to counter(stats["video.decodeErrors"]),
-                    "gaps" to counter(stats["video.gaps"]),
-                    "reconnects" to counter(stats["link.reconnects"]),
-                    "audioProcessorErrors" to counter(stats["audio.processorErrors"]),
-                    "audioRecoveries" to counter(stats["audio.recoveries"]),
-                )
-                anomalies = counters.mapValues { (key, value) ->
-                    (value - (lastStatsCounters[key] ?: 0L)).coerceAtLeast(0L)
-                }.filterValues { it > 0 }
-                lastStatsCounters = counters
-            }
-            if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) log(statsLine(stats))
-            else if (anomalies.isNotEmpty()) log("Browser anomaly: " +
-                anomalies.entries.joinToString(" ") { (key, count) -> "$key=$count" })
-        }
-        override fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) {
+        override fun onBrowserStats(stats: Map<String, Any?>) = callbackSources.run(source) { reportBrowserStats(source, stats) }
+        override fun onBrowserAudioDiagnostics(stats: Map<String, Any?>) = callbackSources.run(source) {
             if (DiagnosticLogPolicy.level != DiagnosticLogLevel.DEBUG ||
-                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return
+                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return@run
             BrowserAudioDiagnostics.lines(stats).forEach(::log)
         }
-        override fun onBrowserVideoDiagnostics(stats: Map<String, Any?>) {
+        override fun onBrowserVideoDiagnostics(stats: Map<String, Any?>) = callbackSources.run(source) {
             if (DiagnosticLogPolicy.level != DiagnosticLogLevel.DEBUG ||
-                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return
+                !com.shilapi.xcertplay.diagnostics.RawTraffic.enabled) return@run
             BrowserVideoDiagnostics.lines(stats).forEach(::log)
         }
-        override fun log(message: String) = this@TeslaBrowserLink.log(message)
+        override fun log(message: String) = callbackSources.run(source) { this@TeslaBrowserLink.log(message) }
+    }
+
+    private data class PostedBrowserOwner(val page: Any, val host: Host?, val attachment: Any)
+
+    /** Retain the admitted page and host as well as its server; replacements cannot receive old work. */
+    private fun postForSource(source: BrowserCallbackSources.Source, action: (Host?) -> Unit) {
+        val owner = synchronized(this) { PostedBrowserOwner(viewportPageToken, host.get(), hostAttachmentToken) }
+        main.post { callbackSources.run(source) {
+            val samePage = synchronized(this) { viewportPageToken === owner.page }
+            if (samePage && host.get() === owner.host && hostAttachmentToken === owner.attachment)
+                action(owner.host)
+        } }
+    }
+
+    private fun reportBrowserStats(source: BrowserCallbackSources.Source, stats: Map<String, Any?>) {
+        val reportedNight = stats["themeDark"] as? Boolean
+        if (reportedNight != null) postForSource(source) {
+            // Cache and deliver in the same order, even with concurrent browser requests.
+            BrowserAppearance.update(mapOf("themeDark" to reportedNight))
+            val screen = it
+            if (screen != null) screen.onBrowserTheme(reportedNight)
+            else CarPlayBackgroundSession.snapshot()?.controller
+                ?.takeIf { it.phoneBrowserMode() }?.sendNightMode(reportedNight)
+        }
+        transportDiagnostics.report(stats, DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG)
+        nativeAudioFailureDiagnostics.report(stats)
+        val now = clock()
+        val anomalies: Map<String, Long>
+        synchronized(statsLock) {
+            val last = lastStatsLog
+            if (last != null && now - last < STATS_LOG_INTERVAL_MILLIS) return
+            lastStatsLog = now
+            val counters = mapOf(
+                "dropped" to counter(stats["video.droppedFrames"] ?: stats["video.dropped"]),
+                "errors" to counter(stats["video.decodeErrors"]),
+                "gaps" to counter(stats["video.gaps"]),
+                "reconnects" to counter(stats["link.reconnects"]),
+                "audioProcessorErrors" to counter(stats["audio.processorErrors"]),
+                "audioRecoveries" to counter(stats["audio.recoveries"]),
+            )
+            anomalies = counters.mapValues { (key, value) ->
+                (value - (lastStatsCounters[key] ?: 0L)).coerceAtLeast(0L)
+            }.filterValues { it > 0 }
+            lastStatsCounters = counters
+        }
+        if (DiagnosticLogPolicy.level == DiagnosticLogLevel.DEBUG) log(statsLine(stats))
+        else if (anomalies.isNotEmpty()) log("Browser anomaly: " +
+            anomalies.entries.joinToString(" ") { (key, count) -> "$key=$count" })
     }
 
     private fun reconcile() {
@@ -692,13 +730,21 @@ internal object TeslaBrowserLink {
             return
         }
         if (server != null) return
+        val source = BrowserCallbackSources.Source()
         val candidate = try {
-            serverFactory.create(hub, callbacks)
+            Serving(serverFactory.create(hub, callbacks(source)), source)
         } catch (error: Exception) {
             log("Browser link: server could not be created (${error.javaClass.simpleName})")
             null
         }
-        val result = candidate?.start() ?: Result.failure(IllegalStateException("no server"))
+        val result = if (candidate == null) Result.failure(IllegalStateException("no server")) else try {
+            // A bind may immediately receive a page. Creation callbacks have no authority;
+            // activation starts just before start(), and failed starts retire it below.
+            callbackSources.activate(source, ::clearBrowserSource)
+            candidate.server.start()
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
         val port = result.getOrNull()
         if (candidate != null && port != null) {
             server = candidate
@@ -725,7 +771,7 @@ internal object TeslaBrowserLink {
         }
     }
 
-    private fun viewportChanged(report: BrowserViewport): Unit = synchronized(this) {
+    private fun viewportChanged(source: BrowserCallbackSources.Source, report: BrowserViewport): Unit = synchronized(this) {
         // Resize reports can precede the async decoder probe. Preserve only this page's known audio support.
         val next = if (report.audioCapabilities == null && viewportSession != null)
             report.copy(audioCapabilities = viewport?.audioCapabilities) else report
@@ -738,15 +784,15 @@ internal object TeslaBrowserLink {
         if (changed) app?.let { saveViewport(it, next) }
         log("Browser link: viewport ${TeslaBrowserCanvas.describe(next)}")
         notifyViewport(next)
-        main.post { host.get()?.onBrowserViewport(next) }
+        postForSource(source) { it?.onBrowserViewport(next) }
     }
 
-    /** Audio probes are never saved or carried into another browser session. Called under this monitor. */
-    private fun clearViewportAudio() {
+    /** Probe results belong to their live page; only geometry survives source/page replacement. */
+    private fun clearViewportCapabilities() {
         nativeAudioFailureDiagnostics.reset()
         val previous = viewport ?: return
-        if (previous.audioCapabilities == null) return
-        val cleared = previous.copy(audioCapabilities = null)
+        if (previous.audioCapabilities == null && previous.videoCapabilities == null) return
+        val cleared = previous.copy(videoCapabilities = null, audioCapabilities = null)
         viewport = cleared
         notifyViewport(cleared)
     }
@@ -770,14 +816,22 @@ internal object TeslaBrowserLink {
         if (screen != null) screen.log(message) else DiagnosticLogs.append(message)
     }
 
-    private fun stopQuietly(server: Server) {
+    /** Never enter the source write barrier while holding the TeslaBrowserLink monitor. */
+    private fun clearBrowserSource() {
         synchronized(this) {
             carPlayReadiness.clear()
             viewportSession = null
-            clearViewportAudio()
+            viewportPageToken = Any()
+            clearViewportCapabilities()
         }
+    }
+
+    private fun stopQuietly(serving: Serving) {
+        // Revoke callbacks and posted effects before closing sockets. stop() may itself
+        // wait for a previously admitted callback, so it runs after releasing this barrier.
+        callbackSources.retire(serving.source, ::clearBrowserSource)
         try {
-            server.stop()
+            serving.server.stop()
         } catch (error: RuntimeException) {
             Log.w(TAG, "server stop failed", error)
         }
@@ -837,7 +891,7 @@ internal object TeslaBrowserLink {
             viewportLoaded = false
         }
         synchronized(statsLock) { lastStatsLog = null; lastStatsCounters = emptyMap() }
-        host.set(null)
+        callbackSources.serialized { host.set(null); hostAttachmentToken = Any() }
         listeners.clear()
         viewportListeners.clear()
         val retired = synchronized(tapLock) {
@@ -867,5 +921,63 @@ internal object TeslaBrowserLink {
         val done = CountDownLatch(1)
         worker.execute { done.countDown() }
         return done.await(timeoutMillis, TimeUnit.MILLISECONDS)
+    }
+}
+
+/**
+ * Admission and retirement of browser-originated effects share this boundary.
+ *
+ * A fair permit cannot be starved by fresh callbacks; accepting=false also stops new
+ * admissions before retirement waits for an already admitted effect. Synchronous effects,
+ * page/host changes and retirement use the same permit. Neither the application monitor
+ * nor server.stop() is held while waiting for it.
+ */
+internal class BrowserCallbackSources {
+    class Source {
+        @Volatile internal var accepting = false
+        internal var used = false // guarded by the owning gate; a token can never be activated twice
+    }
+
+    private val gate = ReentrantLock(true)
+    private var current: Source? = null // guarded by gate
+
+    fun <T> serialized(action: () -> T): T {
+        gate.lock()
+        return try { action() } finally { gate.unlock() }
+    }
+
+    fun activate(source: Source, clear: () -> Unit) {
+        gate.lock()
+        try {
+            check(current == null) { "browser source already active" }
+            check(!source.used) { "browser source already used" }
+            source.used = true
+            current = source
+            clear()
+            source.accepting = true
+        } finally { gate.unlock() }
+    }
+
+    fun <T> call(source: Source, unavailable: T, action: () -> T): T {
+        if (!source.accepting) return unavailable
+        gate.lock()
+        return try {
+            if (current !== source || !source.accepting) unavailable else action()
+        } finally { gate.unlock() }
+    }
+
+    fun run(source: Source, action: () -> Unit) { call(source, Unit, action) }
+
+    fun retire(source: Source, clear: () -> Unit) {
+        source.accepting = false
+        gate.lock()
+        try {
+            source.accepting = false
+            source.used = true
+            if (current === source) {
+                current = null
+                clear()
+            }
+        } finally { gate.unlock() }
     }
 }

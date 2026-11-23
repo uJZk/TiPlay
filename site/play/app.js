@@ -534,6 +534,7 @@ function sendBye() {
 
 async function connectVideo() {
   const id = ++streamId;
+  outbox?.setPresentationSource(null);
   videoError = null; videoRestart = null; lastError = null;
   currentVideoGeneration = 1;
   faultDiagnostics.reset();
@@ -570,6 +571,7 @@ async function connectVideo() {
       videoTrack: useVideoTrack,
       onVideoGeneration: generation => {
         if (id !== streamId || abort.signal.aborted) return;
+        outbox?.setPresentationSource(null);
         config = null; live = false; videoError = null; unsupported = null; videoStats = {};
         currentVideoGeneration = generation;
         return sink.resetGeneration(id, generation);
@@ -595,13 +597,17 @@ async function connectVideo() {
     const clock = clockEstimator.observe(sample.serverMs, sample.started, sample.ended);
     sink.clock(clock); browserAudio.clock(clock);
     controlClock = { media, estimator: clockEstimator };
+    // A buffered video configuration may arrive synchronously when the sink opens.
+    // Its unique first-present callback must already have an authenticated outbox.
+    if (!outbox) {
+      outbox = createControlOutbox({ maxInFlight: 8,
+        send: (q, events, prepareEvents) => postControl(q, events, ownerSession, prepareEvents),
+        heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
+      heartbeatTimer = setInterval(() => outbox?.heartbeat(), 400);
+    }
     sink.open(id, media.video, abort.signal);
     if (media.videoTrack?.()) sink.track(id, media.videoTrack());
     if (!useVideoTrack) sink.failVideo?.('rtc-video-unavailable');
-    if (!outbox) {
-      outbox = createControlOutbox({ maxInFlight: 8, send: (q, events) => postControl(q, events, ownerSession), heldContacts: () => slots.contacts(), onStatus: applyStatus, onError: controlFailed });
-      heartbeatTimer = setInterval(() => outbox?.heartbeat(), 400);
-    }
     browserAudio.attach(abort.signal, media.hello(), () => media.openAudio(), {
       exchange: value => media.audioOffer(value), subscribe: listener => media.audioEvents(listener),
       ready: value => media.audioTrackReady(value),
@@ -617,6 +623,7 @@ async function connectVideo() {
   } catch (error) {
     clearTimeout(timer);
     if (id !== streamId) return;
+    outbox?.setPresentationSource(null);
     abort.abort(); // Retire signaling fetches as well as the peer before starting another attempt.
 
     if (error.status === 401) stop('badCode');
@@ -635,6 +642,7 @@ async function connectVideo() {
 function streamEnded(reason, error = null) {
   if (terminalDiagnosticId === streamId) return;
   terminalDiagnosticId = streamId;
+  outbox?.setPresentationSource(null);
   faultDiagnostics.reset();
   if (reason !== 'closed' && reason !== 'end') lastError = error ?? Object.assign(new Error(reason), { reason });
   try { reportDiagnostics('terminal'); } catch (_) {} // Evidence collection must not prevent media retirement.
@@ -663,7 +671,7 @@ function scheduleRetry(delay) {
   render();
 }
 
-async function postControl(q, events, ownerSession = session) {
+async function postControl(q, events, ownerSession = session, prepareEvents = () => events) {
   const assertOwner = () => { if (!active || session !== ownerSession) throw new Error('Browser control owner retired.'); };
   assertOwner();
   let media = rtcMedia;
@@ -672,7 +680,7 @@ async function postControl(q, events, ownerSession = session) {
     assertOwner(); media = rtcMedia;
   }
   const started = performance.timeOrigin + performance.now();
-  const result = await media.control(q, locationEvents(events));
+  const result = await media.control(q, locationEvents(prepareEvents()));
   assertOwner();
   if (media === rtcMedia && controlClock?.media === media) {
     const clock = controlClock.estimator.observe(result.clockMs, started, performance.timeOrigin + performance.now());
@@ -750,10 +758,12 @@ function onVideoMessage(message) {
     // the new producer's PCM before this config, so video cannot clear that audio.
     if (config?.epoch !== message.config.epoch || config?.mode !== message.config.mode) { videoStats = {}; live = false; }
     config = message.config;
+    outbox?.setPresentationSource({ id: streamId, generation: currentVideoGeneration, epoch: config.epoch });
     videoError = null;
     unsupported = null;
     updateReceiverNotice();
   } else if (message.type === 'idle') {
+    outbox?.setPresentationSource(null);
     config = null;
     live = false;
     unsupported = null;
@@ -765,7 +775,7 @@ function onVideoMessage(message) {
     if (message.epoch !== config?.epoch) return;
     mediaTiming.started();
     live = true;
-    outbox?.push({ k: 'dec', ep: message.epoch }, 'latest'); // repeated if its POST fails: the phone's connection proof
+    outbox?.presented({ id: streamId, generation: currentVideoGeneration, epoch: message.epoch });
     keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
   else if (message.type === 'end' && message.id === streamId) {

@@ -2,7 +2,6 @@ package com.shilapi.xcertplay
 
 import android.os.Looper
 import com.shilapi.xcertplay.receiver.ReceiverConfig
-import com.shilapi.xcertplay.receiver.ReceiverMirrorExperiment
 import com.shilapi.xcertplay.receiver.ReceiverServer
 import com.shilapi.xcertplay.web.BrowserAudioCapabilities
 import com.shilapi.xcertplay.web.BrowserLinkServer
@@ -64,8 +63,7 @@ class AirPlayReceiverAudioCapabilitiesTest {
         val worker = AirPlayReceiverService::class.java.getDeclaredField("worker").apply { isAccessible = true }
             .get(instance) as ExecutorService
         fun drain() { worker.submit {}.get(5, TimeUnit.SECONDS) }
-        fun identity() = AirPlayReceiverService::class.java.getDeclaredMethod("identity", ReceiverMirrorExperiment::class.java)
-            .apply { isAccessible = true }.invoke(instance, AirPlayMirrorExperimentSettings.get(app)) as ReceiverConfig
+        fun identity() = receiverIdentity(instance)
         drain()
         val config = identity()
         assertEquals(first, config.audioOutputFormats)
@@ -113,4 +111,42 @@ class AirPlayReceiverAudioCapabilitiesTest {
             assertTrue(worker.awaitTermination(5, TimeUnit.SECONDS))
         }
     }
+
+    @Test fun obsoleteComparisonPreferencesCannotChangeCapabilitiesOrStoredIdentityAndTrust() {
+        callbacks.onBrowserSeen("current")
+        callbacks.onViewport(BrowserViewport(1280, 720, 1280.0, 720.0, 1.0,
+            BrowserVideoCapabilities(true, true, 1920, 1080), BrowserAudioCapabilities(1L shl 2)))
+        val controller = Robolectric.buildService(AirPlayReceiverService::class.java).create()
+        val service = controller.get()
+        val worker = AirPlayReceiverService::class.java.getDeclaredField("worker").apply { isAccessible = true }
+            .get(service) as ExecutorService
+        val preferences = app.getSharedPreferences("tiplay_airplay_receiver", 0)
+        val fingerprint = "a".repeat(64)
+        val trust = AirPlayDeviceTrustStore(app)
+        trust.remember(fingerprint)
+        try {
+            val baseline = receiverIdentity(service)
+            val stored = listOf("private", "public", "pairing", "device").associateWith { preferences.getString(it, null) }
+            for (legacy in listOf("h264_only", "no_ble", "legacy_pairing", "unknown")) {
+                preferences.edit().putString("mirror_experiment", legacy).commit()
+                val actual = receiverIdentity(service)
+                assertEquals(baseline.features, actual.features)
+                assertTrue(actual.hevcEnabled)
+                assertTrue(actual.mirrorEnabled)
+                assertEquals(baseline.audioOutputFormats, actual.audioOutputFormats)
+                assertEquals(baseline.deviceId, actual.deviceId)
+                assertEquals(baseline.identity.pairingId, actual.identity.pairingId)
+                assertEquals(stored, stored.keys.associateWith { preferences.getString(it, null) })
+                assertTrue(trust.contains(fingerprint))
+            }
+        } finally {
+            controller.destroy()
+            assertTrue(worker.awaitTermination(5, TimeUnit.SECONDS))
+            trust.forgetAll()
+        }
+    }
+
+    private fun receiverIdentity(service: AirPlayReceiverService): ReceiverConfig =
+        AirPlayReceiverService::class.java.getDeclaredMethod("identity").apply { isAccessible = true }
+            .invoke(service) as ReceiverConfig
 }

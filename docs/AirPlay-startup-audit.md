@@ -4,9 +4,29 @@
 
 本轮由架构负责人统筹四个子审计，覆盖 Android 编排、主监听所有权、浏览器能力发布、历史及反证。**尚未确认实机“首次无视频请求、重试成功”的根因。** 本轮新增的是跨组件生命周期与可靠性缺口，不是把原来“缺 type110”的观察改写成原因。
 
-报告中的“witness 通过”表示已观察到该用例断言的坏状态或实际锁序，不表示软件健康、问题修复或实机验收通过。产品代码未修改，没有新 APK，完整 CI 未运行。
+报告中的“witness 通过”表示已观察到该用例断言的坏状态或实际锁序，不表示软件健康、问题修复或实机验收通过。审计阶段未修改产品代码或发布 APK；后续修复状态见下节。完整 CI 仍按用户要求跳过。
 
 本轮增加四项具体发现：退场 Service 夺取后继全局 lease、旧 browser 回调复活 ready / profile、Controller / Service 相反锁序、一次性 first-present 被队列溢出丢弃。三个 JVM 聚焦 case 和一个实际生产 JS outbox case 已观察到各自受控现象；没有一项已证明是原实机首连故障的原因。
+
+<a id="remediation"></a>
+## Beta.59 修复状态
+
+四项问题的源码修复与健康回归已完成，A/B/C/D 实验入口和实现已撤除。
+签名候选、发布与公开下载状态统一记录在 [Build](Build.md#beta59-release)，
+定向验证统计见 [Testing](Testing.md#beta59-source-preparation)。下文保留基线审计的
+触发条件、坏状态见证和固定源码链接，不代表当前修复版本仍有这些已修问题。
+
+| 问题 | 当前修复与验收 |
+| --- | --- |
+| AA-1 | 进程级 Service authority 同一临界区保护全局 lease 与公共状态；网络/通知在外。两个真实 old/new Service 健康交错保住后继接入与状态。 |
+| AA-2 | 不可复用的服务、页面、host attachment token 与状态应用/退场串行化；排队动作核对捕获的目标。八个用例含同 Host 对象复用及实际交错。 |
+| AA-3 | Service 锁内只退休精确资源，锁外 close/callback；in-flight build ticket 防取消启动被后继越过。关闭早于主会话启动也安全退出。 |
+| AA-4 | 当前 source/generation/epoch 的唯一绘制证明有独立有界槽，失败等 heartbeat，投递前再过滤；旧 ACK、旧失败、溢出或换源不污染后继。 |
+
+589 个 JVM、98 个浏览器、27 个包装/站点定向用例最终通过，JVM stdout/XML
+均无未捕获线程头。这是四项独立缺陷的修复证据；原实机“首试无 type110、重试成功”
+的根因与 beta.59 实机首连效果仍未确认。未更改工作中的音频/MIC 路由、原媒体编码、
+设备身份或 typed consent，也没有恢复提前借屏。
 
 ## 审计模型与覆盖
 
@@ -138,7 +158,7 @@ Controller 自己 close 会先使无线 generation 失效，可能挡住自己�
 
 ## 尚未升级为已证缺陷的边界
 
-- **Profile 原子快照与 observer 回放。** `identity:420–425` 多次读取可得到 width 来自 V1、height / codec 来自 V2 的组合；`listenViewport:477–480` 注册与初始回放未同 viewport 发布串行。两者在 beta.5 已有。普通 periodic refresh 只重取 audio formats / discovery，不会独立重算尺寸与 HEVC；但排队的完整 viewport callback 通常会修正初始混合值。初次注册时 server 往往尚为 null，不能仅凭 listener 回放顺序就称已向 iPhone 发布错误配置。尚需一个 actual receiver/profile revision 交错见证。
+- **Profile 原子快照与 observer 回放。** 基线 `identity:420–425` 多次读取可得到 width 来自 V1、height / codec 来自 V2 的组合；`listenViewport:477–480` 注册与初始回放未同 viewport 发布串行。两者在 beta.5 已有。普通 periodic refresh 只重取 audio formats / discovery，不会独立重算尺寸与 HEVC；但排队的完整 viewport callback 通常会修正初始混合值。初次注册时 server 往往尚为 null，不能仅凭 listener 回放顺序就称已向 iPhone 发布错误配置。Beta.59 初始构造已改为单一 `receiverViewportSnapshot`；普通 source 更新与退场受 permit 保护，但 observer 注册/初始回放的单独交错仍未建立缺陷见证，不属于本轮已修复项。
 - **混合 wrapper 库存。** `updatePendingWirelessDisplay:211–219` 将任意未关 external wrapper 视为新主显示接入，包括 ordinary FP handoff wrapper。这会在已有 display reconnect pending 时阻止 resize coalescing，但尚无本例 pending 或两试间 resize 证据。CP 可见不能单独证明 pending 已清；反过来也不能将 pending 假设成事实。
 - **交接后的 socket 生命周期。** handoff 后 VPN sessions 仍保存原 wrapper；主 Service detach 会关闭同一 ordinary socket。因此需要明确双向契约：ordinary 模式切换保持 CarPlay，不等于 CarPlay listener 重建必须保持 ordinary。该关系尚不能简单列为 bug，且首试现场没有主 detach 证据。
 
@@ -164,7 +184,7 @@ Controller 自己 close 会先使无线 generation 失效，可能挡住自己�
 
 retirement 首版有一次 fixture precondition 失败：误读 RTSP `Response.status=null`，而生产编码会输出 200；失败发生目标交错前，原源码 / XML / stdout 已独立归档。最终版本只将 broker 回复经生产编码再解析，未降低生命周期、owner、broker 503 或状态覆盖的坏状态断言。机器摘要保留该历史，不把它算成候选反证或通过。
 
-完整测试、原始私有 wire、用户媒体解密 / 解码、设备硬解和实机 iOS 分配均不在本轮执行范围。没有产品修复提交或新 APK；当前镜像首连根因仍开放。
+完整测试、原始私有 wire、用户媒体解密 / 解码、设备硬解和实机 iOS 分配均不在基线审计执行范围。基线审计阶段未提交产品修复或发布 APK；后续 beta.59 见[修复状态](#remediation)，当前镜像首连根因仍开放。
 
 ## 固定源码入口
 

@@ -9,7 +9,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
@@ -17,7 +19,6 @@ import com.shilapi.xcertplay.diagnostics.DiagnosticErrorText
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.receiver.ReceiverBonjour
 import com.shilapi.xcertplay.receiver.ReceiverConfig
-import com.shilapi.xcertplay.receiver.ReceiverMirrorExperiment
 import com.shilapi.xcertplay.receiver.ReceiverPlayback
 import com.shilapi.xcertplay.receiver.ReceiverPlay
 import com.shilapi.xcertplay.receiver.ReceiverServer
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit
 /** The default AirPlay receiver; CarPlay retains its controller while AirPlay borrows the canvas. */
 class AirPlayReceiverService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor { Thread(it, "tiplay-airplay-service").apply { isDaemon = true } }
+    private val main = Handler(Looper.getMainLooper())
     private val locks by lazy { PhoneBrowserLocks(this) }
     private var multicast: WifiManager.MulticastLock? = null
     @Volatile private var server: ReceiverServer? = null // worker creates/closes; callbacks may read
@@ -55,34 +57,31 @@ class AirPlayReceiverService : Service() {
     @Volatile private var destroyed = false
     private val receiverInstance = receiverInstances.incrementAndGet()
     private var lastAppliedProfile: String? = null // worker only
-    private val receiverLifecycle = AirPlayMirrorReceiverLifecycle(
-        loadMode = { AirPlayMirrorExperimentSettings.get(this) },
-        post = { action -> if (!destroyed && !worker.isShutdown) runCatching { worker.execute(action) } },
-        stop = ::resetReceiver,
-        start = ::startReceiver,
-    )
+    private var receiverStarted = false // worker only; a failed instance stops before another starts
+    @Volatile private var authorityOwner: AirPlayReceiverServiceAuthority.Owner? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        publish("starting")
+        authorityOwner = serviceAuthority.acquire { updatePublishedState("starting") }
+        notifyStateListeners()
         deviceTrust = ReceiverDeviceTrust(AirPlayDeviceTrustStore(this), diagnostic = ::logDiagnostic)
         trustRegistration = AirPlayTrustNotifications.attach(deviceTrust)
         viewportSubscription = TeslaBrowserLink.listenViewport(this) { viewport ->
             val size = TeslaBrowserCanvas.sizeFor(viewport)
             worker.execute {
-                if (!destroyed) server?.let { receiver ->
+                if (active()) server?.let { receiver ->
                     receiver.updateDisplaySize(size.width, size.height,
                         viewport?.videoCapabilities?.hevc == true,
-                        AirPlayMirrorExperimentSettings.mirrorEnabled(receiver.displayConfig.mirrorExperiment, viewport?.videoCapabilities))
+                        viewport?.videoCapabilities?.let { it.h264 || it.hevc } ?: true)
                     refreshDiscovery()
                 }
             }
         }
         settingsSubscription = BrowserSettingsChanges.listen(this) {
             worker.execute {
-                if (!destroyed) server?.let { receiver ->
+                if (active()) server?.let { receiver ->
                     receiver.updateDisplay(AirPlayPersistence.loadFps(this), TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc == true)
                     refreshDiscovery()
                 }
@@ -92,17 +91,17 @@ class AirPlayReceiverService : Service() {
             playbackDiagnostics.callback(state, epoch)
             val ended = state in listOf("failed", "stopped")
             synchronized(displayLock) {
-                if (!destroyed && ended && player.playbackEpoch == epoch) releaseDisplay()
+                if (active() && ended && player.playbackEpoch == epoch) releaseDisplay()
             }
-            if (!destroyed) worker.execute {
-                if (!destroyed && player.playbackEpoch == epoch) {
+            if (active()) worker.execute {
+                if (active() && player.playbackEpoch == epoch) {
                     // UxPlay reports ongoing video state through /playback-info. Reserve reverse
                     // HTTP for FCUP instead of interleaving unsolicited playback state requests.
                     if (ended) {
                         server?.finishPlayback(if (state == "failed") ReceiverServer.PlaybackFinishReason.BROWSER_FAILED
                             else ReceiverServer.PlaybackFinishReason.BROWSER_ENDED)
-                        if (state == "failed") publish("playback-failed")
-                    } else if (state in setOf("loading", "playing", "paused", "photo")) publish(state)
+                        if (state == "failed") publishCurrent("playback-failed")
+                    } else if (state in setOf("loading", "playing", "paused", "photo")) publishCurrent(state)
                 }
             }
         }
@@ -110,7 +109,8 @@ class AirPlayReceiverService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (AirPlayReceiverSettings.isDisabled(this)) { publish("stopped"); stopSelf(); return START_NOT_STICKY }
+        if (!active()) return START_NOT_STICKY
+        if (AirPlayReceiverSettings.isDisabled(this)) { publishCurrent("stopped"); stopSelf(); return START_NOT_STICKY }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "AirPlay", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 10, CarPlaySettingsNavigation.mainIntent(this), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -120,26 +120,39 @@ class AirPlayReceiverService : Service() {
             .setContentIntent(open).setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(10, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(10, notification)
-        if (LocalNetworkPermission.state(this) == LocalNetworkPermission.State.DENIED) { publish("permission"); stopSelf(); return START_NOT_STICKY }
+        if (LocalNetworkPermission.state(this) == LocalNetworkPermission.State.DENIED) { publishCurrent("permission"); stopSelf(); return START_NOT_STICKY }
         TeslaBrowserLink.start(this)
         HotspotExtraAddressSettings.sync(this)
         locks.hold()
         if (multicast == null) multicast = getSystemService(WifiManager::class.java)?.createMulticastLock("tiplay-airplay")?.apply { setReferenceCounted(false); acquire() }
         worker.execute {
-            if (!destroyed && !AirPlayReceiverSettings.isDisabled(this)) receiverLifecycle.reconcile()
+            if (active() && !AirPlayReceiverSettings.isDisabled(this)) startReceiver()
         }
         return START_NOT_STICKY
     }
 
-    private fun startReceiver(mode: ReceiverMirrorExperiment, generation: Long) {
-        if (destroyed || !receiverLifecycle.isCurrent(generation) || AirPlayReceiverSettings.isDisabled(this)) return
-        logReceiverDiagnostic(mode, generation, "experiment stage=START_BEGIN")
+    private fun active(): Boolean = !destroyed && authorityOwner?.isCurrent() == true
+
+    private fun publishCurrent(value: String) {
+        if (authorityOwner?.commit { updatePublishedState(value) } == true) notifyStateListeners()
+    }
+
+    private fun stopCurrent() {
+        // Service creation/destruction and this final ownership check share Android's main queue.
+        main.post { if (active()) stopSelf() }
+    }
+
+    private fun startReceiver() {
+        val publication = authorityOwner ?: return
+        if (!active() || receiverStarted || AirPlayReceiverSettings.isDisabled(this)) return
+        receiverStarted = true
+        logReceiverDiagnostic("stage=START_BEGIN")
+        var candidate: ReceiverServer? = null
         try {
-            val receiverConfig = identity(mode)
+            val receiverConfig = identity()
             val receiverTrust = deviceTrust
-            fun active(): Boolean = !destroyed && receiverLifecycle.isCurrent(generation)
             val receiver = ReceiverServer(receiverConfig, object : ReceiverServer.Listener {
-                override fun log(message: String) = logReceiverDiagnostic(mode, generation, message)
+                override fun log(message: String) = logReceiverDiagnostic(message)
                 override fun authorizeDevice(sessionToken: String, verifiedPublicKey: ByteArray?, deviceName: String, mediaType: String): Boolean =
                     active() && receiverTrust.authorizeSession(sessionToken, verifiedPublicKey, deviceName, mediaType) && active()
                 override fun authorizeDevice(sessionToken: String, identity: ByteArray, deviceName: String,
@@ -168,7 +181,7 @@ class AirPlayReceiverService : Service() {
                         check(active() && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
                     }
                 }
-                override fun mirrorSink(): WebMediaSink = openMirrorSink(receiverConfig, generation)
+                override fun mirrorSink(): WebMediaSink = openMirrorSink(receiverConfig)
                 override fun play(item: ReceiverPlay) {
                     synchronized(displayLock) {
                         if (active() && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService)) {
@@ -208,7 +221,7 @@ class AirPlayReceiverService : Service() {
                                         mirrorAudio = null; mirrorAudioFormat = null; mirrorAudioFailedFormat = format
                                         failed.close()
                                         logDiagnostic("audio stage=TRANSPORT_FAILED codec=${format.codec} exception=${error.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(error)}")
-                                        publish("audio-failed")
+                                        publishCurrent("audio-failed")
                                     }
                                 }
                             }.also { created = it; mirrorAudio = it; mirrorAudioFormat = format; mirrorAudioFailedFormat = null }
@@ -233,7 +246,7 @@ class AirPlayReceiverService : Service() {
                 override fun status(state: String) {
                     if (!active()) return
                     if (state == "failed") {
-                        worker.execute { if (active()) { publish(state); stopSelf() } }
+                        worker.execute { if (active()) { publishCurrent(state); stopCurrent() } }
                         return
                     }
                     if (state == "audio") {
@@ -267,62 +280,47 @@ class AirPlayReceiverService : Service() {
                             }
                         }
                     }
-                    if (active()) publish(state)
+                    if (active()) publishCurrent(state)
                 }
             })
+            candidate = receiver
             server = receiver
-            discovery = ReceiverBonjour(receiverConfig, receiver.start(), { receiver.displayConfig }, receiver.dacpDiscovery)
+            val port = receiver.start(publication::publishDiscovery)
+            if (!active()) {
+                receiver.close()
+                if (server === receiver) server = null
+                return
+            }
+            discovery = ReceiverBonjour(receiverConfig, port, { receiver.displayConfig }, receiver.dacpDiscovery)
             refreshDiscovery()
-            logAppliedProfile(receiver.displayConfig, generation, "started")
-            publish("listening")
+            if (!active()) {
+                discovery?.close(); discovery = null
+                receiver.close()
+                if (server === receiver) server = null
+                return
+            }
+            logAppliedProfile(receiver.displayConfig, "started")
+            publishCurrent("listening")
         } catch (error: Exception) {
-            logReceiverDiagnostic(mode, generation, "stage=START_FAILED exception=${error.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(error)}")
-            publish("failed")
-            stopSelf()
-        }
-    }
-
-    /** Retire the old discovery lease before a replacement can register on the main CarPlay listener. */
-    private fun resetReceiver(generation: Long, afterStop: () -> Unit) {
-        val retired = server
-        server = null
-        val previous = retired?.displayConfig?.mirrorExperiment ?: ReceiverMirrorExperiment.BASELINE
-        logReceiverDiagnostic(previous, generation, "experiment stage=RESET_BEGIN next=${AirPlayMirrorExperimentSettings.get(this).id}")
-        publish("starting")
-        deviceTrust.resetSessions()
-        val owner = synchronized(displayLock) {
-            displayGeneration++
-            mirrorOutput?.close(); mirrorOutput = null
-            // Wake a type110 loan waiter before close() needs its receiver ownership lock.
-            mirrorStartupReady?.countDown(); mirrorStartupReady = null
-            mirrorAudio?.close(); mirrorAudio = null; mirrorAudioFormat = null; mirrorAudioFailedFormat = null
-            displayOwner
-        }
-        bluetoothDiscovery?.let {
-            it.close()
-            logReceiverDiagnostic(previous, generation, "experiment stage=BLE_RETIRED")
-        }
-        bluetoothDiscovery = null
-        retired?.close()
-        synchronized(displayLock) {
-            player.stop {
-                synchronized(displayLock) {
-                    if (!destroyed) releaseDisplay(owner)
-                }
-                logReceiverDiagnostic(previous, generation, "experiment stage=RESET_MEDIA_RELEASED")
-                afterStop()
+            candidate?.let { retired ->
+                runCatching { discovery?.close() }; discovery = null
+                runCatching { retired.close() }
+                if (server === retired) server = null
+            }
+            if (active()) {
+                logReceiverDiagnostic("stage=START_FAILED exception=${error.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(error)}")
+                publishCurrent("failed")
+                stopCurrent()
             }
         }
-        discovery?.close(); discovery = null
-        lastAppliedProfile = null
     }
 
     /** A picture-only SETUP retains the independently owned type-96 soundtrack and failure gate. */
-    private fun openMirrorSink(receiverConfig: ReceiverConfig, receiverGeneration: Long): WebMediaSink {
+    private fun openMirrorSink(receiverConfig: ReceiverConfig): WebMediaSink {
         val ready = CountDownLatch(1)
         val playbackReleased = java.util.concurrent.atomic.AtomicBoolean()
         val output = synchronized(displayLock) {
-            check(!destroyed && receiverLifecycle.isCurrent(receiverGeneration) && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
+            check(active() && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
             val display = server?.displayConfig ?: receiverConfig
             WebMediaSink(TeslaBrowserLink.hub, display.width, display.height, display.fps,
                 com.shilapi.xcertplay.web.BrowserDisplaySource.AIRPLAY).also {
@@ -347,7 +345,7 @@ class AirPlayReceiverService : Service() {
         // Wait on this control thread, never while holding the service display lock.
         val available = ready.await(5, TimeUnit.SECONDS)
         synchronized(displayLock) { if (mirrorStartupReady === ready) mirrorStartupReady = null }
-        if (!available || destroyed || !receiverLifecycle.isCurrent(receiverGeneration) || mirrorOutput !== output) {
+        if (!available || !active() || mirrorOutput !== output) {
             synchronized(displayLock) {
                 output.close()
                 if (mirrorOutput === output) {
@@ -365,18 +363,17 @@ class AirPlayReceiverService : Service() {
         TeslaBrowserLink.persistDiagnostic(message)
     }
 
-    private fun logReceiverDiagnostic(mode: ReceiverMirrorExperiment, generation: Long, message: String) =
-        logDiagnostic("receiver mode=${mode.id} instance=$receiverInstance generation=$generation $message")
+    private fun logReceiverDiagnostic(message: String) =
+        logDiagnostic("receiver instance=$receiverInstance $message")
 
-    private fun logAppliedProfile(config: ReceiverConfig, generation: Long, reason: String) {
-        val profile = "mode=${config.mirrorExperiment.id} generation=$generation mirrorEnabled=${config.mirrorEnabled} " +
-            "hevcEnabled=${config.effectiveMirrorHevcEnabled} blePolicyEnabled=${config.mirrorExperiment.bluetoothDiscoveryEnabled} " +
-            "legacyPairing=${config.features and (1L shl 27) != 0L} features=0x${config.features.toString(16)} " +
+    private fun logAppliedProfile(config: ReceiverConfig, reason: String) {
+        val profile = "mirrorEnabled=${config.mirrorEnabled} hevcEnabled=${config.hevcEnabled} " +
+            "features=0x${config.features.toString(16)} " +
             "audioFormats=0x${config.audioOutputFormats.toString(16)} width=${config.width} height=${config.height} " +
             "fps=${config.fps} port=${server?.port ?: 0}"
         if (lastAppliedProfile == profile) return
         lastAppliedProfile = profile
-        logReceiverDiagnostic(config.mirrorExperiment, generation, "experiment stage=PROFILE_APPLIED reason=$reason $profile")
+        logReceiverDiagnostic("stage=PROFILE_APPLIED reason=$reason $profile")
     }
 
     /** Called under displayLock; stale ownership callbacks cannot affect a replacement producer. */
@@ -386,7 +383,7 @@ class AirPlayReceiverService : Service() {
         player.setOutputAllowed(false)
         TeslaBrowserLink.pauseCarPlayDisplay(owner) { available ->
             synchronized(displayLock) {
-                if (!destroyed && displayGeneration == generation && displayOwner === owner) {
+                if (active() && displayGeneration == generation && displayOwner === owner) {
                     if (available) { output?.resumeDisplay(); ready?.countDown() }
                     else output?.pauseDisplay()
                     // A mirror owns its sink; a queued old photo/video must stay hidden.
@@ -403,7 +400,7 @@ class AirPlayReceiverService : Service() {
         TeslaBrowserLink.resumeCarPlayDisplay(owner)
     }
 
-    private fun identity(mode: ReceiverMirrorExperiment): ReceiverConfig {
+    private fun identity(): ReceiverConfig {
         val prefs = getSharedPreferences("tiplay_airplay_receiver", MODE_PRIVATE)
         val private = prefs.getString("private", null)
         val public = prefs.getString("public", null)
@@ -417,46 +414,46 @@ class AirPlayReceiverService : Service() {
         val deviceId = prefs.getString("device", null) ?: ByteArray(6).also {
             SecureRandom().nextBytes(it); it[0] = ((it[0].toInt() or 2) and 0xfe).toByte()
         }.joinToString(":") { "%02X".format(it.toInt() and 255) }.also { prefs.edit().putString("device", it).apply() }
+        val viewport = TeslaBrowserLink.receiverViewportSnapshot(this)
+        val size = TeslaBrowserCanvas.sizeFor(viewport)
+        val capabilities = viewport?.videoCapabilities
         return ReceiverConfig("TiPlay AirPlay", deviceId, identity,
-            width = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).width,
-            height = TeslaBrowserCanvas.sizeFor(TeslaBrowserLink.lastViewport(this)).height,
-            fps = AirPlayPersistence.loadFps(this), hevcEnabled = TeslaBrowserLink.lastViewport(this)?.videoCapabilities?.hevc == true,
-            mirrorEnabled = AirPlayMirrorExperimentSettings.mirrorEnabled(mode, TeslaBrowserLink.lastViewport(this)?.videoCapabilities),
-            audioOutputFormats = TeslaBrowserLink.audioCapabilities()?.formats ?: 0L,
-            mirrorExperiment = mode)
+            width = size.width, height = size.height,
+            fps = AirPlayPersistence.loadFps(this), hevcEnabled = capabilities?.hevc == true,
+            mirrorEnabled = capabilities?.let { it.h264 || it.hevc } ?: true,
+            audioOutputFormats = viewport?.audioCapabilities?.formats ?: 0L)
     }
 
     private fun refreshDiscovery() {
-        if (destroyed) return
+        if (!active()) return
         try {
             server?.updateAudioFormats(TeslaBrowserLink.audioCapabilities()?.formats ?: 0L)
             server?.displayConfig?.let { current ->
-                if (current.mirrorExperiment.bluetoothDiscoveryEnabled) {
-                    if (bluetoothDiscovery == null) {
-                        val generation = receiverLifecycle.generation
-                        bluetoothDiscovery = AirPlayBluetoothDiscovery(this) {
-                            logReceiverDiagnostic(current.mirrorExperiment, generation, it)
-                        }
-                    }
-                    bluetoothDiscovery?.refresh(current.txt.toSortedMap().toString())
-                } else {
-                    bluetoothDiscovery?.close(); bluetoothDiscovery = null
+                if (bluetoothDiscovery == null) {
+                    bluetoothDiscovery = AirPlayBluetoothDiscovery(this, ::logReceiverDiagnostic)
                 }
-                logAppliedProfile(current, receiverLifecycle.generation, "updated")
+                bluetoothDiscovery?.refresh(current.txt.toSortedMap().toString())
+                logAppliedProfile(current, "updated")
             }
             val advertised = discovery?.refresh() == true
-            if (!advertised && state == "listening") publish("no-network")
-            else if (advertised && state == "no-network") publish("listening")
+            if (!advertised && state == "listening") publishCurrent("no-network")
+            else if (advertised && state == "no-network") publishCurrent("listening")
         } catch (error: Exception) {
-            if (!destroyed) {
+            if (active()) {
                 logDiagnostic("receiver stage=DISCOVERY_FAILED exception=${error.javaClass.simpleName} errorText=${DiagnosticErrorText.describe(error)}")
-                publish("discovery-failed")
+                publishCurrent("discovery-failed")
             }
         }
     }
 
     override fun onDestroy() {
-        receiverLifecycle.close()
+        var stoppedPublished = false
+        authorityOwner?.retire {
+            if (state !in setOf("failed", "permission", "discovery-failed")) {
+                updatePublishedState("stopped")
+                stoppedPublished = true
+            }
+        }
         settingsSubscription?.close(); settingsSubscription = null
         viewportSubscription?.close(); viewportSubscription = null
         trustRegistration?.close(); trustRegistration = null
@@ -475,9 +472,9 @@ class AirPlayReceiverService : Service() {
             server = null
             bluetoothDiscovery?.close(); bluetoothDiscovery = null
             discovery?.close(); discovery = null
-            if (state !in setOf("failed", "permission", "discovery-failed")) publish("stopped")
         }
         worker.shutdown()
+        if (stoppedPublished) notifyStateListeners()
         super.onDestroy()
     }
 
@@ -488,7 +485,7 @@ class AirPlayReceiverService : Service() {
     }
 
     companion object {
-        internal const val ACTION_APPLY_MIRROR_EXPERIMENT = "com.ujzk.tiplay.action.APPLY_AIRPLAY_MIRROR_EXPERIMENT"
+        private val serviceAuthority = AirPlayReceiverServiceAuthority()
         private val receiverInstances = java.util.concurrent.atomic.AtomicLong()
         private const val CHANNEL = "tiplay_airplay_receiver"
         internal data class StateSnapshot(val state: String, val revision: Long)
@@ -500,9 +497,16 @@ class AirPlayReceiverService : Service() {
             stateListeners.add(listener)
             return AutoCloseable { stateListeners.remove(listener) }
         }
+        /** Tests inject public status without creating a foreground Service; runtime uses its owner. */
         internal fun publish(value: String) {
+            updatePublishedState(value)
+            notifyStateListeners()
+        }
+        private fun updatePublishedState(value: String) {
             // Repeated labels are distinct events: a later failure can belong to a new cast.
             publishedState.updateAndGet { StateSnapshot(value, it.revision + 1) }
+        }
+        private fun notifyStateListeners() {
             stateListeners.forEach { it() }
         }
     }

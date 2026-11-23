@@ -169,13 +169,6 @@ class CarPlaySettingsNavigationTest {
         assertTrue(results.any { it.title == screen.getString(R.string.frame_rate) })
         assertTrue(results.any { it.title == screen.getString(R.string.settings_disable_carplay_audio) })
         assertTrue(results.any { it.title == screen.getString(R.string.save_diagnostic_report) })
-        assertEquals(1, results.count { it.title == screen.getString(R.string.settings_airplay_mirror_experiment) })
-    }
-
-    @Test fun mirrorExperimentAppearsOnceOnTheHostOwnedAdvancedPage() {
-        val screen = open(SettingsCategory.ADVANCED)
-        val prefix = screen.getString(R.string.settings_airplay_mirror_experiment) + " · "
-        assertEquals(1, labels(screen).count { it.startsWith(prefix) })
     }
 
     @Test fun homeSettingsButtonOpensTheHostMenu() {

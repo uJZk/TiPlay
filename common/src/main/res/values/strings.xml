@@ -985,14 +985,4 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">iPhone mask (experimental)</string>
 
-    <string name="settings_airplay_mirror_experiment">AirPlay first-connection experiment</string>
-    <string name="settings_airplay_mirror_experiment_hint">Switching ends the current AirPlay session. When the receiver is ready, start mirroring again on your iPhone.</string>
-    <string name="settings_airplay_mirror_experiment_baseline">A · Current behavior (baseline)</string>
-    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay H.264 only</string>
-    <string name="settings_airplay_mirror_experiment_no_ble">C · AirPlay Bluetooth discovery off</string>
-    <string name="settings_airplay_mirror_experiment_pairing">D · Advertise legacy pairing</string>
-    <string name="settings_airplay_mirror_experiment_baseline_description">Use the default AirPlay behavior as the comparison baseline.</string>
-    <string name="settings_airplay_mirror_experiment_h264_description">Offer only H.264 for AirPlay mirroring. CarPlay keeps its existing video codec.</string>
-    <string name="settings_airplay_mirror_experiment_no_ble_description">Stop the AirPlay Bluetooth advertisement and keep Wi-Fi discovery. Cached devices on the iPhone are retained.</string>
-    <string name="settings_airplay_mirror_experiment_pairing_description">Advertise legacy pairing support. The iPhone can still choose an unpaired connection; a different pairing path may need approval again.</string>
 </resources>

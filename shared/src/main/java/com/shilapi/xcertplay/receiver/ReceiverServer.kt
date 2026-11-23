@@ -143,7 +143,10 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         config
     }
 
-    fun start(): Int {
+    fun start(): Int = start { register -> register() }
+
+    /** Bind outside the caller's publication authority, then atomically install the discovery lease. */
+    fun start(publishDiscovery: (() -> Closeable) -> Closeable?): Int {
         check(!closed.get()) { "Receiver is closed" }
         maintenance.scheduleWithFixedDelay({ runCatching { dispatchNextResource() } }, 1, 1, TimeUnit.SECONDS)
         server.reuseAddress = true
@@ -166,9 +169,12 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
         }, "tiplay-airplay-listener").apply { isDaemon = true; start() }
         synchronized(discoveryLifecycle) {
             check(!closed.get()) { "Receiver is closed" }
-            discoveryInfoLease = ReceiverDiscoveryInfo.register(
-                { if (closed.get()) null else displayConfig }, ::serveLegacyConnection,
-            )
+            discoveryInfoLease = publishDiscovery {
+                ReceiverDiscoveryInfo.register(
+                    { if (closed.get()) null else displayConfig }, ::serveLegacyConnection,
+                )
+            }
+            check(discoveryInfoLease != null) { "Receiver retired before discovery publication" }
         }
         return port
     }
@@ -1559,7 +1565,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                         val sink = listener.mirrorSink()
                         output = sink
                         val receiver = ReceiverMirrorStream(streamKey, connectionId, peer, sink, clock,
-                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.effectiveMirrorHevcEnabled,
+                            log = { listener.log("c=$diagnosticId $it") }, hevcEnabled = config.hevcEnabled,
                             requestKeyFrame = { mirrorRecovery.request(token) },
                             frameReady = { mirrorRecovery.frameReady(token) },
                             recoveryClosed = { mirrorRecovery.end(token) }) {

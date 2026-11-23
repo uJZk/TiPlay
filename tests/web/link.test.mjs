@@ -423,7 +423,8 @@ test('the heartbeat after a failed POST repeats its latest events and lifts a fi
   f.outbox.push(touch(0.2));
   await f.settle();
   f.outbox.push({ k: 'vp', w: 1182 }, 'latest');
-  f.outbox.push({ k: 'dec', ep: 3 }, 'latest');
+  f.outbox.setPresentationSource({ id: 1, generation: 1, epoch: 3 });
+  f.outbox.presented({ id: 1, generation: 1, epoch: 3 });
   f.outbox.push(touch(0.2, 0));
   f.outbox.push({ k: 'fit' });
   await f.answer();
@@ -431,7 +432,7 @@ test('the heartbeat after a failed POST repeats its latest events and lifts a fi
   assert.equal(f.posts.length, 2, 'nothing is resent before the heartbeat');
   f.outbox.heartbeat();
   await f.settle();
-  assert.deepEqual(f.posts[2].events, [{ k: 'vp', w: 1182 }, { k: 'dec', ep: 3 }, { k: 't', p: [] }], 'fit is an action and is not repeated');
+  assert.deepEqual(f.posts[2].events, [{ k: 'dec', ep: 3 }, { k: 'vp', w: 1182 }, { k: 't', p: [] }], 'fit is an action and is not repeated');
   await f.answer();
   f.outbox.heartbeat();
   await f.settle();

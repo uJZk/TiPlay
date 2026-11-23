@@ -942,14 +942,4 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">iPhone 遮罩（实验性）</string>
 
-    <string name="settings_airplay_mirror_experiment">AirPlay 首连对照实验</string>
-    <string name="settings_airplay_mirror_experiment_hint">切换会结束当前 AirPlay。接收端就绪后，请在 iPhone 重新发起镜像。</string>
-    <string name="settings_airplay_mirror_experiment_baseline">A · 当前行为（基准）</string>
-    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay 仅用 H.264</string>
-    <string name="settings_airplay_mirror_experiment_no_ble">C · 关闭 AirPlay 蓝牙发现</string>
-    <string name="settings_airplay_mirror_experiment_pairing">D · 启用旧版配对声明</string>
-    <string name="settings_airplay_mirror_experiment_baseline_description">使用未调整的 AirPlay 默认行为，作为对照基准。</string>
-    <string name="settings_airplay_mirror_experiment_h264_description">仅宣告 AirPlay 镜像的 H.264 支持，CarPlay 编码不变。</string>
-    <string name="settings_airplay_mirror_experiment_no_ble_description">停止 AirPlay 蓝牙广播，保留 Wi-Fi 网络发现；iPhone 已缓存的设备不会被清除。</string>
-    <string name="settings_airplay_mirror_experiment_pairing_description">宣告旧版配对支持。iPhone 仍可选择未配对连接；切换配对路径可能需要重新授权。</string>
 </resources>

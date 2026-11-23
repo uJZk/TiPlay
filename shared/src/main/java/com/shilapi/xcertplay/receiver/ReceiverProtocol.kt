@@ -11,13 +11,10 @@ import java.net.URLDecoder
 data class ReceiverConfig(val name: String, val deviceId: String, val identity: AirPlayIdentity,
                           val width: Int = 1920, val height: Int = 1080, val fps: Int = 60,
                           val hevcEnabled: Boolean = false, val mirrorEnabled: Boolean = true,
-                          val audioOutputFormats: Long = 0L,
-                          val mirrorExperiment: ReceiverMirrorExperiment = ReceiverMirrorExperiment.BASELINE) {
+                          val audioOutputFormats: Long = 0L) {
     init { ReceiverAudioCapabilities.validateFormats(audioOutputFormats) }
-    val effectiveMirrorHevcEnabled: Boolean = hevcEnabled && !mirrorExperiment.h264Only
     // AirPlay and classic AirTunes use one RTSP listener and independent browser audio output.
-    val features: Long = ReceiverCapabilities.features(effectiveMirrorHevcEnabled, mirrorEnabled,
-        audioOutputFormats, mirrorExperiment.legacyPairingAdvertised)
+    val features: Long = ReceiverCapabilities.features(hevcEnabled, mirrorEnabled, audioOutputFormats)
     val txt: Map<String, String> get() = mapOf(
         "deviceid" to deviceId, "features" to ReceiverCapabilities.txtFeatures(features),
         "flags" to "0x4", "model" to "AppleTV3,2", "srcvers" to "220.68", "vv" to "2",

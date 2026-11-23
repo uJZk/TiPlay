@@ -6,7 +6,7 @@ subject to Android local-network permission. Its Bonjour name **TiPlay AirPlay**
 listener and pairing identity are separate from CarPlay's **TiPlay** entry.
 The RAOP/AirPlay 2 audio, BLE hints, three-choice trust and pure-audio music controls
 described here shipped in beta.23/v95 on the beta.22/code64 base;
-current experiment publication is recorded in [Build](Build.md#beta58-release).
+current maintenance status is recorded in [Build](Build.md#beta59-release).
 The [published beta.57 reference](Build.md#beta57-release) retains its separate identity.
 Browser v96 corrects the main picture's H.264 receive-level SDP declaration after
 a bounded WebRTC decoding-capability probe; it does not change the iPhone's
@@ -62,56 +62,20 @@ so the queued stopped event can be delivered. If staging is full, another staged
 channel is closed to make room.
 
 <a id="mirror-startup-experiments"></a>
-## First-mirror comparison modes
+## Removed first-mirror comparison modes
 
-Beta.58 adds **AirPlay first-connection experiment** in Android
-**Advanced settings → AirPlay**, also available in the host's Advanced page.
-Select one mode; A is the default and restores the normal configuration.
+Beta.59 removes the A/B/C/D experiment from both Advanced settings entries, along
+with its enum, resources and preference reader. Existing saved experiment values
+are ignored; no identity or remembered approval is cleared. Automatic browser
+codec capabilities and normal BLE discovery apply again. No separate first-use
+codec, pairing or discovery override remains.
 
-| Mode | Change from A |
-| --- | --- |
-| A · Current behavior (baseline) | Existing ordinary AirPlay behavior. |
-| B · AirPlay H.264 only | Ordinary mirroring stops offering or accepting HEVC. CarPlay codec selection stays automatic. |
-| C · AirPlay Bluetooth discovery off | Stops the ordinary BLE hint. Bonjour, network playback and the main endpoint's ordinary connection handoff remain available. |
-| D · Advertise legacy pairing | Adds legacy pairing capability bit27 for a mirror-capable receiver. It does not force pairing; the iPhone may still choose unpaired FairPlay. Mirror transient-pairing bits38/48 remain off. |
-
-Changing mode saves immediately, ends current ordinary AirPlay and rebuilds that
-receiver before it is ready again. This applies to returning to A too. It keeps
-the receiver identity, remembered approvals and CarPlay session; it does not
-restart CarPlay to impose another codec. B cannot enable mirroring on a browser
-that supports only HEVC. Switching off AirPlay still takes priority over a mode.
-These are comparison controls, not established repairs.
-
-On 2026-11-23 the user reports **A/B/C behave alike; D cannot connect**. None
-improves the reported first-attempt symptom. There is no accompanying beta.58
-wire capture, so these results do not prove effective profile equality or D's
-failure stage. D restores only bit27, not the old complete pairing profile or
-startup sequence. The server supports raw classic pairing but not PIN pairing or
-persistent HAP; their selection remains unobserved. Do not expand pairing support
-as a presumed repair for this startup issue. Return to A for normal use.
-
-The retained trial procedure below defines the comparison; the reported D failure
-does not require repeating that mode. Keep the same iPhone, Wi-Fi and car browser,
-with CarPlay connected.
-Stop mirroring on the iPhone, select the mode, wait for the receiver to be listening,
-then initiate mirroring once. Record whether approval appears and whether a picture
-arrives on that first attempt. If it fails, record the result of a separate second
-attempt; do not count that as first-attempt success. A remembered grant can skip
-the prompt; its absence alone is not a failed trial. Diagnostics associate the
-applied mode and receiver generation with the control/media stages, so type110
-arrival can be distinguished from approval and picture delivery.
-
-Use **A → B → A → C → A → D → A** initially. If a neighboring A trial no longer
-reproduces the failure, the comparison is inconclusive: repeat groups from the same
-CarPlay connection starting sequence. Receiver restart does not reset iOS discovery
-or CarPlay state, and its listener port may change. C does not erase an already
-cached BLE discovery result. D may expose a newly verified sender key requiring
-fresh approval; that is expected identity handling, not lost remembered trust.
-Keep approvals intact during the comparison and return to A when finished.
-If A already has no HEVC or no active BLE advertising, B or C changes no effective
-condition. The applied-profile diagnostics distinguish policy from actual radio
-state. An HEVC-only browser cannot mirror under B; that result does not identify
-the original first-attempt cause.
+The user reported A/B/C unchanged and D unable to connect. The
+[frozen beta.58 procedure](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/AirPlay.md#mirror-startup-experiments)
+retains that unsuccessful comparison and its cache/order limits. It does not
+identify D's wire failure or prove a first-attempt cause. The
+[architecture remediation](AirPlay-startup-audit.md#remediation) is separate from
+physical verification of CarPlay/AirPlay coexistence.
 
 ## Nearby Bluetooth discovery
 
@@ -269,8 +233,9 @@ or main NTP. It does not prove the field replies were equal or locate the cause.
 The [startup architecture audit](AirPlay-startup-audit.md) extends this review to
 Android service replacement, Controller/VPN lock order, browser callback lifetime
 and first-presentation message delivery. Four independent risks have controlled
-witnesses and documented counterevidence. Product code remains unchanged; these
-findings do not establish the physical first-attempt cause.
+witnesses and documented counterevidence. Beta.59 implements their
+[remediation](AirPlay-startup-audit.md#remediation); its healthy regressions do not
+establish the physical first-attempt cause.
 
 Beta.57's shipped exception omits optional nested `info` only after successful
 unpaired legacy-FairPlay initial control SETUP with valid encrypted key/IV, no

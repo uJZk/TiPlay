@@ -882,14 +882,4 @@
     <string name="black_corner_overlay_value">%1$d dp</string>
     <string name="iphone_corner_mask_mode">Máscara del iPhone (experimental)</string>
 
-    <string name="settings_airplay_mirror_experiment">Prueba de primera conexión AirPlay</string>
-    <string name="settings_airplay_mirror_experiment_hint">Al cambiar se cierra la sesión AirPlay actual. Cuando el receptor esté listo, vuelve a iniciar la duplicación en el iPhone.</string>
-    <string name="settings_airplay_mirror_experiment_baseline">A · Comportamiento actual (referencia)</string>
-    <string name="settings_airplay_mirror_experiment_h264">B · AirPlay solo con H.264</string>
-    <string name="settings_airplay_mirror_experiment_no_ble">C · Sin detección Bluetooth de AirPlay</string>
-    <string name="settings_airplay_mirror_experiment_pairing">D · Anunciar emparejamiento antiguo</string>
-    <string name="settings_airplay_mirror_experiment_baseline_description">Usa el comportamiento predeterminado de AirPlay como referencia.</string>
-    <string name="settings_airplay_mirror_experiment_h264_description">Anuncia solo H.264 para la duplicación AirPlay. CarPlay conserva su códec de vídeo.</string>
-    <string name="settings_airplay_mirror_experiment_no_ble_description">Detiene el anuncio Bluetooth de AirPlay y mantiene la detección por Wi-Fi. No borra los dispositivos guardados en el iPhone.</string>
-    <string name="settings_airplay_mirror_experiment_pairing_description">Anuncia compatibilidad con el emparejamiento antiguo. El iPhone puede seguir conectándose sin emparejar; otra vía de emparejamiento puede requerir una nueva autorización.</string>
 </resources>
