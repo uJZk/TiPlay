@@ -5,7 +5,7 @@
 <p align="center"><strong>用安卓手机，在车载浏览器里使用 CarPlay。</strong></p>
 
 <div align="center">
-<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24"><img alt="Source version 0.2.20-beta.24" src="https://img.shields.io/badge/source-0.2.20--beta.24-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
+<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases"><img alt="Latest beta release" src="https://img.shields.io/badge/release-beta-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
 </div>
 
 <p align="center"><a href="https://github.com/uJZk/TiPlay/releases">下载 APK</a> · <a href="https://ujzk.github.io/TiPlay/">打开浏览器播放器</a> · <a href="docs/README.md">文档目录</a></p>

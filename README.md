@@ -5,7 +5,7 @@
 <p align="center"><strong>CarPlay in your car’s browser, powered by an Android phone.</strong></p>
 
 <div align="center">
-<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.24"><img alt="Source version 0.2.20-beta.24" src="https://img.shields.io/badge/source-0.2.20--beta.24-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
+<a href="https://github.com/uJZk/TiPlay/actions/workflows/android.yml"><img alt="Android checks" src="https://github.com/uJZk/TiPlay/actions/workflows/android.yml/badge.svg"></a> <a href="https://github.com/uJZk/TiPlay/releases"><img alt="Latest beta release" src="https://img.shields.io/badge/release-beta-5075d6"></a> <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a> <img alt="Kotlin and JavaScript" src="https://img.shields.io/badge/languages-Kotlin%20%2F%20JavaScript-7f52ff">
 </div>
 
 <p align="center"><a href="https://github.com/uJZk/TiPlay/releases">Download APK</a> · <a href="https://ujzk.github.io/TiPlay/">Open browser player</a> · <a href="docs/README.md">Documentation</a></p>
