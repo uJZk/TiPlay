@@ -1476,7 +1476,6 @@ class AirPlaySession(
     }
 }
 
-/** The features SETUP enables; video in car only when configured and the iPhone [proposed] it. */
 /** The session feature the iPhone proposes for main buffered audio. */
 internal const val MAIN_BUFFERED_FEATURE = "mainBuffered"
 
@@ -1498,6 +1497,7 @@ internal fun findIphoneCornerMask(value: Any?, depth: Int = 0): ByteArray? {
     }
 }
 
+/** The features SETUP enables; video in car only when configured and the iPhone [proposed] it. */
 internal fun setupEnabledFeatures(config: AirPlayConfig, proposed: List<*>?): List<String> {
     val features = mutableListOf<String>()
     if (config.hevc) features.add("hevc")

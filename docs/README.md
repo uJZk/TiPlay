@@ -31,6 +31,6 @@ Start with the [English README](../README.md) or [简体中文](../README.zh-CN.
 - [Contributor instructions](../AGENTS.md), [changes](../CHANGELOG.md) and [security](../SECURITY.md).
 
 Keep one stable page per topic. Filenames start with a capital, use hyphens, and omit dates;
-conventional entry files and legal/vendor names are exceptions. Only the latest [code sweep](sweep-2026-10-26/README.md) and
-[documentation sweep](docs-sweep-2026-10-26/README.md) are retained. Earlier implementation notes, validation logs and release diaries remain in Git;
+conventional entry files and legal/vendor names are exceptions. The latest [code sweep](sweep-2026-11-23/README.md) and
+[documentation sweep](docs-sweep-2026-10-26/README.md) record their results; the earlier code-sweep delivery record remains linked as historical evidence. Earlier implementation notes, validation logs and release diaries remain in Git;
 [upstream releases](https://github.com/shihabal3amri/DiPlay/releases) describe the separate upstream product.

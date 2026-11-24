@@ -1,0 +1,8 @@
+# Common and mobile review
+
+- Status: review complete; full verification delegated to coordinator.
+- Reviewed changed receiver authority, service and browser source ownership, Bluetooth selection and session controller, diagnostic export/snapshot and native crash capture, settings flows, debug foreground proof and instrumentation at the level appropriate to unchanged behavior. Surveyed changed regression coverage and build/manifest changes. Checked changed Kotlin/Java files for obvious unused imports and private declarations; reported candidates belong to inherited unchanged hunks and were left alone under standard 1.
+- Hoisted the existing `BrowserAudioDiagnostics` field-name sets to private constants, avoiding repeated set allocation during formatting while keeping all membership tests and output behavior unchanged. No public API, field names or validation thresholds changed.
+- Parsed the changed Bluetooth and diagnostics resource XML in every existing locale and compared keys to the default; no missing keys reported. `git diff --check` passed for the historical common/mobile diff and the local change.
+- A focused Gradle run was started with the provisioned toolchain, but cancelled at the coordinator's request to avoid concurrent shared build output; it did not complete. The coordinator's full common unit-test run covers `BrowserAudioDiagnosticsTest`, `CarBluetoothSessionControllerTest` and `AirPlayReceiverServiceAuthorityTest`. Kotlin daemon startup in this environment attempted to write under read-only `/home/agent/.local` and fell back to non-daemon compilation.
+- Open decisions: none identified from this review. Physical device behavior remains outside the scope of this cleanup.

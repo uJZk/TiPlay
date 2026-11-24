@@ -1,0 +1,7 @@
+# Media test failure investigation
+
+The full verification reported a failure in `AndroidBluetoothMicrophoneBootstrapTest.missingOrInvalidProductSelectionNeverBorrowsTheOnlyScoMicrophone`, line 329. The test and production behavior at this point match starting commit `a388bc61`; this sweep only reordered an import and formatted a data class. Thus the failure is not explained by an executable media code change in this sweep.
+
+Line 329 contains three separate operations: checking that recording never started, checking that no packet arrived, and proving playback remains active. The XML report and precise assertion/stack trace were not yet available during investigation, so the failed operation and cause are unconfirmed. `proveOutput()` depends on asynchronous worker progress and a three-second real-time timeout; a timeout there could be scheduling-sensitive, but that is only a possibility, not a diagnosis. The test also iterates four selections on that line without identifying which one failed.
+
+Current source gates the microphone bootstrap on a valid selected Bluetooth identity; the legacy direct path selects a matching input, and the fixture's input address differs from the placeholder selection. This source inspection does not establish that every runtime path satisfies the test. Preserve the failure as unresolved until the exact report is inspected and an isolated reproduction can run without competing Gradle builds.

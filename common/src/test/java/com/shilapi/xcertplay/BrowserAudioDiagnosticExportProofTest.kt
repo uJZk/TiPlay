@@ -29,8 +29,8 @@ import org.robolectric.annotation.Config
 @Config(sdk = [29])
 class BrowserAudioDiagnosticExportProofTest {
     private val app get() = RuntimeEnvironment.getApplication()
-    private val callbacks get() = TeslaBrowserLink::class.java.getDeclaredField("callbacks")
-        .apply { isAccessible = true }.get(null) as BrowserLinkServer.Callbacks
+    private lateinit var callbacks: BrowserLinkServer.Callbacks
+    private lateinit var previousServerFactory: TeslaBrowserLink.ServerFactory
 
     @Before fun setup() {
         TeslaBrowserLink.resetForTest()
@@ -38,10 +38,22 @@ class BrowserAudioDiagnosticExportProofTest {
         RawTraffic.clear()
         File(app.filesDir, "logs").deleteRecursively()
         app.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        previousServerFactory = TeslaBrowserLink.serverFactory
+        TeslaBrowserLink.serverFactory = TeslaBrowserLink.ServerFactory { _, sourceCallbacks ->
+            callbacks = sourceCallbacks
+            object : TeslaBrowserLink.Server {
+                override fun start() = Result.success(8080)
+                override fun stop() = Unit
+            }
+        }
+        TeslaBrowserLink.start(app)
+        assertTrue(TeslaBrowserLink.awaitIdle())
+        assertTrue("The fixture needs an active callback source", TeslaBrowserLink.state is TeslaBrowserLink.State.Listening)
     }
 
     @After fun cleanup() {
         TeslaBrowserLink.resetForTest()
+        TeslaBrowserLink.serverFactory = previousServerFactory
         DiagnosticLogs.resetForTest()
         RawTraffic.clear()
         app.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()

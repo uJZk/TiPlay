@@ -42,7 +42,7 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   and [Todo](docs/Todo.md): source checks, published provenance and physical acceptance.
 - [Upstream](docs/Upstream.md), [third-party notices](docs/Third-party-notices.md)
   and [README presentation](docs/Readme-presentation.md): merge rules, licenses and artwork.
-- [Latest code sweep](docs/sweep-2026-10-26/README.md) and
+- [Latest code sweep](docs/sweep-2026-11-23/README.md) and
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 

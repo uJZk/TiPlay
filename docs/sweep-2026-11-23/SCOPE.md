@@ -1,0 +1,397 @@
+# Scope
+
+History since `4b89fc7d7e88a1e9c1824fef0cf4f7b4bcd98872` through `a388bc61`; includes paths subsequently deleted. Generated and vendor files, sweep records and prose documentation are excluded. No uncommitted changes at start. Entries show commits and count.
+
+- `.gitattributes` (3): c9732000, 25427fad, d3cda3d1
+- `.github/ISSUE_TEMPLATE/bug.yml` (1): 1bc4eb79
+- `.github/ISSUE_TEMPLATE/feature_request.yml` (1): 1bc4eb79
+- `.github/workflows/android-microphone.yml` (1): abbbf23f
+- `.github/workflows/android-release.yml` (2): e7a71d0d, a4669e56
+- `.github/workflows/android.yml` (3): 34f1d730, 424ed6c8, a4669e56
+- `.github/workflows/native-emulator-proof.yml` (2): e1c09135, c9732000
+- `.github/workflows/native-rtc-audio.yml` (8): 0252087e, a038a830, 4964d432, 950f5661, e7a71d0d, c7e1614a, 0ce6fe53, a4669e56
+- `.github/workflows/native-source-rate.yml` (3): a4669e56, e1c09135, c9732000
+- `AGENTS.md` (68): a388bc61, d7277c2d, 61855464, 9bc5dfbe, 685cd9d8, fec67c35, 8e9791c8, dd499e96, 8ea62cde, 0179c353, 86cbff4c, 0233d512, 9d37aada, dbd2b61d, fc1f4140, a3e2e2f3, be09f17e, f0d0b7f0, 68ba158f, 9a03b85c, 7b5cfb93, ec68c4e4, aafbf7bb, e7a71d0d, 7e01eb29, 95850493, b9aef142, 43e4e095, eccd1f6f, 208ff374, 83634d29, 8e2a3ffa, 924700b0, 7d3e0756, db558c4e, 9245a364, 81adbf35, 0b693bad, d5dd4482, 47cf959c, b188c909, 8da4eabd, f00d2b69, 424ed6c8, 1b20ac81, 09f98f1d, 8eb3e466, 0d7e3822, c2f3fb32, 17b43bea, c05baef5, ab629363, aef6c97a, 842574d1, 544da553, a4669e56, c1ad4b32, e1c09135, 25427fad, f7de5086, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970, 1bc4eb79
+- `CHANGELOG.md` (12): 43e4e095, eccd1f6f, 208ff374, 83634d29, 924700b0, db558c4e, 9245a364, 0b693bad, 47cf959c, 8da4eabd, c1ad4b32, e1c09135
+- `common/src/debug/AndroidManifest.xml` (1): abbbf23f
+- `common/src/debug/java/com/shilapi/xcertplay/foregroundproof/ForegroundAdmissionGuardService.kt` (1): abbbf23f
+- `common/src/debug/java/com/shilapi/xcertplay/foregroundproof/ForegroundAdmissionJournal.kt` (1): abbbf23f
+- `common/src/debug/java/com/shilapi/xcertplay/foregroundproof/ForegroundAdmissionProbeService.kt` (1): abbbf23f
+- `common/src/debug/java/com/shilapi/xcertplay/foregroundproof/ForegroundAdmissionProofActivity.kt` (1): abbbf23f
+- `common/src/main/AndroidManifest.xml` (1): c9732000
+- `common/src/main/java/com/shilapi/xcertplay/AirPlayMirrorExperimentSettings.kt` (2): d7277c2d, fec67c35
+- `common/src/main/java/com/shilapi/xcertplay/AirPlayMirrorExperimentUi.kt` (2): d7277c2d, fec67c35
+- `common/src/main/java/com/shilapi/xcertplay/AirPlayMirrorReceiverLifecycle.kt` (2): d7277c2d, fec67c35
+- `common/src/main/java/com/shilapi/xcertplay/AirPlayReceiverService.kt` (4): d7277c2d, fec67c35, c9732000, 16c754dc
+- `common/src/main/java/com/shilapi/xcertplay/AirPlayReceiverServiceAuthority.kt` (1): d7277c2d
+- `common/src/main/java/com/shilapi/xcertplay/AsyncDiagnosticLog.kt` (1): a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/BrowserAdvancedPage.kt` (3): d7277c2d, fec67c35, 8eb3e466
+- `common/src/main/java/com/shilapi/xcertplay/BrowserAdvancedSettings.kt` (2): d7277c2d, fec67c35
+- `common/src/main/java/com/shilapi/xcertplay/BrowserAudioDiagnostics.kt` (3): b9aef142, 16c754dc, 41c03970
+- `common/src/main/java/com/shilapi/xcertplay/BrowserCarPlayAudioSettings.kt` (1): c9732000
+- `common/src/main/java/com/shilapi/xcertplay/BrowserCarPlayRetry.kt` (1): 9245a364
+- `common/src/main/java/com/shilapi/xcertplay/BrowserCarPlayWatch.kt` (2): 924700b0, a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/BrowserConnectionHints.kt` (1): 924700b0
+- `common/src/main/java/com/shilapi/xcertplay/BrowserMainSettingsMenu.kt` (3): 17b43bea, e1c09135, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/CarBluetoothConnection.kt` (3): a4669e56, e1c09135, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/CarBluetoothSelection.kt` (3): a4669e56, e1c09135, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/CarBluetoothStatus.kt` (1): c9732000
+- `common/src/main/java/com/shilapi/xcertplay/CarPlayHostActivity.kt` (5): a3e2e2f3, f0d0b7f0, 924700b0, e1c09135, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/DiPlayActivity.kt` (3): d7277c2d, fec67c35, e1c09135
+- `common/src/main/java/com/shilapi/xcertplay/DiPlayBluetooth.kt` (1): 924700b0
+- `common/src/main/java/com/shilapi/xcertplay/DiPlaySessionService.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticDialogUi.kt` (1): c9732000
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticLogActions.kt` (3): a4669e56, e1c09135, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticLogDialog.kt` (2): a4669e56, c9732000
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticLogSnapshot.kt` (1): a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticLogs.kt` (1): a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticReportContent.kt` (2): a4669e56, c1ad4b32
+- `common/src/main/java/com/shilapi/xcertplay/DiagnosticTemporaryFiles.kt` (1): a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/NativeCrashDiagnostics.kt` (2): a4669e56, c1ad4b32
+- `common/src/main/java/com/shilapi/xcertplay/ProcessExitDiagnostics.kt` (1): 924700b0
+- `common/src/main/java/com/shilapi/xcertplay/SessionForegroundPreparation.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/main/java/com/shilapi/xcertplay/SessionLogFile.kt` (1): a4669e56
+- `common/src/main/java/com/shilapi/xcertplay/TeslaBrowserLink.kt` (6): d7277c2d, a3e2e2f3, f0d0b7f0, b9aef142, 8da4eabd, c9732000
+- `common/src/main/res/values-ar/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-ar/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-ar/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-es/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-es/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-es/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-ja/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-ja/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-ja/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-ru/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-ru/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-ru/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-uk/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-uk/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-uk/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-zh-rCN/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-zh-rCN/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-zh-rCN/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values-zh-rTW/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values-zh-rTW/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values-zh-rTW/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/main/res/values/strings.xml` (2): d7277c2d, fec67c35
+- `common/src/main/res/values/strings_car_bluetooth.xml` (2): e1c09135, c9732000
+- `common/src/main/res/values/strings_diagnostics.xml` (2): a4669e56, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayMirrorExperimentSettingsTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayMirrorPictureContinuityTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayMirrorReceiverLifecycleTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayReceiverAudioCapabilitiesTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayReceiverExperimentServiceTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayReceiverServiceAuthorityTest.kt` (1): d7277c2d
+- `common/src/test/java/com/shilapi/xcertplay/AirPlayReceiverServiceStartupTest.kt` (1): d7277c2d
+- `common/src/test/java/com/shilapi/xcertplay/AsyncDiagnosticLogTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/BrowserAdvancedPageTest.kt` (3): d7277c2d, fec67c35, 8eb3e466
+- `common/src/test/java/com/shilapi/xcertplay/BrowserAudioDiagnosticExportProofTest.kt` (1): b9aef142
+- `common/src/test/java/com/shilapi/xcertplay/BrowserAudioDiagnosticsTest.kt` (3): b9aef142, 16c754dc, 41c03970
+- `common/src/test/java/com/shilapi/xcertplay/BrowserCarPlayRetryTest.kt` (1): 9245a364
+- `common/src/test/java/com/shilapi/xcertplay/BrowserMainHostTest.kt` (3): 924700b0, e1c09135, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/BrowserMainPageTest.kt` (3): 17b43bea, e1c09135, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/CarBluetoothPermissionRecoveryTest.kt` (2): e1c09135, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/CarBluetoothSelectionStateTest.kt` (2): e1c09135, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/CarBluetoothSelectionTest.kt` (1): e1c09135
+- `common/src/test/java/com/shilapi/xcertplay/CarBluetoothSessionControllerTest.kt` (2): a4669e56, c9732000
+- `common/src/test/java/com/shilapi/xcertplay/CarBluetoothStatusTest.kt` (1): c9732000
+- `common/src/test/java/com/shilapi/xcertplay/CarPlayBonjourDualStackTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/CarPlayHostBrowserLinkTest.kt` (1): f0d0b7f0
+- `common/src/test/java/com/shilapi/xcertplay/CarPlaySettingsNavigationTest.kt` (2): d7277c2d, fec67c35
+- `common/src/test/java/com/shilapi/xcertplay/DiPlaySessionServiceTest.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticExportFallbackTest.kt` (1): c1ad4b32
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticExportStoreTest.kt` (1): c1ad4b32
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticLogActionsTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticLogDialogTest.kt` (1): c9732000
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticLogsTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticNativeCrashExportTest.kt` (1): c1ad4b32
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticPreparationReliabilityTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/DiagnosticProcessExportTest.kt` (1): e1c09135
+- `common/src/test/java/com/shilapi/xcertplay/NativeCrashDiagnosticsTest.kt` (1): c1ad4b32
+- `common/src/test/java/com/shilapi/xcertplay/PhoneBrowserSessionServiceTest.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/test/java/com/shilapi/xcertplay/ProcessExitDiagnosticsTest.kt` (1): 924700b0
+- `common/src/test/java/com/shilapi/xcertplay/ReceiverBonjourLifecycleTest.kt` (1): a4669e56
+- `common/src/test/java/com/shilapi/xcertplay/SessionForegroundPreparationHostTest.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/test/java/com/shilapi/xcertplay/SessionForegroundPreparationTest.kt` (2): a3e2e2f3, f0d0b7f0
+- `common/src/test/java/com/shilapi/xcertplay/TeslaBrowserSourceOwnershipTest.kt` (1): d7277c2d
+- `common/src/test/java/com/shilapi/xcertplay/WirelessStartupRecoveryTest.kt` (2): 924700b0, 9245a364
+- `gradle.properties` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `mobile/build.gradle.kts` (2): e7a71d0d, a4669e56
+- `mobile/src/androidTest/java/com/shilapi/xcertplay/web/NativeAudioProbeInstrumentation.java` (4): 9a03b85c, 0252087e, 4964d432, e7a71d0d
+- `scripts/archive_native_symbols.py` (2): d038685c, a4669e56
+- `scripts/avplayer/build.mjs` (4): 25427fad, 031491e9, 16c754dc, 964d176b
+- `scripts/avplayer/caption-patches.mjs` (1): 25427fad
+- `scripts/avplayer/embedded-captions.js` (1): 25427fad
+- `scripts/avplayer/entry.js` (1): 25427fad
+- `scripts/captions/README.md` (1): 25427fad
+- `scripts/captions/build.mjs` (1): 25427fad
+- `scripts/captions/entry.js` (1): 25427fad
+- `scripts/captions/extract.js` (1): 25427fad
+- `scripts/captions/package-lock.json` (1): 25427fad
+- `scripts/captions/package.json` (1): 25427fad
+- `scripts/collect_apk_native_symbols.py` (1): a4669e56
+- `scripts/native_symbols.py` (1): a4669e56
+- `scripts/native_symbols_historical.json` (1): a4669e56
+- `scripts/rtc-audio/build.py` (2): e7a71d0d, a4669e56
+- `scripts/rtc-audio/libjuice-ipv4-link-local.patch` (1): e7a71d0d
+- `scripts/rtc-audio/source-patches.json` (1): e7a71d0d
+- `scripts/rtc-audio/source_patches.py` (1): e7a71d0d
+- `scripts/rtc-audio/test_native.py` (1): eccd1f6f
+- `scripts/webrtc/build.py` (3): a4669e56, e1c09135, c9732000
+- `scripts/webrtc/publisher-compat.patch` (1): c9732000
+- `scripts/webrtc/source-rate-video.patch` (2): aef6c97a, c9732000
+- `scripts/webrtc/test_android_experiment.sh` (1): c9732000
+- `scripts/webrtc/test_build.py` (3): a4669e56, e1c09135, c9732000
+- `scripts/webrtc/test_compat_javac.py` (2): e1c09135, c9732000
+- `scripts/webrtc/test_verify_release_apk.py` (1): c9732000
+- `scripts/webrtc/verify_release_aar.py` (1): c9732000
+- `scripts/webrtc/verify_release_apk.py` (1): c9732000
+- `settings.gradle.kts` (2): a4669e56, c9732000
+- `shared/build.gradle` (2): a4669e56, c9732000
+- `shared/libs/webrtc-source-rate/LICENSE.md` (1): c9732000
+- `shared/libs/webrtc-source-rate/README.md` (3): ab629363, e1c09135, c9732000
+- `shared/libs/webrtc-source-rate/SHA256SUMS` (2): ab629363, c9732000
+- `shared/libs/webrtc-source-rate/tiplay-source-rate.provenance.json` (2): ab629363, c9732000
+- `shared/libs/webrtc-source-rate/webrtc-source-rate.aar` (2): ab629363, c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioModeDiagnostics.kt` (1): 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioSetupDiagnostics.kt` (1): 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt` (5): d7277c2d, 94a98318, 6db3fa9d, a4669e56, 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/CarPlayScreenBorrowDiagnostics.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/EventWriteDeadline.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/RtspMessage.kt` (1): c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/ScreenStream.kt` (1): 17b43bea
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/ArchiveStagingIO.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/CompressedTrafficArchive.kt` (2): a4669e56, c1ad4b32
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/RawMetadataCapture.kt` (2): 17b43bea, a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/RawTraffic.kt` (3): 17b43bea, a4669e56, c1ad4b32
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/RawTrafficArchive.kt` (2): a4669e56, c1ad4b32
+- `shared/src/main/java/com/shilapi/xcertplay/media/AndroidBluetoothVoiceChannel.kt` (14): dbd2b61d, a3e2e2f3, f0d0b7f0, 192156a4, 42971b68, 81303821, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, a4669e56, c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/media/BluetoothVoiceChannel.kt` (1): 81303821
+- `shared/src/main/java/com/shilapi/xcertplay/media/BrowserAudioMediaSink.kt` (3): dbd2b61d, 81303821, a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/media/BrowserMicrophone.kt` (1): 8da4eabd
+- `shared/src/main/java/com/shilapi/xcertplay/media/MicrophoneCaptureLease.kt` (1): f0d0b7f0
+- `shared/src/main/java/com/shilapi/xcertplay/network/BonjourMdnsCleanup.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/network/BonjourProbeInput.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/network/BonjourServiceNames.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt` (2): a4669e56, c1ad4b32
+- `shared/src/main/java/com/shilapi/xcertplay/network/CarPlayVpnService.kt` (2): d7277c2d, 94a98318
+- `shared/src/main/java/com/shilapi/xcertplay/network/WirelessReceiveDiagnostics.kt` (1): b01b05f6
+- `shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt` (2): a4669e56, c1ad4b32
+- `shared/src/main/java/com/shilapi/xcertplay/orchestration/WirelessRadioOwnership.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverBonjour.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverCapabilities.kt` (3): d7277c2d, fec67c35, 8eb3e466
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverDeviceTrust.kt` (3): fec67c35, c9732000, 16c754dc
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverDiscoveryInfo.kt` (2): 94a98318, 6db3fa9d
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverInfoProtocol.kt` (2): 6db3fa9d, 924700b0
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorExperiment.kt` (2): d7277c2d, fec67c35
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorPreparation.kt` (1): 924700b0
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorRecovery.kt` (3): 83634d29, db558c4e, 9245a364
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorSdr.kt` (1): 9245a364
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorStream.kt` (2): 9245a364, c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverProtocol.kt` (2): d7277c2d, fec67c35
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverProtocolDiagnostics.kt` (5): 6db3fa9d, c9732000, 031491e9, cf91a603, 16c754dc
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverSenderIdentity.kt` (3): 6db3fa9d, 031491e9, 16c754dc
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverServer.kt` (14): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, 924700b0, db558c4e, 9245a364, 0b693bad, 424ed6c8, 8eb3e466, c9732000, 031491e9, 16c754dc
+- `shared/src/main/java/com/shilapi/xcertplay/transport/BluetoothRadioCheck.kt` (1): 924700b0
+- `shared/src/main/java/com/shilapi/xcertplay/transport/LockdownCarKitClient.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayPlaybackDiagnostics.kt` (1): 17b43bea
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayVideoPlayback.kt` (1): 17b43bea
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayVideoProxy.kt` (1): 17b43bea
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcAudioCandidates.kt` (1): 0b693bad
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcAudioRoutePolicy.kt` (1): 9a03b85c
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcAudioRouter.kt` (3): 924700b0, 9245a364, 8da4eabd
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcCallbackQueue.kt` (1): a4669e56
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcPeer.kt` (15): 9a03b85c, b9aef142, eccd1f6f, 9245a364, 47cf959c, 8da4eabd, a4669e56, c9732000, 25427fad, 16c754dc, 964d176b, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcPendingVideo.kt` (2): 47cf959c, 8da4eabd
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcSourceRateGuard.kt` (3): 9245a364, 47cf959c, c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoDiagnostics.kt` (2): 401c2382, 964d176b
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoLease.kt` (1): c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoSourceProcessor.kt` (1): a4cae7f3
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoTrack.kt` (7): 83634d29, 9245a364, c9732000, c25e92d2, 6098d4ed, a4cae7f3, 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoTransaction.kt` (1): c9732000
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserVideoDiagnosticsSchema.kt` (2): 16c754dc, 41c03970
+- `shared/src/main/java/com/shilapi/xcertplay/web/NativeAudioDiagnosticLog.kt` (1): b9aef142
+- `shared/src/main/java/com/shilapi/xcertplay/web/NativeRtcAudioPeer.kt` (7): 9a03b85c, b9aef142, eccd1f6f, 9245a364, 0b693bad, 47cf959c, 8da4eabd
+- `shared/src/main/java/com/shilapi/xcertplay/web/WebAudioHub.kt` (1): 8da4eabd
+- `shared/src/main/java/com/shilapi/xcertplay/web/WebVideoHub.kt` (2): 9245a364, a4669e56
+- `shared/src/main/jni/rtc-audio/README.md` (1): e7a71d0d
+- `shared/src/main/jni/rtc-audio/artifacts.json` (1): aafbf7bb
+- `shared/src/main/jni/rtc-audio/prebuilt/arm64-v8a/libdatachannel.so` (1): aafbf7bb
+- `shared/src/main/jni/rtc-audio/prebuilt/armeabi-v7a/libdatachannel.so` (1): aafbf7bb
+- `shared/src/main/jni/rtc-audio/prebuilt/x86/libdatachannel.so` (1): aafbf7bb
+- `shared/src/main/jni/rtc-audio/prebuilt/x86_64/libdatachannel.so` (1): aafbf7bb
+- `shared/src/main/jni/rtc-audio/rtc_audio_jni.c` (3): 9a03b85c, eccd1f6f, 47cf959c
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioModeDiagnosticsTest.kt` (1): 41c03970
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioSetupDiagnosticsTest.kt` (1): 41c03970
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayBleDiscoverySocketTest.kt` (3): 179a4953, 94a98318, 6db3fa9d
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarBluetoothAudioSessionTest.kt` (1): 41c03970
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlayEventChannelTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlayScreenBorrowDiagnosticsTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlaySocketLifecycleTest.kt` (2): 964d176b, c25e92d2
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CurrentScreenListenerTest.kt` (1): e1c09135
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/EventWriteDeadlineTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/RtspMessageUtf8Test.kt` (1): c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/ArchiveAttachmentsTest.kt` (1): c1ad4b32
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/CompressedTrafficTest.kt` (2): a4669e56, c1ad4b32
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/RawMetadataCaptureTest.kt` (2): 17b43bea, a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/hud/BluetoothSuspendLifecycleTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/media/AndroidBluetoothMicrophoneBootstrapTest.kt` (3): dbd2b61d, a3e2e2f3, f0d0b7f0
+- `shared/src/test/java/com/shilapi/xcertplay/media/AndroidBluetoothPlaybackTest.kt` (3): 192156a4, 42971b68, 81303821
+- `shared/src/test/java/com/shilapi/xcertplay/media/AndroidBluetoothVoiceChannelTest.kt` (8): 42971b68, 81303821, 83634d29, 924700b0, 9245a364, 8da4eabd, a4669e56, c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/media/BrowserAudioMediaSinkTest.kt` (3): dbd2b61d, 81303821, a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/media/BrowserMicrophoneTest.kt` (1): 8da4eabd
+- `shared/src/test/java/com/shilapi/xcertplay/media/MicrophoneCaptureLeaseTest.kt` (1): f0d0b7f0
+- `shared/src/test/java/com/shilapi/xcertplay/network/AirPlayTcpAcceptTest.kt` (1): d7277c2d
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourMailboxTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourMdnsCleanupTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourProbeInputTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayBonjourTest.kt` (1): c1ad4b32
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayVpnRetirementTest.kt` (1): d7277c2d
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayVpnScopeTest.kt` (1): d7277c2d
+- `shared/src/test/java/com/shilapi/xcertplay/network/WirelessReceiveDiagnosticsTest.kt` (2): 4a46def1, b01b05f6
+- `shared/src/test/java/com/shilapi/xcertplay/orchestration/CarPlayWirelessOwnershipTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/orchestration/WirelessRadioOwnershipTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverAirPlay2ServerTest.kt` (4): 179a4953, 924700b0, 424ed6c8, 031491e9
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverCombinedSetupInfoTest.kt` (2): 179a4953, 924700b0
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDeviceTrustTest.kt` (2): fec67c35, c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDiscoveryInfoServerTest.kt` (1): 6db3fa9d
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDiscoveryInfoTest.kt` (2): 94a98318, 6db3fa9d
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverInfoProtocolTest.kt` (1): 6db3fa9d
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverLegacyConnectionServerTest.kt` (1): 94a98318
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorExperimentTest.kt` (2): d7277c2d, fec67c35
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorKeyFrameTest.kt` (1): 9245a364
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorPreparationServerTest.kt` (1): 924700b0
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorPreparationTest.kt` (1): 924700b0
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorRecoveryTest.kt` (3): 83634d29, db558c4e, 9245a364
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorStartupTest.kt` (2): 9245a364, c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverProtocolDiagnosticsTest.kt` (4): 6db3fa9d, c9732000, 031491e9, a3987d19
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverProtocolTest.kt` (2): d7277c2d, 8eb3e466
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverSenderIdentityTest.kt` (3): 6db3fa9d, 031491e9, 16c754dc
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverServerTest.kt` (9): d7277c2d, fec67c35, 0b693bad, 424ed6c8, 8eb3e466, c9732000, a746da02, 031491e9, 16c754dc
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverSetupIdentityServerTest.kt` (1): 6db3fa9d
+- `shared/src/test/java/com/shilapi/xcertplay/transport/BluetoothRadioCheckTest.kt` (1): 924700b0
+- `shared/src/test/java/com/shilapi/xcertplay/transport/LockdownServiceOwnershipTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayPlaybackDiagnosticsTest.kt` (1): 17b43bea
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayVideoPlaybackTest.kt` (1): c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayVideoProxyTest.kt` (1): 17b43bea
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkServerTest.kt` (1): 17b43bea
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioCandidatesTest.kt` (1): 0b693bad
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioRoutePolicyTest.kt` (1): 9a03b85c
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioRouterTest.kt` (3): 924700b0, 9245a364, 8da4eabd
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcCallbackQueueTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcNativeObserverTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcPendingVideoTest.kt` (2): 47cf959c, 8da4eabd
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcSourceRateGuardTest.kt` (3): 9245a364, 47cf959c, c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoDiagnosticsTest.kt` (2): 401c2382, 964d176b
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoFailureDrainTest.kt` (1): 9245a364
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoFlowTest.kt` (4): 9245a364, c9732000, 6098d4ed, 41c03970
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoInputTest.kt` (1): 6098d4ed
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoKeyFrameDeadlineTest.kt` (1): 9245a364
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoRecoveryTest.kt` (2): 83634d29, c25e92d2
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoSourceProcessorTest.kt` (1): a4cae7f3
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoTransactionTest.kt` (1): c9732000
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserVideoDiagnosticsSchemaTest.kt` (2): 16c754dc, 41c03970
+- `shared/src/test/java/com/shilapi/xcertplay/web/NativeAudioDiagnosticLogTest.kt` (1): b9aef142
+- `shared/src/test/java/com/shilapi/xcertplay/web/NativeRtcAudioStatesTest.kt` (3): eccd1f6f, 9245a364, 47cf959c
+- `shared/src/test/java/com/shilapi/xcertplay/web/ScreenStreamEmptyConfigTest.kt` (1): 17b43bea
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebAudioHubTest.kt` (1): 8da4eabd
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebVideoHubTest.kt` (1): a4669e56
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebVideoMirrorIngressTest.kt` (1): 9245a364
+- `shared/src/test/resources/Browser-live-policy-diagnostics-v1.json` (3): c9732000, 16c754dc, 41c03970
+- `site/ar/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/es/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/ja/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/play/airplay-controls.css` (2): a746da02, 031491e9
+- `site/play/airplay-controls.js` (4): 17b43bea, c9732000, a746da02, 031491e9
+- `site/play/airplay-diagnostics.js` (1): 17b43bea
+- `site/play/airplay-fetch-bridge.js` (1): 16c754dc
+- `site/play/airplay-media.js` (3): 25427fad, b01b05f6, 16c754dc
+- `site/play/airplay-trust.js` (1): c9732000
+- `site/play/app-version.js` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/play/app.js` (11): d7277c2d, b9aef142, eccd1f6f, 7027555a, 17b43bea, a4669e56, c9732000, b01b05f6, a746da02, 2cf5f0d6, 031491e9
+- `site/play/audio.js` (4): b9aef142, eccd1f6f, 9245a364, 16c754dc
+- `site/play/browser-diagnostic-log.js` (4): 9245a364, a4669e56, c9732000, b01b05f6
+- `site/play/browser-diagnostics.js` (34): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, b9aef142, eccd1f6f, 83634d29, 924700b0, 9245a364, 9963fbb3, 7027555a, 17b43bea, ab629363, a4669e56, c1ad4b32, e1c09135, c9732000, b01b05f6, 031491e9, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970, 1bc4eb79
+- `site/play/decoder-worker.js` (2): a4669e56, c9732000
+- `site/play/fps-window.js` (2): 17b43bea, c9732000
+- `site/play/link.js` (2): d7277c2d, b9aef142
+- `site/play/rtc-audio.js` (4): eccd1f6f, 9245a364, 16c754dc, 41c03970
+- `site/play/rtc-video.js` (3): a4669e56, e1c09135, c9732000
+- `site/play/style.css` (1): b01b05f6
+- `site/play/sw.js` (34): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 9963fbb3, 7027555a, 17b43bea, ab629363, a4669e56, c1ad4b32, e1c09135, c9732000, 25427fad, b01b05f6, 031491e9, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970, 1bc4eb79
+- `site/play/u.html` (2): 9963fbb3, 7027555a
+- `site/play/video-diagnostics.js` (2): 16c754dc, 41c03970
+- `site/play/webrtc-transport.js` (7): 9245a364, a4669e56, c9732000, 16c754dc, 964d176b, 41c03970, 1bc4eb79
+- `site/ru/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/uk/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/zh-Hans/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `site/zh-Hant/index.html` (35): d7277c2d, fec67c35, 179a4953, 94a98318, 6db3fa9d, dbd2b61d, a3e2e2f3, f0d0b7f0, 9a03b85c, ec68c4e4, 95850493, eccd1f6f, 83634d29, 924700b0, 9245a364, 0b693bad, 47cf959c, 8da4eabd, 424ed6c8, 8eb3e466, 17b43bea, ab629363, 544da553, c1ad4b32, e1c09135, c9732000, b01b05f6, d1981b01, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed, a4cae7f3, 41c03970
+- `tests/native/BrowserRtcRecoverySequenceTest.kt` (1): c9732000
+- `tests/native/EncodedAudioPeerProbe.java` (3): 9a03b85c, eccd1f6f, 9245a364
+- `tests/native/NativeVideoProbe.java` (6): ab629363, c9732000, 25427fad, 964d176b, c25e92d2, 6098d4ed
+- `tests/native/README.md` (8): ab629363, c9732000, 25427fad, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed
+- `tests/native/RoutedAudioPeerProbe.java` (4): 9a03b85c, 0ce6fe53, 9245a364, 41c03970
+- `tests/native/android-audio-probe.mjs` (4): 9a03b85c, 0252087e, 4964d432, e7a71d0d
+- `tests/native/android-audio-probe.test.mjs` (4): 9a03b85c, 0252087e, 4964d432, e7a71d0d
+- `tests/native/android-mic-foreground-probe.mjs` (3): 7aa88c51, 247e4548, abbbf23f
+- `tests/native/android-mic-foreground-probe.test.mjs` (3): 7aa88c51, 247e4548, abbbf23f
+- `tests/native/android_fixture_interface.py` (2): 0252087e, 950f5661
+- `tests/native/check_video_probe.py` (1): c9732000
+- `tests/native/qemu-udp-forwarding.mjs` (2): e6591ef0, 0252087e
+- `tests/native/qemu-udp-forwarding.test.mjs` (2): e6591ef0, 0252087e
+- `tests/native/rtc-video-probe.py` (7): ab629363, c9732000, 16c754dc, 964d176b, c25e92d2, 50f94b32, 6098d4ed
+- `tests/native/summarize_synthetic_probe_log.py` (1): c9732000
+- `tests/native/test_android_microphone_workflow.py` (1): abbbf23f
+- `tests/native/test_audio_interop_workflow.py` (7): 9a03b85c, 0252087e, 4964d432, 950f5661, e7a71d0d, c7e1614a, 0ce6fe53
+- `tests/native/test_high_proof_sdp.py` (1): c9732000
+- `tests/native/test_proof_artifact.py` (2): e1c09135, c9732000
+- `tests/native/test_proof_workflow_contexts.py` (1): c9732000
+- `tests/native/test_rtc_audio_address_policy.py` (1): e7a71d0d
+- `tests/native/test_rtc_audio_source_patches.py` (1): e7a71d0d
+- `tests/native/test_source_rate_copy_ticket.py` (1): c9732000
+- `tests/native/test_synthetic_probe_tail.py` (1): c9732000
+- `tests/native/test_video_probe.py` (1): c9732000
+- `tests/native/verify_high_proof_sdp.py` (1): c9732000
+- `tests/native/verify_producer_tree.py` (2): e1c09135, c9732000
+- `tests/native/verify_proof_artifact.py` (2): e1c09135, c9732000
+- `tests/test_native_symbols.py` (2): d038685c, a4669e56
+- `tests/web-e2e/README.md` (4): 031491e9, 964d176b, 41c03970, 1bc4eb79
+- `tests/web-e2e/airplay-video.mjs` (1): b01b05f6
+- `tests/web-e2e/avplayer-url.mjs` (2): 031491e9, 964d176b
+- `tests/web-e2e/embedded-caption-fixture.mjs` (1): 25427fad
+- `tests/web-e2e/embedded-captions.mjs` (1): 25427fad
+- `tests/web-e2e/fake-phone.mjs` (1): 1bc4eb79
+- `tests/web-e2e/fake-rtp-source.mjs` (1): 1bc4eb79
+- `tests/web-e2e/rtc-audio-native.mjs` (8): 9a03b85c, 0252087e, 4964d432, e7a71d0d, c7e1614a, 0ce6fe53, 9245a364, 41c03970
+- `tests/web-e2e/rtc-audio.mjs` (1): 41c03970
+- `tests/web-e2e/rtc-bundle.mjs` (1): 964d176b
+- `tests/web-e2e/rtc-canvas.mjs` (1): a4669e56
+- `tests/web-e2e/rtc-video-transactions.mjs` (1): c9732000
+- `tests/web-e2e/run.mjs` (1): 1bc4eb79
+- `tests/web-e2e/service-worker-update.mjs` (4): eccd1f6f, 9963fbb3, 7027555a, a4669e56
+- `tests/web/airplay-avplayer.test.mjs` (1): b01b05f6
+- `tests/web/airplay-controls-lifecycle.test.mjs` (4): 17b43bea, c9732000, a746da02, 031491e9
+- `tests/web/airplay-diagnostics.test.mjs` (1): 17b43bea
+- `tests/web/airplay-fetch-bridge.test.mjs` (1): 16c754dc
+- `tests/web/airplay-trust.test.mjs` (1): c9732000
+- `tests/web/audio-native.test.mjs` (5): b9aef142, eccd1f6f, 9245a364, 16c754dc, 41c03970
+- `tests/web/avplayer-vendor.test.mjs` (2): 031491e9, 964d176b
+- `tests/web/browser-diagnostic-log.test.mjs` (4): 9245a364, a4669e56, c9732000, b01b05f6
+- `tests/web/browser-diagnostics.test.mjs` (4): b9aef142, eccd1f6f, c9732000, 41c03970
+- `tests/web/caption-parser.test.mjs` (1): 25427fad
+- `tests/web/debug-window.test.mjs` (2): 17b43bea, c9732000
+- `tests/web/delta-wiring.test.mjs` (2): a4669e56, c9732000
+- `tests/web/embedded-caption-bridge.test.mjs` (1): 25427fad
+- `tests/web/embedded-caption-worker.test.mjs` (1): 25427fad
+- `tests/web/first-presentation.test.mjs` (1): d7277c2d
+- `tests/web/link.test.mjs` (2): d7277c2d, b9aef142
+- `tests/web/page.test.mjs` (8): d7277c2d, eccd1f6f, e1c09135, c9732000, b01b05f6, a746da02, 2cf5f0d6, 031491e9
+- `tests/web/rtc-audio.test.mjs` (4): eccd1f6f, 9245a364, 16c754dc, 41c03970
+- `tests/web/rtc-diagnostics.test.mjs` (2): e1c09135, b01b05f6
+- `tests/web/rtc-gather.test.mjs` (1): 9245a364
+- `tests/web/rtc-video.test.mjs` (4): 47cf959c, a4669e56, e1c09135, c9732000
+- `tests/web/service-worker-update.test.mjs` (3): eccd1f6f, 7027555a, a4669e56
+- `tests/web/video-diagnostics.test.mjs` (2): 16c754dc, 41c03970
+- `tests/web/wake-lock.test.mjs` (1): a4669e56
+- `tests/web/webrtc-transport.test.mjs` (6): a4669e56, c9732000, 16c754dc, 964d176b, 41c03970, 1bc4eb79

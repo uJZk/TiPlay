@@ -12,8 +12,12 @@ interface BluetoothVoiceChannel : Closeable {
     fun clear(id: AudioStreamId)
 }
 
-data class BluetoothVoiceState(val state: String, val error: String? = null, val released: Boolean = false,
-    val outputReady: Boolean = state == "active")
+data class BluetoothVoiceState(
+    val state: String,
+    val error: String? = null,
+    val released: Boolean = false,
+    val outputReady: Boolean = state == "active",
+)
 
 fun interface BluetoothVoiceFactory {
     fun create(state: (BluetoothVoiceState) -> Unit): BluetoothVoiceChannel

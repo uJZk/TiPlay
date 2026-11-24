@@ -1,0 +1,128 @@
+# Shared non-media task
+
+- Status: partial review; coordinator should continue review of remaining changed files before marking done.
+- Scope: changed `shared/` files other than media and generated/vendor artifacts.
+- Removed the private `CarPlayBonjour.joinWorker` helper; its sole call was removed in the lifecycle rewrite and no references remain. Kept the timeout constant, which is still used for close waiting.
+- Moved three misplaced KDoc comments to their documented functions/classes: source-rate recovery, AirPlay SETUP features, and CarPlay media-button press; no runtime change.
+- Reviewed receiver discovery, mirror preparation and device trust; mDNS cleanup, status-line reading and wireless ownership; event write deadlines; audio route policy, callback queue, source-rate guard and diagnostics, and portions of controller/VPN lifetime changes. Searched assigned production Kotlin for unused imports and private functions and assigned tests for unreferenced private functions. No other obvious unused candidates were found. This is not a complete line-by-line review of all assigned changes.
+- `git diff --check` passed for assigned production and test paths and for the two cleanup edits.
+- Focused `:shared:testDebugUnitTest --tests com.shilapi.xcertplay.network.CarPlayBonjourTest` was cancelled while compiling to avoid concurrent Gradle builds against the same checkout; the coordinator's full suite is expected to cover it. Default sandbox also could not determine a usable wildcard IP; enabling network allowed Gradle to start. No test pass is claimed here.
+- Open decisions: none identified in reviewed paths. Concurrency and authorization behavior was preserved, not refactored.
+
+## Remaining detailed review
+
+The following current files were included in automated scans where applicable; they have not received a complete detailed review. Some large diffs have been spot-checked. Tests were scanned for unused private functions but not individually reviewed.
+
+- `shared/build.gradle`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioModeDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlayAudioSetupDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/AirPlaySession.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/CarPlayScreenBorrowDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/RtspMessage.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/airplay/ScreenStream.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/ArchiveStagingIO.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/CompressedTrafficArchive.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/RawTraffic.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/diagnostics/RawTrafficArchive.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/network/BonjourServiceNames.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/network/CarPlayBonjour.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/network/CarPlayVpnService.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/orchestration/CarPlayController.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverBonjour.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverCapabilities.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverInfoProtocol.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorSdr.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverMirrorStream.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverProtocol.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverProtocolDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverSenderIdentity.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/receiver/ReceiverServer.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/transport/BluetoothRadioCheck.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/transport/LockdownCarKitClient.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayPlaybackDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayVideoPlayback.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/AirPlayVideoProxy.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcAudioCandidates.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcAudioRouter.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcPeer.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoDiagnostics.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoLease.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoSourceProcessor.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoTrack.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserRtcVideoTransaction.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/BrowserVideoDiagnosticsSchema.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/NativeRtcAudioPeer.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/WebAudioHub.kt`
+- `shared/src/main/java/com/shilapi/xcertplay/web/WebVideoHub.kt`
+- `shared/src/main/jni/rtc-audio/README.md`
+- `shared/src/main/jni/rtc-audio/artifacts.json`
+- `shared/src/main/jni/rtc-audio/rtc_audio_jni.c`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioModeDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayAudioSetupDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/AirPlayBleDiscoverySocketTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarBluetoothAudioSessionTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlayEventChannelTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlayScreenBorrowDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CarPlaySocketLifecycleTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/CurrentScreenListenerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/EventWriteDeadlineTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/airplay/RtspMessageUtf8Test.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/ArchiveAttachmentsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/CompressedTrafficTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/diagnostics/RawMetadataCaptureTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/hud/BluetoothSuspendLifecycleTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/AirPlayTcpAcceptTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourMailboxTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourMdnsCleanupTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/BonjourProbeInputTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayBonjourTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayVpnRetirementTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/CarPlayVpnScopeTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/network/WirelessReceiveDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/orchestration/CarPlayWirelessOwnershipTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/orchestration/WirelessRadioOwnershipTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverAirPlay2ServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverCombinedSetupInfoTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDeviceTrustTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDiscoveryInfoServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverDiscoveryInfoTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverInfoProtocolTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverLegacyConnectionServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorKeyFrameTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorPreparationServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorPreparationTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorRecoveryTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverMirrorStartupTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverProtocolDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverProtocolTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverSenderIdentityTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/receiver/ReceiverSetupIdentityServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/transport/BluetoothRadioCheckTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/transport/LockdownServiceOwnershipTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayPlaybackDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayVideoPlaybackTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/AirPlayVideoProxyTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserLinkServerTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioCandidatesTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioRoutePolicyTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcAudioRouterTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcCallbackQueueTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcNativeObserverTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcSourceRateGuardTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoDiagnosticsTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoFailureDrainTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoFlowTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoInputTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoKeyFrameDeadlineTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoRecoveryTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoSourceProcessorTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserRtcVideoTransactionTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/BrowserVideoDiagnosticsSchemaTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/NativeAudioDiagnosticLogTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/NativeRtcAudioStatesTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/ScreenStreamEmptyConfigTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebAudioHubTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebVideoHubTest.kt`
+- `shared/src/test/java/com/shilapi/xcertplay/web/WebVideoMirrorIngressTest.kt`
+- `shared/src/test/resources/Browser-live-policy-diagnostics-v1.json`

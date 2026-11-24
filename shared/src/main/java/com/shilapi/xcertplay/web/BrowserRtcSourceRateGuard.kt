@@ -30,7 +30,6 @@ internal class BrowserRtcSourceRateGuard {
     }
 }
 
-/** A single replacement attempt per peer; a persistent overload terminates video. */
 /** The announced configuration survives source END until its offer is claimed. */
 internal class BrowserRtcPendingVideoSource<T : Any> {
     private var current: T? = null
@@ -51,6 +50,7 @@ internal class BrowserRtcPendingVideoSource<T : Any> {
     }
 }
 
+/** A single replacement attempt per peer; a persistent overload terminates video. */
 internal class BrowserRtcSourceRateRecovery {
     private var attempted = false
     companion object {

@@ -1,6 +1,5 @@
 package com.shilapi.xcertplay.media
 
-import com.shilapi.xcertplay.diagnostics.RawTraffic
 import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothHeadset
@@ -28,6 +27,7 @@ import android.util.Log
 import com.shilapi.xcertplay.airplay.AudioStreamId
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.MicrophoneCounters
+import com.shilapi.xcertplay.diagnostics.RawTraffic
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun sameBluetoothSelection(first: String?, second: String?): Boolean =

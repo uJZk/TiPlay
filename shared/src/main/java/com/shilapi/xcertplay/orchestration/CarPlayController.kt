@@ -806,7 +806,6 @@ class CarPlayController(
         }
     }
 
-    /** Sends one CarPlay media-button press (an [com.shilapi.xcertplay.airplay.AirPlayHid] media index). */
     /** The host reports its physical cluster surface independently of the centre-map pause policy. */
     fun setDashboardMapOutputVisible(visible: Boolean) {
         val next = visible && !closed
@@ -884,6 +883,7 @@ class CarPlayController(
         }
     }
 
+    /** Sends one CarPlay media-button press (an [com.shilapi.xcertplay.airplay.AirPlayHid] media index). */
     fun sendMediaButton(index: Int): Boolean {
         if (closed) return false
         val session = activeSession ?: return false

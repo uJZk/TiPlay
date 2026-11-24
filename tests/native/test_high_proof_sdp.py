@@ -2,7 +2,7 @@
 """Verify fixture/SPS and SDP matching logic without an Android runtime."""
 import unittest
 
-from verify_high_proof_sdp import EXPECTED_PROFILE, fixture_profile, verify_ffprobe, verify_sdp, verify_pair, verify_result, verify_average_bitrate
+from verify_high_proof_sdp import EXPECTED_PROFILE, fixture_profile, verify_ffprobe, verify_pair, verify_result, verify_average_bitrate
 
 
 class HighProofSdpTest(unittest.TestCase):

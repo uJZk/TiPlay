@@ -81,6 +81,11 @@ internal object BrowserAudioDiagnostics {
     private val nativeIceCounters = setOf("nativeAudio.iceRequestsSent", "nativeAudio.iceRequestsReceived",
         "nativeAudio.iceResponsesSent", "nativeAudio.iceResponsesReceived", "nativeAudio.iceConsentRequestsSent")
     private val nativeIceFlags = setOf("nativeAudio.icePairNominated", "nativeAudio.iceSelectedPairPresent")
+    private val nativeSlotCounts = setOf("nativeAudio.tracks", "nativeAudio.boundSlots", "nativeAudio.readySlots", "nativeAudio.streams")
+    private val nativeIceAges = setOf("nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs")
+    private val nativeCandidateCounts = setOf("nativeAudio.retryAttempts", "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates",
+        "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates", "nativeAudio.remoteCandidates",
+        "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates")
     private val enumFields = mapOf(
         "nativeAudio.state" to setOf("idle", "connecting", "ready", "failed", "closed"),
         "nativeAudio.peerState" to setOf("new", "connecting", "connected", "disconnected", "failed", "closed", "unavailable"),
@@ -113,7 +118,7 @@ internal object BrowserAudioDiagnostics {
         fun line(prefix: String, fields: Set<String>, keyPrefix: String = "") {
             val entries = fields.mapNotNull { field ->
                 val raw = stats[keyPrefix + field]
-                if (field in setOf("nativeAudio.tracks", "nativeAudio.boundSlots", "nativeAudio.readySlots", "nativeAudio.streams") &&
+                if (field in nativeSlotCounts &&
                     (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 || raw.toDouble() > 16 || raw.toDouble() % 1.0 != 0.0))
                     return@mapNotNull null
                 if (field == "nativeAudio.rtcGeneration" && (raw !is Number || !raw.toDouble().isFinite() ||
@@ -122,13 +127,11 @@ internal object BrowserAudioDiagnostics {
                 // flatStats represents observed booleans as 0/1; missing evidence stays absent.
                 if (field in nativeIceFlags && raw !is Boolean &&
                     (raw !is Number || raw.toDouble() !in listOf(0.0, 1.0))) return@mapNotNull null
-                if ((field in nativeIceCounters || field == "nativeAudio.icePairCount" || field in setOf("nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs")) &&
+                if ((field in nativeIceCounters || field == "nativeAudio.icePairCount" || field in nativeIceAges) &&
                     (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 ||
                         raw.toDouble() > (if (field == "nativeAudio.icePairCount") 1024.0 else 9_007_199_254_740_991.0) ||
-                        field !in setOf("nativeAudio.iceStatsSampleAgeMs", "nativeAudio.failureReportAgeMs") && raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
-                if (field in setOf("nativeAudio.retryAttempts", "nativeAudio.localCandidates", "nativeAudio.localPrivateIpv4Candidates",
-                        "nativeAudio.localCgnatIpv4Candidates", "nativeAudio.localIpv6Candidates", "nativeAudio.remoteCandidates",
-                        "nativeAudio.remotePrivateIpv4Candidates", "nativeAudio.remoteCgnatIpv4Candidates", "nativeAudio.remoteIpv6Candidates") &&
+                        field !in nativeIceAges && raw.toDouble() % 1.0 != 0.0)) return@mapNotNull null
+                if (field in nativeCandidateCounts &&
                     (raw !is Number || !raw.toDouble().isFinite() || raw.toDouble() < 0 || raw.toDouble() > 1024 || raw.toDouble() % 1.0 != 0.0))
                     return@mapNotNull null
                 if ((field in sourceDeadlineEvidenceFields || field in retiredDeadlineEvidenceFields) && raw !is Number)

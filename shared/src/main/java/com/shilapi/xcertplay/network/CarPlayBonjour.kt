@@ -706,15 +706,6 @@ class CarPlayBonjour(
     private fun decodeTxtValue(value: ByteArray): String =
         String(value, StandardCharsets.UTF_8).trimEnd('\u0000')
 
-    private fun joinWorker(worker: Thread) {
-        if (worker === Thread.currentThread()) return
-        try {
-            worker.join(JOIN_TIMEOUT_MILLIS)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-        }
-    }
-
     private companion object {
         const val TAG = "xcertplay-bonjour"
         const val WORKER_NAME = "carplay-bonjour"
