@@ -46,7 +46,14 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Published beta.59 is **0.2.20-beta.59/code101/browser v131**.
+Published beta.60 is **0.2.20-beta.60/code102/browser v131**. The release
+cleanup removed all older releases and native-symbol drafts while preserving Git
+tags. Before another signed release, restore the required producer symbol drafts
+from the session's workspace backup and verify them; see
+[Build: beta.60 release](docs/Build.md#beta60-release). Full CI, signed packaging
+and scoped public checks passed; vehicle and iPhone acceptance remain open.
+
+Beta.59 was **0.2.20-beta.59/code101/browser v131**; its release was removed.
 The user withdrew A/B/C/D: their UI, enum, preference reader, resource keys and
 mode-only restart lifecycle are removed. Old saved B/C/D values are ignored;
 automatic browser capabilities, normal BLE discovery, identity and trust remain.
@@ -72,7 +79,7 @@ and same-source Pages `45160628160` for `d7277c2ddea29b1056e2759a8a514e13b55e070
 receiver43, removed-mode DEX/resources and static startup presence/selected calls
 pass. Three public assets, 226 site files, 20 routes and eight
 download languages match, all on first request. Physical first-attempt recovery
-remains unverified; private symbol drafts remain private.
+remains unverified; its symbol draft was removed in the beta.60 cleanup.
 
 Published beta.58/code100/browser v130 remains a
 [frozen historical reference](https://github.com/uJZk/TiPlay/blob/61855464c5e2fa06ffdbdd7b4e4f83dfd22d3cdb/docs/Build.md#beta58-release):

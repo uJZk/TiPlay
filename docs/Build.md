@@ -185,6 +185,34 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta60-release"></a>
+### Beta.60 release
+
+[0.2.20-beta.60](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.60),
+code 102/browser v131, was built from `fe3ae19ec46b529563e2233beaf744e31407304a`.
+[Android CI](https://github.com/uJZk/TiPlay/actions/runs/45312444589),
+[signed build](https://github.com/uJZk/TiPlay/actions/runs/45318577047) and
+[Pages](https://github.com/uJZk/TiPlay/actions/runs/45312444646) passed.
+The original signing certificate SHA-256 is
+`abf1f8b0af9653baeb22b8d33b3e48c8436285802b434ca0bbc3b68fc706a506`.
+The APK SHA-256 is `faa01c46390bc8a4d17e5ed3f5278e16f6e9a2e397bbd4eff744f9a7f5422516`;
+the source ZIP SHA-256 is `1f7af0e557b4f810c3a19c6462bfcdc7f60dab953fe416e20f0a865f07c588cb`.
+Both downloaded draft assets matched `SHA256SUMS.txt`; the published release API,
+public checksum file and beta.60 site version were checked. These checks do not
+establish physical first-attempt AirPlay, vehicle audio or microphone behavior.
+
+At the user's request, 67 earlier releases and symbol drafts were removed; Git
+tags remain. This also removed the producer symbol drafts required by
+`scripts/archive_native_symbols.py`, so the next signed workflow will fail its
+symbol archive job until the referenced WebRTC and RTC-audio producer drafts are
+restored and verified. The session retained a hash-verified `TiPlay-symbol-backup`
+directory in its workspace, including metadata, indexes and archives for 26 drafts;
+it is workspace-local and may not persist. Restore the referenced drafts with their
+original tags, matching indexes and ZIPs before the next release; do not make private
+symbol archives public. If the backup is unavailable, recover matching producer
+archives from their original build provenance instead. Earlier release links in
+historical records no longer imply downloadable assets.
+
 <a id="beta30-release"></a>
 
 ## Beta.30 release
@@ -388,9 +416,9 @@ It introduced page-load update checks and automatic reload after complete instal
 Git history retains the full earlier validation records.
 
 <a id="beta59-release"></a>
-### Beta.59 release
+### Beta.59 historical release
 
-Published [0.2.20-beta.59/code101/browser v131](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.59) removes
+The removed 0.2.20-beta.59/code101/browser v131 release removed
 the withdrawn A/B/C/D settings and implements the [four architecture
 fixes](AirPlay-startup-audit.md#remediation). Existing device identity/trust and
 working Bluetooth microphone, Siri and navigation routing are preserved.
@@ -424,7 +452,7 @@ APK is 114,697,068 bytes, SHA-256:
 the same source. Fresh anonymous public checks matched all three release assets,
 226 site files (37,831,824 bytes),
 all 20 routes and eight download languages. All first-request
-checks passed without retries. Private native-symbol drafts remain private.
+checks passed without retries. Its native-symbol draft was later removed.
 
 Four independent defects are fixed and verified within the stated software
 scope. The physical CarPlay → first AirPlay attempt/retry result is still open;
