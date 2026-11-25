@@ -131,7 +131,7 @@ def validate_producer_archives(index):
             raise ValueError('Producer symbols index does not match the APK native library')
 
 
-def persist(directory, env=os.environ):
+def persist(directory, env=os.environ, *, restore_digest=None):
     if (env.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'
             or env.get('GITHUB_REF') != 'refs/heads/main'
             or env.get('GITHUB_REPOSITORY') != TRUSTED_REPOSITORY):
@@ -139,6 +139,10 @@ def persist(directory, env=os.environ):
     directory = Path(directory)
     index = verify(directory)
     commit = env.get('GITHUB_SHA', '')
+    if restore_digest is not None:
+        if not re.fullmatch(r'[0-9a-f]{64}', restore_digest) or sha(directory / 'index.json') != restore_digest:
+            raise ValueError('Recovered producer index differs from pinned digest')
+        commit = index['producer']['build_commit']
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or index['producer'].get('build_commit') != commit:
         raise ValueError('Symbols producer commit does not match this workflow')
     validate_producer_archives(index)
@@ -177,4 +181,6 @@ def persist(directory, env=os.environ):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
-    persist(parser.parse_args().directory)
+    parser.add_argument('--restore-digest', help='Restore a verified original producer archive pinned by its index SHA-256')
+    args = parser.parse_args()
+    persist(args.directory, restore_digest=args.restore_digest)

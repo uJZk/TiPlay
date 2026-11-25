@@ -9,6 +9,7 @@ jobs:
       contents: write
       actions: read
     strategy:
+      fail-fast: false
       matrix:
         include:
           - run: '41382204134'
@@ -33,10 +34,10 @@ jobs:
           SYMBOLS: ${{ matrix.directory }}
           INDEX_SHA256: ${{ matrix.digest }}
         run: |
-          echo "$INDEX_SHA256  $SYMBOLS/index.json" | sha256sum --check
-          python3 scripts/native_symbols.py archive "$SYMBOLS" --output native-symbols.zip
-          cp "$SYMBOLS/index.json" native-symbols-index.json
-          component=$(jq -er '.producer.component' native-symbols-index.json)
-          commit=$(jq -er '.producer.build_commit' native-symbols-index.json)
-          tag="native-symbols-$component-$INDEX_SHA256"
-          gh release create "$tag" native-symbols.zip native-symbols-index.json --draft --prerelease --target "$commit" --title "Native symbols $component" --notes "Recovered from the pinned original producer artifact."
+          for delay in 0 5 15 30 60; do
+            sleep "$delay"
+            if python3 scripts/archive_native_symbols.py "$SYMBOLS" --restore-digest "$INDEX_SHA256"; then
+              exit 0
+            fi
+          done
+          exit 1
