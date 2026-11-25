@@ -185,6 +185,19 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta61-release"></a>
+### Beta.61 release
+
+[0.2.20-beta.61](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.61),
+code 103/browser v131, ships commit `92554b3de9b227407696ae76470a4bb5ad9676f9`.
+[Full CI](https://github.com/uJZk/TiPlay/actions/runs/45651370857),
+[signed packaging](https://github.com/uJZk/TiPlay/actions/runs/45652289980) and
+[Pages deployment](https://github.com/uJZk/TiPlay/actions/runs/45652890955) passed.
+Both original producer symbol archives were [restored and verified](https://github.com/uJZk/TiPlay/actions/runs/45651964212).
+The downloaded APK and source matched the public checksum file, the original APK signing
+certificate and the expected source archive commit were confirmed. Follow the
+[mirror capture procedure](AirPlay.md#beta61-mirror-capture) for iPhone acceptance.
+
 <a id="beta60-release"></a>
 ### Beta.60 release
 

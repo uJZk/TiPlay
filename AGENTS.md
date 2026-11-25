@@ -46,14 +46,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Beta.61 mirror diagnostic procedure is in [AirPlay](docs/AirPlay.md#beta61-mirror-capture).
-
-Published beta.60 is **0.2.20-beta.60/code102/browser v131**. The release
-cleanup removed all older releases and native-symbol drafts while preserving Git
-tags. Before another signed release, restore the required producer symbol drafts
-from the session's workspace backup and verify them; see
-[Build: beta.60 release](docs/Build.md#beta60-release). Full CI, signed packaging
-and scoped public checks passed; vehicle and iPhone acceptance remain open.
+Published beta.61 is **0.2.20-beta.61/code103/browser v131**.
+See [Build](docs/Build.md#beta61-release) for release checks and the restored producer
+archives, and [AirPlay](docs/AirPlay.md#beta61-mirror-capture) for the physical comparison.
 
 Beta.59 was **0.2.20-beta.59/code101/browser v131**; its release was removed.
 The user withdrew A/B/C/D: their UI, enum, preference reader, resource keys and
