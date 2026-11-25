@@ -751,6 +751,10 @@ class AirPlaySession(
                     val wire = RtspMessage.buildResponse(request, response)
                     trace("airplay control tx wireHex=${wire.toHex()}")
                     output.write(cipher?.encrypt(wire) ?: wire)
+                    if (bluetoothProbe && RawTraffic.enabled) {
+                        output.flush()
+                        RawTraffic.record("iphone/AirPlaySession/${socket.remoteSocketAddress}/${socket.localPort}/startup-response", wire)
+                    }
                     if (cipher == null && pairVerify.controlKeys != null) {
                         val keys = pairVerify.controlKeys!!
                         cipher = ControlCipher(keys.readKey, keys.writeKey)

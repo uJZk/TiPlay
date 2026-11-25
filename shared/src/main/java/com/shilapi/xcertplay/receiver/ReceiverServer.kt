@@ -766,6 +766,11 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             val bytes = RtspMessage.buildResponse(request, response)
             output.write(controlCipher?.encrypt(bytes) ?: bytes)
             output.flush()
+            if (RawTraffic.enabled && controlCipher == null && handshake != null &&
+                (request.method == "SETUP" || request.method == "RECORD" ||
+                    (request.method == "GET" && request.path.substringBefore('?') == "/info"))) {
+                RawTraffic.record("iphone/ReceiverServer/${socket.remoteSocketAddress}/${socket.localPort}/startup-response", bytes)
+            }
         }
 
         private fun eventPort(): Int {

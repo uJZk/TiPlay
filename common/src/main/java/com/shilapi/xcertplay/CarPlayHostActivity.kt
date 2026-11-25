@@ -6282,8 +6282,10 @@ class CarPlayHostActivity : ComponentActivity() {
         screenReturnRecoveryTask = task
         // A resource grant can precede the next SETUP on the same socket. Reuse the normal
         // recovery delay, then recheck the owner and data stream; never retire on the grant itself.
-        mainHandler.postDelayed(task, RECONNECT_DELAY_MILLIS)
-        appendLog("CarPlay ownership returned; waiting for its data stream before display recovery")
+        val delayMillis = if (com.shilapi.xcertplay.diagnostics.RawTraffic.enabled)
+            DEBUG_SCREEN_RETURN_WAIT_MILLIS else RECONNECT_DELAY_MILLIS
+        mainHandler.postDelayed(task, delayMillis)
+        appendLog("CarPlay ownership returned; waiting for its data stream before display recovery waitMs=$delayMillis")
         return true
     }
 
@@ -7219,6 +7221,7 @@ class CarPlayHostActivity : ComponentActivity() {
         const val LOG_RETENTION_MILLIS = 5 * 60_000L
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
+        private const val DEBUG_SCREEN_RETURN_WAIT_MILLIS = 8_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L

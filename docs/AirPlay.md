@@ -62,6 +62,20 @@ so the queued stopped event can be delivered. If staging is full, another staged
 channel is closed to make room.
 
 <a id="mirror-startup-experiments"></a>
+## Beta.61 mirror capture
+
+Debug raw TSV records tagged `startup-response` contain the serialized BT discovery reply
+and plaintext legacy FairPlay SETUP, GET /info and RECORD replies. Match the socket endpoint,
+CSeq and timestamp to ingress and the CarPlay screen ownership log. Compare first selection
+after CarPlay connects, an immediate retry and standalone AirPlay on the same iPhone.
+Compare stable identity and capability fields independently of negotiated ports and CSeq.
+
+While Debug capture is active, screen return allows eight seconds for a replacement
+CarPlay stream on the existing session before the normal guarded reconnect. Standard uses
+two seconds. Compare CarPlay SETUP and first-frame times to the resource grant, then verify
+another single-tap mirror start after exit. The longer observation can delay recovery by
+six seconds when the sender needs a fresh connection. Physical acceptance remains open.
+
 ## Removed first-mirror comparison modes
 
 Beta.59 removes the A/B/C/D experiment from both Advanced settings entries, along

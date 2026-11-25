@@ -1,0 +1,42 @@
+name: Restore pinned native producer symbols
+on: workflow_dispatch
+permissions: {}
+jobs:
+  restore:
+    if: github.repository == 'uJZk/TiPlay' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    strategy:
+      matrix:
+        include:
+          - run: '41382204134'
+            artifact: tiplay-source-rate-all
+            directory: retained/native-symbols
+            digest: 4bb8b7c670f6a326d8907674598e238ae395a99705595991d95121b88bfb5b8c
+          - run: '43578453616'
+            artifact: tiplay-audio-symbols
+            directory: retained
+            digest: aede91e938843678befb75915d3ed37b1345bf5fe7c00086e752bbee5fadb879
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ matrix.run }}
+          name: ${{ matrix.artifact }}
+          github-token: ${{ github.token }}
+          path: retained
+      - name: Verify producer identity and restore private draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SYMBOLS: ${{ matrix.directory }}
+          INDEX_SHA256: ${{ matrix.digest }}
+        run: |
+          echo "$INDEX_SHA256  $SYMBOLS/index.json" | sha256sum --check
+          python3 scripts/native_symbols.py archive "$SYMBOLS" --output native-symbols.zip
+          cp "$SYMBOLS/index.json" native-symbols-index.json
+          component=$(jq -er '.producer.component' native-symbols-index.json)
+          commit=$(jq -er '.producer.build_commit' native-symbols-index.json)
+          tag="native-symbols-$component-$INDEX_SHA256"
+          gh release create "$tag" native-symbols.zip native-symbols-index.json --draft --prerelease --target "$commit" --title "Native symbols $component" --notes "Recovered from the pinned original producer artifact."
