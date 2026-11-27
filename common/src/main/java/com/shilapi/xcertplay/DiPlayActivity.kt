@@ -5800,6 +5800,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("--- Recent process exits ---")
         appendLine(ProcessExitDiagnostics.report(appContext))
         appendLine("--- Android and browser events ---")
+        appendLine(PhoneBrowserLocks.powerSample(appContext, "export"))
         DiagnosticLogSnapshot.appendTo(this, File(appContext.filesDir, "logs"),
             level = if (debug) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
     }

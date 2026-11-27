@@ -5,6 +5,20 @@ settings. Enable **Debug mode** beforehand for timing detail. Reports use
 `Downloads/TiPlay`, with an app-owned shareable fallback. Review before sharing;
 include phone/APK versions and connection mode. Keep credentials/captures outside Git.
 
+## Android battery measurements
+
+Beta.62 allows normal display timeout. CarPlay waits for an active
+control session and the AirPlay receiver waits for media before acquiring CPU
+and low-latency Wi-Fi locks. Enabled AirPlay discovery still uses multicast and BLE.
+
+Standard reports include an `ANDROID_POWER` sample at export. CPU and Wi-Fi
+lock transitions also log samples with the owning service name. For an unplugged
+comparison, save a report at the start and end of the same workload. Use elapsed
+time and device charge (µAh, when supported) to estimate whole-device drain.
+Process CPU deltas are comparable within the same PID. Charging and screen
+interactivity describe the sampling instants. Keep brightness, hotspot usage and
+screen state comparable, and disable Debug capture when measuring ordinary use.
+
 ## Monitor and log detail
 
 Open the browser's default-collapsed **Diagnostics** section for a scrollable,

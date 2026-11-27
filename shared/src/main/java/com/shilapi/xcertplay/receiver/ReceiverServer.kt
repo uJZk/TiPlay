@@ -40,6 +40,9 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     interface Listener {
         /** Authenticated mirror transport intent, before the sender starts the screen stream. */
         fun prepareMirror() {}
+        fun canRecoverCarPlayMirror(): Boolean = false
+        fun borrowForMirrorStartup(token: Any): Boolean = false
+        fun returnStartupScreen(token: Any) {}
         fun mirrorSink(): WebMediaSink
         fun play(item: ReceiverPlay)
         fun photo(bytes: ByteArray) {}
@@ -83,6 +86,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val slots = Semaphore(12)
     internal var reverseStagingTimeoutMillis = 60_000L
+    internal var mirrorLoanDelayMillis = 2_000L
     internal var mirrorPreparationObservationMillis = 15_000L
     private val ownership = Any()
     val dacpDiscovery = ReceiverDacpDiscovery(::refreshAudioControls)
@@ -584,6 +588,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                             input = it.input(input)
                         }
                     }
+                    if (request.method == "RECORD" && (response.status ?: 200) == 200) scheduleStartupLoan()
                     if (response.status == 101) {
                         socket.soTimeout = 0
                     }
@@ -849,7 +854,56 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             return port
         }
 
+        // All loan state belongs to this control transport and is guarded by ownership.
+        private var startupLoan: Any? = null
+        private var startupAttempted = false
+        private var startupAdmissionStarted = false
+        private var startupTask: ScheduledFuture<*>? = null
+
+        private fun cancelStartupLoan() {
+            startupTask?.cancel(false)
+            startupTask = null
+            startupLoan?.let(listener::returnStartupScreen)
+            startupLoan = null
+        }
+
+        private fun scheduleStartupLoan() = synchronized(ownership) {
+            val token = startupLoan ?: return@synchronized
+            val identity = claimedIdentity?.copyOf() ?: return@synchronized
+            if (startupAttempted || !listener.canRecoverCarPlayMirror()) return@synchronized
+            startupAttempted = true
+            val name = reportedDeviceName ?: "AirPlay"
+            fun eligible() = !startupAdmissionStarted && startupLoan === token && !closed.get() && !socket.isClosed &&
+                owner == null && playbackPeer == null && listener.canRecoverCarPlayMirror()
+            startupTask = maintenance.schedule({
+                if (!synchronized(ownership) { eligible() }) return@schedule
+                // A consent prompt must not block control reads, teardown or the maintenance timer.
+                try {
+                    events.execute {
+                        if (!synchronized(ownership) { eligible() }) return@execute
+                        if (!listener.authorizeDevice(connectionNonce, identity, name, "mirror", null)) return@execute
+                        synchronized(ownership) {
+                            if (!eligible() || !identity.contentEquals(claimedIdentity)) return@execute
+                            if (!listener.borrowForMirrorStartup(token)) return@execute
+                            listener.log("c=$diagnosticId stage=MIRROR_STARTUP_LOAN state=requested")
+                            startupTask = maintenance.schedule({
+                                synchronized(ownership) {
+                                    if (startupLoan === token) {
+                                        cancelStartupLoan()
+                                        listener.log("c=$diagnosticId stage=MIRROR_STARTUP_LOAN state=expired")
+                                    }
+                                }
+                            }, 5, TimeUnit.SECONDS)
+                        }
+                    }
+                } catch (_: RejectedExecutionException) {
+                    // This connection retired before its authorization worker started.
+                }
+            }, mirrorLoanDelayMillis, TimeUnit.MILLISECONDS)
+        }
+
         fun closeMedia() {
+            cancelStartupLoan()
             mirrorControlPreparation.end(ReceiverMirrorPreparation.End.MEDIA_RESET)
             retireRemote()
             audioProgress = null; audioSampleRate = 0; currentAudioSample = null
@@ -927,6 +981,14 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 }
             }
             val mediaType = receiverMediaType(request, path, raop != null)
+            if (mediaType != "unknown" || request.method == "TEARDOWN" || request.method == "SETUP") {
+                synchronized(ownership) {
+                    // Preserve an already requested loan through mirrorSink handover. Fence a
+                    // pending authorization before the normal typed admission can block.
+                    if (mediaType == "mirror") startupAdmissionStarted = true
+                    else cancelStartupLoan()
+                }
+            }
             // Reverse is established before the sender reveals its media type. It is
             // an event channel only; media access still requires the later typed request.
             if (path == "/reverse" && request.method == "POST" && mediaIdentity == null) {
@@ -1611,11 +1673,20 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
             val initialControlSetup = encrypted != null || timingProtocol == "NTP" && requestedStreams == null
             val streamTypes = requestedStreams?.map { (it["type"] as Number).toInt() }.orEmpty()
             when {
-                110 in streamTypes -> mirrorControlPreparation.end(ReceiverMirrorPreparation.End.STREAM)
+                110 in streamTypes -> {
+                    cancelStartupLoan()
+                    mirrorControlPreparation.end(ReceiverMirrorPreparation.End.STREAM)
+                }
                 96 in streamTypes -> mirrorControlPreparation.end(ReceiverMirrorPreparation.End.AUDIO)
                 initialControlSetup && requestedStreams.isNullOrEmpty() &&
-                    dict["isScreenMirroringSession"] == true && config.mirrorEnabled ->
+                    dict["isScreenMirroringSession"] == true && config.mirrorEnabled -> {
+                    if (omitCombinedLegacyMirrorInfo(dict, encrypted) && listener.canRecoverCarPlayMirror()) {
+                        startupLoan = Any()
+                        startupAttempted = false
+                        startupAdmissionStarted = false
+                    }
                     mirrorControlPreparation.begin(dict["combinedGetInfoWithControlSetup"] == true)
+                }
             }
             // Unpaired legacy mirror control follows UxPlay's ports-only reply. A sender can
             // refresh the complete profile with /info on this connection without resetting it.

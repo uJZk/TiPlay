@@ -64,6 +64,7 @@ internal object DiagnosticLogActions {
             appendLine(CrashRecord.report(context))
             appendLine("--- Recent process exits ---")
             appendLine(ProcessExitDiagnostics.report(context))
+            appendLine(PhoneBrowserLocks.powerSample(context, "export"))
             DiagnosticLogSnapshot.appendTo(this, File(context.filesDir, "logs"),
                 level = if (action.stops) DiagnosticLogLevel.DEBUG else DiagnosticLogLevel.STANDARD)
         }

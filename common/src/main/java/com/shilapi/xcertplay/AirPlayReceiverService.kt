@@ -123,7 +123,6 @@ class AirPlayReceiverService : Service() {
         if (LocalNetworkPermission.state(this) == LocalNetworkPermission.State.DENIED) { publishCurrent("permission"); stopSelf(); return START_NOT_STICKY }
         TeslaBrowserLink.start(this)
         HotspotExtraAddressSettings.sync(this)
-        locks.hold()
         if (multicast == null) multicast = getSystemService(WifiManager::class.java)?.createMulticastLock("tiplay-airplay")?.apply { setReferenceCounted(false); acquire() }
         worker.execute {
             if (active() && !AirPlayReceiverSettings.isDisabled(this)) startReceiver()
@@ -176,6 +175,23 @@ class AirPlayReceiverService : Service() {
                 override fun audioRemoteIdle() { synchronized(displayLock) { if (active()) player.audioRemoteIdle() } }
                 override fun audioRemoteExpired() { synchronized(displayLock) { if (active()) player.audioRemoteExpired() } }
                 override fun audioTimelineReset() { synchronized(displayLock) { if (active()) player.audioTimelineReset() } }
+                override fun canRecoverCarPlayMirror(): Boolean = active() &&
+                    com.shilapi.xcertplay.diagnostics.RawTraffic.enabled &&
+                    CarPlayBackgroundSession.snapshot()?.controller?.screenBorrowState?.carPlayHasScreen == true
+
+                override fun borrowForMirrorStartup(token: Any): Boolean = synchronized(displayLock) {
+                    if (!canRecoverCarPlayMirror() || displayOwner != null || TeslaBrowserLink.airPlayActive)
+                        return@synchronized false
+                    displayGeneration++
+                    displayOwner = token
+                    TeslaBrowserLink.pauseCarPlayDisplay(token)
+                    true
+                }
+
+                override fun returnStartupScreen(token: Any) = synchronized(displayLock) {
+                    if (displayOwner === token) releaseDisplay(token)
+                }
+
                 override fun prepareMirror() {
                     synchronized(displayLock) {
                         check(active() && !AirPlayReceiverSettings.isDisabled(this@AirPlayReceiverService))
@@ -244,7 +260,10 @@ class AirPlayReceiverService : Service() {
                 override fun playback() = synchronized(displayLock) { if (active()) player.state else ReceiverPlayback() }
                 override fun videoProperty(property: String, value: Any?): Boolean = synchronized(displayLock) { active() && player.videoProperty(property, value) }
                 override fun status(state: String) {
-                    if (!active()) return
+                    synchronized(displayLock) {
+                        if (!active()) return
+                        locks.update(state in setOf("mirror", "audio", "video", "photo"))
+                    }
                     if (state == "failed") {
                         worker.execute { if (active()) { publishCurrent(state); stopCurrent() } }
                         return

@@ -49,6 +49,7 @@ class PhoneBrowserSessionServiceTest {
 
     @Test fun phoneModeHoldsAPartialWakeLockAndALowLatencyWifiLockUntilTheServiceEnds() {
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
+        CarPlayBackgroundSession.active = true
         val service = started()
         val wake = ShadowPowerManager.getLatestWakeLock()
         assertTrue(wake.isHeld)
@@ -67,8 +68,24 @@ class PhoneBrowserSessionServiceTest {
         assertEquals(0, wifi.activeLockCount)
     }
 
+    @Test fun waitingAndDisconnectedServiceDoesNotKeepCpuOrWifiAwake() {
+        AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
+        val service = started()
+        try {
+            assertFalse(locks(service).held)
+            CarPlayBackgroundSession.active = true
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertTrue(locks(service).held)
+            CarPlayBackgroundSession.active = false
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertFalse(locks(service).held)
+            assertEquals(0, wifi.activeLockCount)
+        } finally { service.destroy() }
+    }
+
     @Test fun disconnectAndRemovingTheTaskReleaseTheLocks() {
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
+        CarPlayBackgroundSession.active = true
         val disconnected = started()
         val wake = ShadowPowerManager.getLatestWakeLock()
         disconnected.withIntent(Intent(context, DiPlaySessionService::class.java).setAction(DiPlaySessionService.ACTION_STOP))
@@ -89,6 +106,7 @@ class PhoneBrowserSessionServiceTest {
 
     @Test fun removingTheEmptyLauncherTaskKeepsTheOtherTasksSessionAndLocksUntilHostRemoval() {
         AirPlayPersistence.saveRunMode(context, CarPlayRunMode.PHONE_BROWSER)
+        CarPlayBackgroundSession.active = true
         val service = started()
         val wake = ShadowPowerManager.getLatestWakeLock()
         val controller = mock(CarPlayController::class.java)

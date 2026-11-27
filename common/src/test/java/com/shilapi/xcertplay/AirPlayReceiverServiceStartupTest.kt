@@ -85,6 +85,13 @@ class AirPlayReceiverServiceStartupTest {
                     AirPlayReceiverService.state == "listening"
             }
             val running = field(newer, "server") as ReceiverServer
+            val power = (field(newer, "locks\$delegate") as Lazy<*>).value as PhoneBrowserLocks
+            val listener = field(running, "listener") as ReceiverServer.Listener
+            assertFalse("discovery alone needs no CPU or performance lock", power.held)
+            listener.status("mirror")
+            assertTrue("an active mirror retains screen-off transport", power.held)
+            listener.status("listening")
+            assertFalse("returning to discovery releases both performance locks", power.held)
             val runningLease = requireNotNull(lease(running))
             assertTrue(isCurrent(runningLease))
             assertEquals("200", brokerResponse().path)

@@ -70,11 +70,20 @@ CSeq and timestamp to ingress and the CarPlay screen ownership log. Compare firs
 after CarPlay connects, an immediate retry and standalone AirPlay on the same iPhone.
 Compare stable identity and capability fields independently of negotiated ports and CSeq.
 
-While Debug capture is active, screen return allows eight seconds for a replacement
+In published beta.61, Debug screen return allows eight seconds for a replacement
 CarPlay stream on the existing session before the normal guarded reconnect. Standard uses
 two seconds. Compare CarPlay SETUP and first-frame times to the resource grant, then verify
 another single-tap mirror start after exit. The longer observation can delay recovery by
 six seconds when the sender needs a fresh connection. Physical acceptance remains open.
+
+In beta.62, both modes wait two seconds on return. Debug capture
+also enables a single startup experiment when CarPlay reports Controller ownership.
+For explicit unpaired FairPlay mirror intent with a sender identity, a successful RECORD
+starts a two-second grace period. If video SETUP has not arrived, normal mirror consent
+precedes a provisional main-screen loan. Media admission retains its normal checks. An
+unclaimed loan expires in five seconds or ends on teardown. Compare Debug against Standard
+on the same iPhone and look for `MIRROR_STARTUP_LOAN`, ownership confirmation, stream SETUP
+and the first frame. Real-device first-tap behavior remains open.
 
 ## Removed first-mirror comparison modes
 

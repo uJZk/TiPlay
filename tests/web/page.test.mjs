@@ -247,7 +247,7 @@ function retryPage(lastError) {
   const page = new Function('$', 'Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'renderReconnect', 'lastError', 'rtcFailureSummary', 'PAGE_VERSION', 'airPlayContext', 'airPlayFailed', 'createReceiverNoticeTracker', 'videoProblemFor', 'videoReadyFor', 'videoSourceFor', 'createBrowserDiagnosticLog', `
     let phase, retryAt, retryTimer, retryCountdownTimer, reconnects = 0, streamId = 0, videoAbort, rtcMedia, rtcProgress, resourceToken, controlClock;
     const controlWaiters = new Set(), codecsReady = new Promise(() => {}), abortable = value => value;
-    let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, wakeLock = null, config = null;
+    let active = true, live = false, notice = null, status = null, unsupported = null, outbox = null, config = null;
     let videoError = null, videoRestart = null, currentVideoGeneration = 1;
     let receiverFailure = false, videoNoticeId = null;
     const receiverNotices = createReceiverNoticeTracker();
@@ -455,7 +455,7 @@ test('a new producer epoch waits for its own decoded event while an identical co
     const active = true, streamId = 1, currentVideoGeneration = 1; let config = { epoch: 7, mode: 'carplay' }, live = true;
     let videoStats = { decodedFps: 30 }, unsupported = null, mediaTiming;
     const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
-    const outbox = { push() {}, setPresentationSource() {}, presented() {} }, keepScreenOn = () => {}, render = () => {}, updateReceiverNotice = () => {};
+    const outbox = { push() {}, setPresentationSource() {}, presented() {} }, render = () => {}, updateReceiverNotice = () => {};
     ${source}
     return { receive(value) { onVideoMessage({ id: 1, ...value }); return { live, config, videoStats }; } };
   `)();

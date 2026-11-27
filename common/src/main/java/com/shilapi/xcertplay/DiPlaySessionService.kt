@@ -19,10 +19,23 @@ import com.shilapi.xcertplay.host.R
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
 class DiPlaySessionService : Service() {
     private val phoneBrowserLocks by lazy { PhoneBrowserLocks(this) }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private var activeSubscription: java.io.Closeable? = null
+    private val updateLocks = Runnable {
+        phoneBrowserLocks.update(activeSubscription != null && CarPlayBackgroundSession.active && TeslaBrowserLink.wanted(this))
+    }
+
+    private fun releaseSessionLocks() {
+        activeSubscription?.close()
+        activeSubscription = null
+        main.removeCallbacks(updateLocks)
+        phoneBrowserLocks.release()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            phoneBrowserLocks.release()
+            releaseSessionLocks()
             CarPlayBackgroundSession.stop()
             stopSelf()
             return START_NOT_STICKY
@@ -73,7 +86,7 @@ class DiPlaySessionService : Service() {
                     ActivityManager.RunningAppProcessInfo().also { ActivityManager.getMyMemoryState(it) }.importance
                 })
             if (!started) {
-                phoneBrowserLocks.release()
+                releaseSessionLocks()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -81,11 +94,14 @@ class DiPlaySessionService : Service() {
         HotspotExtraAddressSettings.sync(this) // phone + browser mode: keep the car browser's hotspot address
         TeslaBrowserLink.sync(this)
         // Phone + browser mode: the car's browser keeps its video with the phone's screen off.
-        phoneBrowserLocks.update(TeslaBrowserLink.wanted(this))
+        if (activeSubscription == null) activeSubscription = CarPlayBackgroundSession.listenActive {
+            main.post(updateLocks)
+        }
+        updateLocks.run()
         return START_NOT_STICKY
     }
     override fun onDestroy() {
-        phoneBrowserLocks.release()
+        releaseSessionLocks()
         HotspotExtraAddressSettings.onSessionServiceStopped(this) // keeps the address for the car's page
         TeslaBrowserLink.sync(this) // keeps the link for the car's page unless the run mode changed meanwhile
         super.onDestroy()
@@ -94,7 +110,7 @@ class DiPlaySessionService : Service() {
         // The launcher removes its empty task after opening the separate CarPlay task.
         // That cleanup is not a request to disconnect the session owned by that task.
         if (rootIntent?.component?.className == FirstUseActivity::class.java.name) return
-        phoneBrowserLocks.release()
+        releaseSessionLocks()
         // BYD's recents force-stops the package ~10 ms after removing the task: end guidance first.
         com.shilapi.xcertplay.hud.BydNavigationOutputs.endNow()
         CarPlayBackgroundSession.stop()

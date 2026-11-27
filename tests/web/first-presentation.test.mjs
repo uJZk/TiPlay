@@ -192,7 +192,7 @@ test('actual page message handling binds proof to the accepted config and reject
     const active = true, streamId = 4, currentVideoGeneration = 2;
     let config = null, live = false, videoStats = {}, videoError, unsupported, mediaTiming;
     const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
-    const keepScreenOn = () => {}, updateReceiverNotice = () => {}, render = () => {};
+    const updateReceiverNotice = () => {}, render = () => {};
     ${extract('onVideoMessage')}
     return onVideoMessage;
   `)(f.outbox);
@@ -223,7 +223,7 @@ function synchronousOpenPage({ failOpen = false } = {}) {
     const controlWaiters = new Set(), codecsReady = Promise.resolve();
     const faultDiagnostics = { reset() {} }, resetReceiverPresentation = () => {};
     const mediaTimings = new Map(), timingFor = () => ({ plans() {}, started() {} });
-    const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {}, updateReceiverNotice = () => {}, keepScreenOn = () => {};
+    const render = () => {}, reportAppearance = () => {}, scheduleViewport = () => {}, updateReceiverNotice = () => {};
     const browserAudio = { clock() {}, attach() {} }, createClockEstimator = () => ({ observe: () => null });
     const phoneFetch = () => { throw Error('unexpected HTTP request'); }, authenticateRtcOffer = () => {};
     const setInterval = () => 0, clearInterval = () => {}, applyStatus = () => {}, controlFailed = () => {};

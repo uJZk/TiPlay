@@ -102,7 +102,67 @@ class ReceiverMirrorPreparationServerTest {
         }
     }
 
-    private class Fixture(observationMillis: Long) : Closeable, ReceiverServer.Listener {
+    @Test fun stalledRecordedMirrorBorrowsOnceAndReturnsItsOwnLoanOnTeardown() {
+        Fixture(40, experiment = true).use { fixture ->
+            fixture.peer().use { peer ->
+                assertEquals("200", peer.prepare(mirror = true, identified = true).path)
+                fixture.await("observation-elapsed")
+                assertEquals(0, fixture.loans.size)
+                assertEquals("200", peer.request("RECORD", "/session").path)
+                fixture.await("MIRROR_STARTUP_LOAN state=requested")
+                assertEquals("200", peer.request("RECORD", "/session").path)
+                assertEquals("200", peer.request("TEARDOWN", "/session").path)
+                assertEquals(1, fixture.loans.size)
+                assertEquals(fixture.loans, fixture.returns)
+                assertEquals(1, fixture.authorizations)
+            }
+        }
+    }
+
+    @Test fun unclaimedLoanExpiresOnTheStillOpenControlSocket() {
+        Fixture(40, experiment = true).use { fixture ->
+            fixture.peer().use { peer ->
+                peer.prepare(mirror = true, identified = true)
+                peer.request("RECORD", "/session")
+                fixture.await("MIRROR_STARTUP_LOAN state=requested")
+                fixture.await("MIRROR_STARTUP_LOAN state=expired", 7)
+                assertEquals(fixture.loans.single(), fixture.returns.single())
+                assertEquals("200", peer.request("POST", "/feedback").path)
+            }
+        }
+    }
+
+    @Test fun lateStreamAfterStartupLoanKeepsNormalMediaAdmission() {
+        Fixture(40, experiment = true).use { fixture ->
+            fixture.peer().use { peer ->
+                peer.prepare(mirror = true, identified = true)
+                peer.request("RECORD", "/session")
+                fixture.await("MIRROR_STARTUP_LOAN state=requested")
+                val stream = mapOf("type" to 110, "streamConnectionID" to 1234L)
+                assertEquals("200", peer.request("SETUP", "/stream",
+                    BplistCodec.encode(mapOf("streams" to listOf(stream)))).path)
+                assertEquals(1, fixture.preparations)
+                assertTrue(fixture.states.contains("mirror"))
+                assertEquals(fixture.loans.single(), fixture.returns.single())
+            }
+        }
+    }
+
+    @Test fun stalledMirrorDenialDoesNotBorrowOrRetryOnFeedback() {
+        Fixture(40, experiment = true, allow = false).use { fixture ->
+            fixture.peer().use { peer ->
+                peer.prepare(mirror = true, identified = true)
+                peer.request("RECORD", "/session")
+                fixture.await("test-consent")
+                peer.request("POST", "/feedback")
+                peer.request("TEARDOWN", "/session")
+                assertEquals(1, fixture.authorizations)
+                assertTrue(fixture.loans.isEmpty())
+            }
+        }
+    }
+
+    private class Fixture(observationMillis: Long, val experiment: Boolean = false, val allow: Boolean = true) : Closeable, ReceiverServer.Listener {
         val logs = CopyOnWriteArrayList<String>()
         val states = CopyOnWriteArrayList<String>()
         @Volatile var preparations = 0
@@ -114,10 +174,21 @@ class ReceiverMirrorPreparationServerTest {
             fairPlayReply = { ByteArray(if (it.size == 16) 142 else 32) },
             fairPlayDecrypt = { _, _ -> ByteArray(16) })
 
-        init { receiver.mirrorPreparationObservationMillis = observationMillis; receiver.start() }
+        val loans = CopyOnWriteArrayList<Any>()
+        val returns = CopyOnWriteArrayList<Any>()
+        override fun canRecoverCarPlayMirror() = experiment
+        override fun borrowForMirrorStartup(token: Any): Boolean { loans.add(token); return true }
+        override fun returnStartupScreen(token: Any) { if (token in loans) returns.add(token) }
+        override fun authorizeDevice(sessionToken: String, identity: ByteArray, deviceName: String,
+                                     mediaType: String, verifiedSessionId: String?): Boolean {
+            authorizations++
+            logs.add("test-consent")
+            return allow
+        }
+        init { receiver.mirrorLoanDelayMillis = 20; receiver.mirrorPreparationObservationMillis = observationMillis; receiver.start() }
         fun peer() = Peer(receiver.port)
-        fun await(marker: String) {
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+        fun await(marker: String, seconds: Long = 3) {
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
             while (!logs.any { marker in it } && System.nanoTime() < deadline) Thread.sleep(1)
             assertTrue(marker, logs.any { marker in it })
         }
@@ -138,7 +209,7 @@ class ReceiverMirrorPreparationServerTest {
     private class Peer(port: Int) : Closeable {
         private val socket = Socket(InetAddress.getByName("127.0.0.1"), port).apply { soTimeout = 3000 }
         private var sequence = 0
-        fun prepare(mirror: Boolean?): RtspMessage.Request {
+        fun prepare(mirror: Boolean?, identified: Boolean = false): RtspMessage.Request {
             for ((size, step) in listOf(16 to 1, 164 to 3)) {
                 val fairPlay = ByteArray(size).apply {
                     byteArrayOf(0x46, 0x50, 0x4c, 0x59, 3, 1, step.toByte(), 0).copyInto(this)
@@ -148,6 +219,7 @@ class ReceiverMirrorPreparationServerTest {
             }
             val fields = mutableMapOf<String, Any>("ekey" to ByteArray(72), "eiv" to ByteArray(16),
                 "timingPort" to 0, "timingProtocol" to "NTP", "combinedGetInfoWithControlSetup" to true)
+            if (identified) fields["deviceID"] = "02:12:34:56:78:9A"
             if (mirror != null) fields["isScreenMirroringSession"] = mirror
             return request("SETUP", "/session", BplistCodec.encode(fields))
         }

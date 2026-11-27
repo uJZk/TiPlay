@@ -270,7 +270,7 @@ document.addEventListener('keydown', () => browserAudio.gesture(), { capture: tr
 const airplayControls = createAirPlayControls($('stage'), event => outbox?.push(event), lang, { fetchPhone: phoneFetch, credentials: () => ({ code: resourceToken, session }), host: () => link.host });
 const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox?.push(event), lang);
 browserAudio.start();
-let movePending = false, moveGeneration = 0, fitRequestedAt = 0, wakeLock = null, resumeOnShow = false;
+let movePending = false, moveGeneration = 0, fitRequestedAt = 0, resumeOnShow = false;
 let statsVisible = false;
 try { statsVisible = localStorage.getItem(STATS_KEY) === '1'; } catch (_) {}
 
@@ -490,7 +490,6 @@ function start() {
   statsTimer = setInterval(reportDiagnostics, 5000);
   resizeCanvas();
   scheduleViewport();
-  keepScreenOn();
   connectVideo();
 }
 
@@ -520,8 +519,6 @@ function stop(key = null, ...args) {
   outbox = null;
   status = null;
   live = false;
-  wakeLock?.then(lock => lock?.release()).catch(() => {});
-  wakeLock = null;
   $('panel').hidden = false;
   stage.hidden = true;
   render();
@@ -776,7 +773,6 @@ function onVideoMessage(message) {
     mediaTiming.started();
     live = true;
     outbox?.presented({ id: streamId, generation: currentVideoGeneration, epoch: message.epoch });
-    keepScreenOn();
   } else if (message.type === 'keyframe') outbox?.push({ k: 'kf' }, 'latest');
   else if (message.type === 'end' && message.id === streamId) {
     if (decoderStatsMatch(message.stats, streamId, config?.epoch)) videoStats = performanceStats({ ...videoStats, ...message.stats });
@@ -1020,7 +1016,6 @@ if (window.PointerEvent) {
 window.addEventListener('blur', releaseTouches);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) releaseTouches();
-  else keepScreenOn();
 });
 
 // Viewport: the canvas backing store follows at once; reports share the next frame and omit duplicate sizes.
@@ -1064,24 +1059,6 @@ const onResize = () => {
 new ResizeObserver(onResize).observe(stage);
 window.addEventListener('resize', onResize);
 window.visualViewport?.addEventListener('resize', onResize);
-
-function keepScreenOn() {
-  if (!active || wakeLock || document.hidden || !navigator.wakeLock) return;
-  let request;
-  try { request = navigator.wakeLock.request('screen'); } catch (_) { return; }
-  const owner = Promise.resolve(request).then(lock => {
-    if (wakeLock !== owner || !active || document.hidden || lock.released) {
-      if (wakeLock === owner) wakeLock = null;
-      if (!lock.released) void Promise.resolve().then(() => lock.release()).catch(() => {});
-      return null;
-    }
-    lock.addEventListener('release', () => { if (wakeLock === owner) wakeLock = null; });
-    return lock;
-  }, () => {
-    if (wakeLock === owner) wakeLock = null;
-  });
-  wakeLock = owner;
-}
 
 $('link-form').addEventListener('submit', event => {
   event.preventDefault();

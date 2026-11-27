@@ -39,7 +39,7 @@ const airplayControls = { update() {}, videoActive: () => status?.airplay?.kind 
 const trustResponses = [], outbox = { push(event) { trustResponses.push(event); } };
 const airplayTrust = createAirPlayTrustNotification($('airplay-trust'), event => outbox.push(event), lang);
 const sink = { delay() {} }, timingFor = () => ({ plans() {}, started() {} });
-const codecName = value => value, releaseTouches = () => {}, cancelViewport = () => {}, onResize = () => {}, keepScreenOn = () => {};
+const codecName = value => value, releaseTouches = () => {}, cancelViewport = () => {}, onResize = () => {};
 const resizeCanvas = () => {}, scheduleViewport = () => {}, reportDiagnostics = () => {}, newSessionId = () => 'component-fixture';
 const connectVideo = () => { phase = 'connecting'; render(); };
 const renderReconnect = createReconnectOverlay({ overlay: $('reconnect'), message: $('reconnect-message'), settings: $('reconnect-settings'), panel: $('panel'), stage, onSettings: showPortal });

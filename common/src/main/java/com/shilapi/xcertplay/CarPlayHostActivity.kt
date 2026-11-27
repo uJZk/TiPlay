@@ -913,7 +913,6 @@ class CarPlayHostActivity : ComponentActivity() {
         if (headUnitIntegrations()) WheelKeyService.restoreIfNeeded(this)
         TeslaBrowserLink.attachHost(browserLinkHost)
         TeslaBrowserLink.sync(this) // phone + browser mode: the car's browser shows this session
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         getSystemService(android.hardware.display.DisplayManager::class.java)
             ?.registerDisplayListener(clusterDisplayListener, mainHandler)
         initializeSessionLog()
@@ -6282,8 +6281,7 @@ class CarPlayHostActivity : ComponentActivity() {
         screenReturnRecoveryTask = task
         // A resource grant can precede the next SETUP on the same socket. Reuse the normal
         // recovery delay, then recheck the owner and data stream; never retire on the grant itself.
-        val delayMillis = if (com.shilapi.xcertplay.diagnostics.RawTraffic.enabled)
-            DEBUG_SCREEN_RETURN_WAIT_MILLIS else RECONNECT_DELAY_MILLIS
+        val delayMillis = RECONNECT_DELAY_MILLIS
         mainHandler.postDelayed(task, delayMillis)
         appendLog("CarPlay ownership returned; waiting for its data stream before display recovery waitMs=$delayMillis")
         return true
@@ -7221,7 +7219,6 @@ class CarPlayHostActivity : ComponentActivity() {
         const val LOG_RETENTION_MILLIS = 5 * 60_000L
         const val DISPLAY_CHANGE_DEBOUNCE_MILLIS = 500L
         const val CONFIGURATION_POLL_INTERVAL_MILLIS = 2_000L
-        private const val DEBUG_SCREEN_RETURN_WAIT_MILLIS = 8_000L
         const val RECONNECT_DELAY_MILLIS = 2_000L
         const val IAP_TUNNEL_RECONNECT_DELAY_MILLIS = 15_000L
         const val CONTROLLER_CLOSE_TIMEOUT_MILLIS = 4_000L
@@ -7284,7 +7281,18 @@ internal fun statusBarHiddenByAnotherWindow(display: CarPlaySessionDisplay, widt
 
 /** Process-local hand-off for keeping the CarPlay session alive while no Activity is visible. */
 internal object CarPlayBackgroundSession {
+    private val activeListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    fun listenActive(listener: () -> Unit): java.io.Closeable {
+        activeListeners.add(listener)
+        return java.io.Closeable { activeListeners.remove(listener) }
+    }
+
     @Volatile var active = false
+        set(value) {
+            if (field == value) return
+            field = value
+            activeListeners.forEach { it() }
+        }
     @Volatile var callPopupReady = false
     private var stopAction: (((() -> Unit)) -> Unit)? = null
     private var stopping = false
