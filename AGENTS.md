@@ -46,9 +46,9 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Beta.63 standby changes and on-device verification scope are recorded in [Build](docs/Build.md#beta63-release).
+Published beta.63 is **0.2.20-beta.63/code105/browser v132**. Standby changes and on-device verification scope are recorded in [Build](docs/Build.md#beta63-release).
 
-Published beta.62 is **0.2.20-beta.62/code104/browser v132**. See the
+Beta.62 was **0.2.20-beta.62/code104/browser v132**. See the
 [release record](docs/Build.md#beta62-release) for artifact verification and device-test scope.
 
 Beta.61 was **0.2.20-beta.61/code103/browser v131**.

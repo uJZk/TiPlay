@@ -188,10 +188,15 @@ Use the version already declared by the build; changing it requires an intention
 <a id="beta63-release"></a>
 ### Beta.63 release
 
-Version 0.2.20-beta.63 (code 105) reduces idle work in the Android receiver and browser server.
+[Version 0.2.20-beta.63](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.63) (code 105) reduces idle work in the Android receiver and browser server.
 Multicast lock demand follows eligible network interfaces. The resource queue and browser watchdog start on demand.
 Phone-mode settings react to broadcasts and skip the head-unit turn overlay timer.
 The debug APK build and 188 targeted tests passed. Device battery and thermal impact still need measurement.
+The [signed build](https://github.com/uJZk/TiPlay/actions/runs/45953823534)
+and [Pages deployment](https://github.com/uJZk/TiPlay/actions/runs/45953823553) succeeded.
+[Android checks](https://github.com/uJZk/TiPlay/actions/runs/45953823636) passed on the second attempt at the same commit after a Bluetooth microphone test failed on the first.
+The public checksums match the downloaded APK and source. The original APK signing certificate,
+package version and source archive commit were verified.
 
 <a id="beta62-release"></a>
 ### Beta.62 release
