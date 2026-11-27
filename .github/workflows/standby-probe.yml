@@ -19,11 +19,18 @@ jobs:
         shell: bash
         run: |
           set -eu
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/standby-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          df -h "$RUNNER_TEMP"
           sudo chmod a+rw /dev/kvm
           sdk="$ANDROID_HOME"
           echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -f -n idle -k 'system-images;android-36;google_apis;x86_64'
-          nohup "$sdk/emulator/emulator" -avd idle -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect -accel on > "$RUNNER_TEMP/emulator.log" 2>&1 &
-          timeout 300 adb wait-for-device
+          nohup "$sdk/emulator/emulator" -avd idle -port 5554 -memory 2048 -cores 2 -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect -accel on > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          emulator_pid=$!
+          trap 'tail -70 "$RUNNER_TEMP/emulator.log"' ERR
+          sleep 5
+          kill -0 "$emulator_pid"
+          timeout 300 adb -s emulator-5554 wait-for-device
           timeout 300 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 2; done'
           adb root
           adb wait-for-device
