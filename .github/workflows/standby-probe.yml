@@ -1,0 +1,35 @@
+name: Beta 63 Android standby probe
+on:
+  push:
+    branches: [diagnostic/beta63-standby]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools emulator system-images;android-36;google_apis;x86_64
+      - name: Boot emulator and install published APK
+        shell: bash
+        run: |
+          set -eu
+          sudo chmod a+rw /dev/kvm
+          sdk="$ANDROID_HOME"
+          echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -f -n idle -k 'system-images;android-36;google_apis;x86_64'
+          nohup "$sdk/emulator/emulator" -avd idle -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect -accel on > "$RUNNER_TEMP/emulator.log" 2>&1 &
+          timeout 300 adb wait-for-device
+          timeout 300 bash -c 'until adb shell getprop sys.boot_completed | grep -q 1; do sleep 2; done'
+          adb root
+          adb wait-for-device
+          adb shell input keyevent 82
+          curl -fsSL https://github.com/uJZk/TiPlay/releases/download/v0.2.20-beta.63/TiPlay-0.2.20-beta.63.apk -o "$RUNNER_TEMP/TiPlay.apk"
+          echo "9076e8111a6567a28250663924a8edf0135b3183627ad988fca7eadd92ec8aa1  $RUNNER_TEMP/TiPlay.apk" | sha256sum -c -
+          adb install -g "$RUNNER_TEMP/TiPlay.apk"
+      - name: Compare steady-state process and thread CPU
+        run: python3 tests/native/standby_probe.py
