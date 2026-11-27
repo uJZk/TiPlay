@@ -106,6 +106,7 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     private val maintenance = ScheduledThreadPoolExecutor(1) {
         Thread(it, "tiplay-airplay-maintenance").apply { isDaemon = true }
     }.apply { removeOnCancelPolicy = true }
+    private var resourceMaintenance: ScheduledFuture<*>? = null // guarded by ownership
     private var photoSession: Pair<InetAddress, String>? = null
     private var photos = ReceiverPhotos()
     private data class VerifiedSession(val publicKey: ByteArray, val connection: Long, val expiresNanos: Long)
@@ -152,7 +153,6 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
     /** Bind outside the caller's publication authority, then atomically install the discovery lease. */
     fun start(publishDiscovery: (() -> Closeable) -> Closeable?): Int {
         check(!closed.get()) { "Receiver is closed" }
-        maintenance.scheduleWithFixedDelay({ runCatching { dispatchNextResource() } }, 1, 1, TimeUnit.SECONDS)
         server.reuseAddress = true
         server.bind(InetSocketAddress(InetAddress.getByName("::"), 0))
         Thread({
@@ -365,6 +365,14 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 return null
             }
             val acquisition = resources.acquire(session, peer, url, range, ownerGeneration = playbackGeneration) ?: return null
+            if (resourceMaintenance == null) {
+                try {
+                    resourceMaintenance = maintenance.scheduleWithFixedDelay(::maintainResources, 1, 1, TimeUnit.SECONDS)
+                } catch (_: java.util.concurrent.RejectedExecutionException) {
+                    // Concurrent close owns the queue and completes any other waiters.
+                    return null
+                }
+            }
             diagnostics.resource(if (acquisition.created) ReceiverProtocolDiagnostics.ResourceStage.QUEUED
                 else ReceiverProtocolDiagnostics.ResourceStage.REUSED, acquisition.pending.id)
             dispatchNextResource()
@@ -409,6 +417,16 @@ class ReceiverServer(@Volatile private var config: ReceiverConfig, private val l
                 // before waiting again, keeping this loader's own original deadline.
                 dispatchNextResource()
                 if (resources.remainingNanos(pending) == 0L) throw error
+            }
+        }
+    }
+
+    private fun maintainResources() {
+        synchronized(ownership) {
+            if (resources.hasPending()) runCatching { dispatchNextResource() }
+            else {
+                resourceMaintenance?.cancel(false)
+                resourceMaintenance = null
             }
         }
     }

@@ -113,6 +113,8 @@ internal class ReceiverResourceRequests(
         }
     }
 
+    @Synchronized fun hasPending(): Boolean = requests.values.any { !it.future.isDone }
+
     @Synchronized fun clear() {
         requests.values.forEach { it.future.complete(null) }
         requests.clear()

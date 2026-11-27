@@ -19,18 +19,20 @@ internal class BrowserSettingsStatusWatch(
     private val handler = Handler(Looper.getMainLooper())
     private var registered = false
     private var closed = false
-    private val tick = object : Runnable {
-        override fun run() {
-            if (!registered || closed) return
-            if (view.isShown && view.windowVisibility == View.VISIBLE) refresh()
-            handler.postDelayed(this, 1_000L)
-        }
+    private val tick = Runnable {
+        if (registered && !closed && view.isShown && view.windowVisibility == View.VISIBLE) refresh()
+    }
+
+    private fun refreshAfterChange() {
+        handler.removeCallbacks(tick)
+        handler.post(tick)
+        // Some devices publish a hotspot broadcast before the queryable state settles.
+        handler.postDelayed(tick, 1_000L)
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             // Re-read platform state; broadcast extras are never permission or connection evidence.
-            handler.removeCallbacks(tick)
-            handler.post(tick)
+            refreshAfterChange()
         }
     }
     init {
@@ -46,7 +48,7 @@ internal class BrowserSettingsStatusWatch(
             addAction("android.net.wifi.WIFI_AP_STATE_CHANGED")
         }, ContextCompat.RECEIVER_EXPORTED)
         registered = true
-        handler.post(tick)
+        refreshAfterChange()
     }
     override fun onViewDetachedFromWindow(v: View) {
         handler.removeCallbacks(tick)

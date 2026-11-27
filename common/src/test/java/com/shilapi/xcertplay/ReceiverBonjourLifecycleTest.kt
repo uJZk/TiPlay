@@ -27,6 +27,26 @@ class ReceiverBonjourLifecycleTest {
         }
     }
 
+    @Test fun multicastDemandFollowsTheLocalInterfaceAcrossDisconnectAndReconnect() {
+        val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
+        val address = InetAddress.getByName("192.0.2.42") as Inet4Address
+        var network = emptyList<Pair<String, Inet4Address>>()
+        var multicast = false
+        ReceiverBonjour(config, 7000, interfaceAddresses = { network },
+            createDns = { _, _ -> assertTrue(multicast); Advertisement().dns }).use { receiver ->
+            fun refresh() = receiver.refresh { multicast = it }
+            assertFalse(refresh())
+            assertFalse(multicast)
+            repeat(2) {
+                network = listOf("wlan2" to address)
+                assertTrue(refresh())
+                network = emptyList()
+                assertFalse(refresh())
+                assertFalse(multicast)
+            }
+        }
+    }
+
     @Test fun aReplacementReceiverCannotAdvertiseWhileTheOldAddressIsStillClosing() {
         val config = ReceiverConfig("TiPlay", "02:11:22:33:44:55", AirPlayIdentity.generate())
         val address = InetAddress.getByName("192.0.2.41") as Inet4Address

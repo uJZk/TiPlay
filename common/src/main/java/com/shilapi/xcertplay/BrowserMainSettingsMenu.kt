@@ -346,7 +346,7 @@ internal class BrowserMainSettingsMenu(
         active = hasSession
         carPlayStage = stage
         this.problem = problem
-        updateActions(); refreshNetwork()
+        refreshNetwork()
     }
     fun committed() { baseline = draft.copy(); updateActions() }
     private fun updateReceiverStatus() {

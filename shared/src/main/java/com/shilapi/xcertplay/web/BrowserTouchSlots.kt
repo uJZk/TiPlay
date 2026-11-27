@@ -17,6 +17,8 @@ class BrowserTouchSlots(private val send: (List<AirPlayContact>) -> Boolean) {
     private var lastTouch = 0L
     private var pressed = false
 
+    @Synchronized internal fun hasPressedContacts(): Boolean = pressed
+
     @Synchronized fun claim(client: Any): Boolean {
         if (owner != null && owner != client) return false
         owner = client

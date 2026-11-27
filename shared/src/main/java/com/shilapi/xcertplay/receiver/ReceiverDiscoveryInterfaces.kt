@@ -11,6 +11,8 @@ internal object ReceiverDiscoveryInterfaces {
     fun select(candidates: List<Address>): List<Address> = candidates.filter {
         val name = it.physicalName
         name.isNotBlank() && !name.startsWith("tun") && !name.startsWith("wg") &&
+            !name.startsWith("rmnet") && !name.startsWith("v4-rmnet") &&
+            !name.startsWith("ccmni") && !name.startsWith("wwan") &&
             !it.address.isAnyLocalAddress && !it.address.isLoopbackAddress && !it.address.isMulticastAddress
     }.groupBy { it.physicalName }.toSortedMap().values.map { addresses ->
         addresses.minWith(compareBy<Address> { it.prefixLength.toInt() == 32 }

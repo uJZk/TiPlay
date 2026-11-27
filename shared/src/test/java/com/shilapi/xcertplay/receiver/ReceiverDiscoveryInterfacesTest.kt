@@ -23,6 +23,7 @@ class ReceiverDiscoveryInterfacesTest {
         val lan = address("wlan0", "192.168.1.20", 24)
         assertEquals(listOf(lan, hotspot), ReceiverDiscoveryInterfaces.select(listOf(
             hotspot, lan, address("tun0", "169.254.111.111", 32), address("wg0", "10.0.0.2", 24),
+            address("rmnet_data1", "10.99.1.4", 30), address("ccmni0", "10.99.2.4", 30),
             address("lo", "127.0.0.1", 8), address("wlan3", "0.0.0.0", 0),
         )))
         assertNotEquals(ReceiverDiscoveryInterfaces.hostname("02:11:22:33:44:55", "wlan2"),

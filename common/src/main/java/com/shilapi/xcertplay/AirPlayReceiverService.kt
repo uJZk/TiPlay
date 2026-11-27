@@ -123,7 +123,6 @@ class AirPlayReceiverService : Service() {
         if (LocalNetworkPermission.state(this) == LocalNetworkPermission.State.DENIED) { publishCurrent("permission"); stopSelf(); return START_NOT_STICKY }
         TeslaBrowserLink.start(this)
         HotspotExtraAddressSettings.sync(this)
-        if (multicast == null) multicast = getSystemService(WifiManager::class.java)?.createMulticastLock("tiplay-airplay")?.apply { setReferenceCounted(false); acquire() }
         worker.execute {
             if (active() && !AirPlayReceiverSettings.isDisabled(this)) startReceiver()
         }
@@ -443,6 +442,20 @@ class AirPlayReceiverService : Service() {
             audioOutputFormats = viewport?.audioCapabilities?.formats ?: 0L)
     }
 
+    // Discovery runs on the worker. Serialize with main-thread destruction so a late
+    // enumeration cannot reacquire the Wi-Fi multicast lock after teardown.
+    @Synchronized private fun updateMulticastLock(hasNetwork: Boolean) {
+        if (!hasNetwork || !active()) {
+            multicast?.let { if (it.isHeld) it.release() }
+            multicast = null
+        } else if (multicast == null) {
+            multicast = getSystemService(WifiManager::class.java)?.createMulticastLock("tiplay-airplay")?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
+    }
+
     private fun refreshDiscovery() {
         if (!active()) return
         try {
@@ -454,7 +467,7 @@ class AirPlayReceiverService : Service() {
                 bluetoothDiscovery?.refresh(current.txt.toSortedMap().toString())
                 logAppliedProfile(current, "updated")
             }
-            val advertised = discovery?.refresh() == true
+            val advertised = discovery?.refresh(::updateMulticastLock) == true
             if (!advertised && state == "listening") publishCurrent("no-network")
             else if (advertised && state == "no-network") publishCurrent("listening")
         } catch (error: Exception) {
@@ -485,7 +498,7 @@ class AirPlayReceiverService : Service() {
             releaseDisplay() // do not wait for mDNS registration/goodbye timers
         }
         locks.release()
-        runCatching { multicast?.release() }; multicast = null
+        updateMulticastLock(false)
         worker.execute {
             server?.close()
             server = null

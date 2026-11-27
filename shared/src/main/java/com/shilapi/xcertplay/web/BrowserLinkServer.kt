@@ -132,6 +132,8 @@ class BrowserLinkServer(
     private var pool: ThreadPoolExecutor? = null
     private var watchdog: ScheduledThreadPoolExecutor? = null
 
+    private var watchdogTask: java.util.concurrent.ScheduledFuture<*>? = null // guarded by lock
+
     /** The bound port, or -1 before [start]. */
     val localPort: Int get() = server?.localPort ?: -1
 
@@ -151,9 +153,7 @@ class BrowserLinkServer(
         server = bound
         pool = ThreadPoolExecutor(MAX_CONNECTIONS, MAX_CONNECTIONS, 30, TimeUnit.SECONDS, LinkedBlockingQueue(), threads("browser-link"))
             .apply { allowCoreThreadTimeOut(true) }
-        watchdog = ScheduledThreadPoolExecutor(1, threads("browser-link-watchdog")).apply {
-            scheduleWithFixedDelay(::tick, WATCHDOG_MILLIS, WATCHDOG_MILLIS, TimeUnit.MILLISECONDS)
-        }
+        watchdog = ScheduledThreadPoolExecutor(1, threads("browser-link-watchdog")).apply { removeOnCancelPolicy = true }
         running.set(true)
         Thread({ accept(bound) }, "browser-link-accept").apply { isDaemon = true; start() }
         callbacks.log("Browser link: listening port=${bound.localPort}")
@@ -199,6 +199,11 @@ class BrowserLinkServer(
             }
             connections += socket
             try {
+                synchronized(lock) {
+                    if (running.get() && watchdogTask == null) {
+                        watchdogTask = watchdog?.scheduleWithFixedDelay(::tick, WATCHDOG_MILLIS, WATCHDOG_MILLIS, TimeUnit.MILLISECONDS)
+                    }
+                }
                 pool!!.execute { serve(socket) }
             } catch (_: RejectedExecutionException) {
                 connections -= socket
@@ -798,6 +803,13 @@ class BrowserLinkServer(
                 } else peer?.maintain()
             }
             touch.expire(now)
+            synchronized(lock) {
+                // RTC outlives its signaling socket. HTTP touches can also outlive a request.
+                if (connections.isEmpty() && rtc == null && !touch.hasPressedContacts()) {
+                    watchdogTask?.cancel(false)
+                    watchdogTask = null
+                }
+            }
             videos.filter { it.stalled(now) }.forEach {
                 callbacks.log("Browser link: video stream stalled; closing it")
                 closeQuietly(it.socket)

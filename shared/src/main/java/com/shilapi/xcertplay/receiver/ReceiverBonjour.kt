@@ -22,7 +22,7 @@ class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int,
     private var advertisedName: String? = null
     private var advertisedRaopTxt: Map<String, String>? = null
     private var advertisedRaopName: String? = null
-    fun refresh(): Boolean {
+    fun refresh(onNetworkAvailability: (Boolean) -> Unit = {}): Boolean {
         if (closed) return false
         val current = configProvider?.invoke() ?: config
         val txt = current.txt
@@ -38,6 +38,7 @@ class ReceiverBonjour(private val config: ReceiverConfig, private val port: Int,
             advertisedRaopName = raopName
         }
         val addresses = interfaceAddresses().associateBy { (name, address) -> "$name:${address.hostAddress}" }
+        onNetworkAvailability(addresses.isNotEmpty())
         val retired = (instances.keys - addresses.keys).mapNotNull { instances.remove(it) }
         retire(retired)
         for ((key, selected) in addresses) {

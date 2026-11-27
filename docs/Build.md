@@ -185,6 +185,14 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta63-release"></a>
+### Beta.63 release
+
+Version 0.2.20-beta.63 (code 105) reduces idle work in the Android receiver and browser server.
+Multicast lock demand follows eligible network interfaces. The resource queue and browser watchdog start on demand.
+Phone-mode settings react to broadcasts and skip the head-unit turn overlay timer.
+The debug APK build and 188 targeted tests passed. Device battery and thermal impact still need measurement.
+
 <a id="beta62-release"></a>
 ### Beta.62 release
 
