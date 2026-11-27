@@ -25,6 +25,9 @@ def measure(label):
     print(shell("dumpsys activity activities | grep -m 1 mResumedActivity || dumpsys window | grep -m 1 mCurrentFocus"), flush=True)
     print(shell("dumpsys power | grep -m 1 mWakefulness="))
     print(shell(f"dumpsys activity services {PACKAGE} | grep 'ServiceRecord' | head -10"))
+    if label.endswith("receiver-stopped") and not shell(f"pidof {PACKAGE} || true"):
+        print("RESULT receiver-stopped process absent")
+        return
     a, proc, threads = snapshot()
     time.sleep(60)
     b, end, current = snapshot()
@@ -53,7 +56,10 @@ shell("input keyevent KEYCODE_HOME")
 shell("input keyevent KEYCODE_SLEEP")
 measure("screen-off-listening")
 radio_state()
-print("STOP", shell(f"am stopservice -n {PACKAGE}/com.shilapi.xcertplay.AirPlayReceiverService"))
+subprocess.run(["adb", "shell", "am", "stopservice", "-n",
+                f"{PACKAGE}/com.shilapi.xcertplay.AirPlayReceiverService"], check=False)
+time.sleep(3)
+assert "AirPlayReceiverService" not in shell(f"dumpsys activity services {PACKAGE}"), "Receiver still present"
 measure("screen-off-receiver-stopped")
 radio_state()
 shell(f"am force-stop {PACKAGE}")
