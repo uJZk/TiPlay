@@ -46,7 +46,10 @@ Split a topic only when needed, target 4,096 words, and update the index and ref
   [documentation sweep](docs/docs-sweep-2026-10-26/README.md): scope, resumable tasks,
   verification, open decisions and [delivery status](docs/sweep-2026-10-26/Delivery.md).
 
-Published beta.61 is **0.2.20-beta.61/code103/browser v131**.
+Published beta.62 is **0.2.20-beta.62/code104/browser v132**. See the
+[release record](docs/Build.md#beta62-release) for artifact verification and device-test scope.
+
+Beta.61 was **0.2.20-beta.61/code103/browser v131**.
 See [Build](docs/Build.md#beta61-release) for release checks and the restored producer
 archives, and [AirPlay](docs/AirPlay.md#beta61-mirror-capture) for the physical comparison.
 

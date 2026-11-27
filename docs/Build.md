@@ -185,6 +185,20 @@ The output is `mobile/build/outputs/apk/release/mobile-release.apk`. Confirm the
 
 Use the version already declared by the build; changing it requires an intentional version-name/code update. Source archives must match the exact build commit and exclude credentials, configuration and build outputs. The [draft uploader](../scripts/publish_release_draft.py) validates the three attachments and checksums, records build commit/runtime provenance, refuses published releases, replaces draft attachments and verifies remote sizes/digests. Review device-validation limits before publishing.
 
+<a id="beta62-release"></a>
+### Beta.62 release
+
+[0.2.20-beta.62](https://github.com/uJZk/TiPlay/releases/tag/v0.2.20-beta.62)
+ships code 104 and browser v132 from commit `9936b5dd002b33b066888d07e74da8fa927d4d17`.
+The [Android checks](https://github.com/uJZk/TiPlay/actions/runs/45933877235),
+[signed build](https://github.com/uJZk/TiPlay/actions/runs/45933875816) and
+[Pages deployment](https://github.com/uJZk/TiPlay/actions/runs/45934258351) passed.
+The downloaded APK matched the original signing certificate, package and version.
+The APK and source archive matched the published checksums, and the source ZIP identified the build commit.
+
+The local Chromium playback test stopped during ICE gathering with zero local candidates.
+First-attempt mirroring with CarPlay active and idle battery drain still need device measurements.
+
 <a id="beta61-release"></a>
 ### Beta.61 release
 
